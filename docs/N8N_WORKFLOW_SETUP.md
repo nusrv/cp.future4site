@@ -24,6 +24,16 @@ If needed, override the env file explicitly:
 N8N_ENV_FILE=/path/to/.env npm run n8n:push-workflows
 ```
 
+The content workflow signs CP callbacks inside an n8n Code node. The n8n server must allow the built-in Node `crypto` module:
+
+```env
+NODE_FUNCTION_ALLOW_BUILTIN=crypto
+N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+PLATFORM_CALLBACK_SECRET=same_value_as_cp
+```
+
+Restart n8n after changing these values.
+
 ## Safety State
 
 - Workflows are created inactive.

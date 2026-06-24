@@ -360,6 +360,7 @@ return [{ json: { ...item, safe_output: output, callback_status: status } }];
     codeNode("prepare-callback", "Prepare Signed Content Callback", `
 const item = $json;
 const body = item.cp ?? {};
+const crypto = require("crypto");
 const secret = $env.PLATFORM_CALLBACK_SECRET;
 
 if (!secret) {
@@ -387,20 +388,7 @@ const callbackBody = {
   warnings: item.safe_output?.warnings ?? []
 };
 const raw = JSON.stringify(callbackBody);
-const encoder = new TextEncoder();
-const key = await globalThis.crypto.subtle.importKey(
-  "raw",
-  encoder.encode(secret),
-  { name: "HMAC", hash: "SHA-256" },
-  false,
-  ["sign"]
-);
-const signatureBuffer = await globalThis.crypto.subtle.sign(
-  "HMAC",
-  key,
-  encoder.encode(timestamp + "." + nonce + "." + raw)
-);
-const signature = Array.from(new Uint8Array(signatureBuffer)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+const signature = crypto.createHmac("sha256", secret).update(timestamp + "." + nonce + "." + raw).digest("hex");
 
 return [{
   json: {
