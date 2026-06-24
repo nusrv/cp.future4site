@@ -1,0 +1,70 @@
+{
+  "name": "FF Admin - Weekly Management Report - Draft",
+  "active": false,
+  "nodes": [
+    {
+      "id": "weekly",
+      "name": "Weekly Schedule - Disabled Until Ready",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "disabled": true,
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "notes": "Enable after recipients and report definitions are approved."
+    },
+    {
+      "id": "report-spec",
+      "name": "Report Sections Placeholder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { draft: true, sections: ['last_7_days_leads','all_time_leads','overdue_first_touch','qualified_last_7_days','leads_by_source','blockers_attention_needed'], external_calls_made: false } }];"
+      },
+      "notes": "Draft code placeholder. No credentials or external calls."
+    }
+  ],
+  "connections": {
+    "Weekly Schedule - Disabled Until Ready": {
+      "main": [
+        [
+          {
+            "node": "Report Sections Placeholder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "tags": [
+    "future-foresight",
+    "draft",
+    "reporting",
+    "schedule"
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "name": "FF Admin - Dead Letter And Health Monitoring - Draft",
+  "active": false,
+  "nodes": [
+    {
+      "id": "monitor-schedule",
+      "name": "Monitor Schedule - Disabled Until Ready",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "disabled": true,
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "notes": "Enable after notification channel and platform health endpoint are approved."
+    },
+    {
+      "id": "health-spec",
+      "name": "Health Rules Placeholder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { draft: true, checks: ['failed_jobs','missed_callbacks','integration_status','workflow_errors'], external_calls_made: false } }];"
+      },
+      "notes": "Draft code placeholder. No credentials or external calls."
+    }
+  ],
+  "connections": {
+    "Monitor Schedule - Disabled Until Ready": {
+      "main": [
+        [
+          {
+            "node": "Health Rules Placeholder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "tags": [
+    "future-foresight",
+    "draft",
+    "governance",
+    "monitoring"
+  ]
+}

@@ -19,6 +19,10 @@
     "db:purge-synthetic": "tsx scripts/purge-synthetic.ts",
     "admin:bootstrap": "tsx scripts/bootstrap-admin.ts",
     "secret:scan": "node scripts/secret-scan.mjs",
+    "n8n:build-workflows": "node scripts/n8n-workflow-program.mjs",
+    "n8n:check-workflows": "node scripts/check-n8n-workflows.mjs",
+    "n8n:push-workflows": "node scripts/push-n8n-workflows.mjs",
+    "n8n:verify-workflows": "node scripts/verify-n8n-workflows.mjs",
     "audit:deps": "npm audit --audit-level=high"
   },
   "dependencies": {

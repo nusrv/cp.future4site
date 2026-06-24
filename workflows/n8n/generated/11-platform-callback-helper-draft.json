@@ -1,0 +1,33 @@
+{
+  "name": "FF Admin - Platform Callback Helper - Draft",
+  "active": false,
+  "nodes": [
+    {
+      "id": "callback-spec",
+      "name": "Signed Callback Contract",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { endpoint: '/api/automation/callback', required_headers: ['x-ff-signature','x-ff-timestamp','x-ff-nonce'], requires_hmac_sha256: true, external_calls_made: false } }];"
+      },
+      "notes": "Draft code placeholder. No credentials or external calls."
+    }
+  ],
+  "connections": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "tags": [
+    "future-foresight",
+    "draft",
+    "callback",
+    "platform"
+  ]
+}

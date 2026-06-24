@@ -26,6 +26,7 @@ function walk(dir) {
 function scan(file) {
   const rel = path.relative(root, file);
   if (rel === ".env.example") return;
+  if (path.basename(rel).startsWith(".env")) return;
   const text = fs.readFileSync(file, "utf8");
   patterns.forEach((pattern) => {
     if (pattern.test(text)) {

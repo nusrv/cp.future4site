@@ -1,0 +1,67 @@
+{
+  "name": "FF Admin - Follow Up Reminders - Draft",
+  "active": false,
+  "nodes": [
+    {
+      "id": "schedule",
+      "name": "Schedule Trigger - Disabled Until Ready",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "disabled": true,
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "notes": "Enable only after lead owner fields and reminder suppression are verified."
+    },
+    {
+      "id": "reminder-spec",
+      "name": "Reminder Rules Placeholder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { draft: true, filter: 'lead_status=new AND first_touch_due_at < now AND reminder interval elapsed', external_calls_made: false } }];"
+      },
+      "notes": "Draft code placeholder. No credentials or external calls."
+    }
+  ],
+  "connections": {
+    "Schedule Trigger - Disabled Until Ready": {
+      "main": [
+        [
+          {
+            "node": "Reminder Rules Placeholder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "tags": [
+    "future-foresight",
+    "draft",
+    "lead-ops",
+    "schedule"
+  ]
+}

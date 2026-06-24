@@ -1,0 +1,94 @@
+{
+  "name": "FF Admin - Facebook Instagram Publishing - Blocked Draft",
+  "active": false,
+  "nodes": [
+    {
+      "id": "guard",
+      "name": "Activation Guard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    blocked: true,\n    reason: \"DO NOT ACTIVATE until Meta permissions, long-lived token, approval validation, public media hosting, duplicate protection, and dry-run tests are complete.\",\n    meta_called: false\n  }\n}];"
+      },
+      "notes": "This workflow is a blocked placeholder only."
+    },
+    {
+      "id": "facebook-placeholder",
+      "name": "Future Facebook Graph API Node - Disabled",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        280,
+        -120
+      ],
+      "disabled": true,
+      "parameters": {
+        "method": "POST",
+        "url": "PLACEHOLDER_DO_NOT_ACTIVATE",
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "{}",
+        "options": {}
+      },
+      "notes": "Disabled placeholder. Add credential in n8n only after approval."
+    },
+    {
+      "id": "instagram-container-placeholder",
+      "name": "Future Instagram Container Node - Disabled",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        280,
+        0
+      ],
+      "disabled": true,
+      "parameters": {
+        "method": "POST",
+        "url": "PLACEHOLDER_DO_NOT_ACTIVATE",
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "{}",
+        "options": {}
+      },
+      "notes": "Disabled placeholder. Must not be connected to dry-run path."
+    },
+    {
+      "id": "instagram-publish-placeholder",
+      "name": "Future Instagram Publish Node - Disabled",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        280,
+        120
+      ],
+      "disabled": true,
+      "parameters": {
+        "method": "POST",
+        "url": "PLACEHOLDER_DO_NOT_ACTIVATE",
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "{}",
+        "options": {}
+      },
+      "notes": "Disabled placeholder. Must not be connected before Meta readiness."
+    }
+  ],
+  "connections": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "tags": [
+    "future-foresight",
+    "draft",
+    "publishing",
+    "meta",
+    "blocked"
+  ]
+}

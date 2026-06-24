@@ -1,0 +1,88 @@
+{
+  "name": "FF Admin - Claim Validation - Draft",
+  "active": false,
+  "nodes": [
+    {
+      "id": "claim-webhook",
+      "name": "Claim Validation Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "path": "future-foresight/claim-validation",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "notes": "Webhook is intentionally draft/inactive. Protect with signature validation before activation."
+    },
+    {
+      "id": "claim-check",
+      "name": "Evidence Rule Placeholder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { draft: true, result: 'requires_evidence_lookup', unsupported_claims_blocked: true, supplier_confidential_blocked: true, external_calls_made: false } }];"
+      },
+      "notes": "Draft code placeholder. No credentials or external calls."
+    },
+    {
+      "id": "respond",
+      "name": "Respond To Platform",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "notes": "Returns a safe acknowledgement or dry-run result."
+    }
+  ],
+  "connections": {
+    "Claim Validation Webhook": {
+      "main": [
+        [
+          {
+            "node": "Evidence Rule Placeholder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evidence Rule Placeholder": {
+      "main": [
+        [
+          {
+            "node": "Respond To Platform",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "tags": [
+    "future-foresight",
+    "draft",
+    "marketing",
+    "governance"
+  ]
+}

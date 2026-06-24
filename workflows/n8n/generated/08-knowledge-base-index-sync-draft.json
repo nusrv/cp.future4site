@@ -1,0 +1,88 @@
+{
+  "name": "FF Admin - Knowledge Base Index Sync - Draft",
+  "active": false,
+  "nodes": [
+    {
+      "id": "kb-sync-webhook",
+      "name": "Platform KB Sync Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "path": "future-foresight/kb-sync",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "notes": "Webhook is intentionally draft/inactive. Protect with signature validation before activation."
+    },
+    {
+      "id": "sync-plan",
+      "name": "One Way Sync Placeholder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { draft: true, direction: 'Markdown to platform database only', conflict_handling: 'report_conflicts_do_not_overwrite_markdown', external_calls_made: false } }];"
+      },
+      "notes": "Draft code placeholder. No credentials or external calls."
+    },
+    {
+      "id": "respond",
+      "name": "Respond To Platform",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "notes": "Returns a safe acknowledgement or dry-run result."
+    }
+  ],
+  "connections": {
+    "Platform KB Sync Webhook": {
+      "main": [
+        [
+          {
+            "node": "One Way Sync Placeholder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One Way Sync Placeholder": {
+      "main": [
+        [
+          {
+            "node": "Respond To Platform",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "tags": [
+    "future-foresight",
+    "draft",
+    "governance",
+    "knowledge-base"
+  ]
+}
