@@ -20,9 +20,11 @@ export async function buildServer() {
   await app.register(multipart, { limits: { fileSize: config.MAX_UPLOAD_MB * 1024 * 1024 } });
 
   app.setErrorHandler((error, _request, reply) => {
-    const status = reply.statusCode >= 400 ? reply.statusCode : 500;
+    const errorStatus = "statusCode" in error && typeof error.statusCode === "number" ? error.statusCode : undefined;
+    const status = reply.statusCode >= 400 ? reply.statusCode : errorStatus ?? 500;
     if (status >= 500) app.log.error(error);
-    reply.code(status).send({ error: status >= 500 ? "Internal server error" : error.message });
+    const safeMessage = errorStatus ? error.message : "Internal server error";
+    reply.code(status).send({ error: status >= 500 ? safeMessage : error.message });
   });
 
   app.get("/health", async () => {
@@ -61,4 +63,3 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const app = await buildServer();
   await app.listen({ port: config.PORT, host: "0.0.0.0" });
 }
-

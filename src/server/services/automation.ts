@@ -108,19 +108,35 @@ export async function dispatchJob(jobId: string) {
   await transitionJob(job.id, "SUBMITTED", "Submitting to n8n");
   const webhookBasePath = config.N8N_WEBHOOK_BASE_PATH.replace(/^\/|\/$/g, "");
   const workflowPath = job.workflowName.replace(/^\/|\/$/g, "");
-  const response = await fetch(`${config.N8N_BASE_URL.replace(/\/$/, "")}/${webhookBasePath}/${workflowPath}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-ff-signature": signature,
-      "x-ff-timestamp": timestamp,
-      "x-ff-nonce": nonce
-    },
-    body
-  });
+  const url = `${config.N8N_BASE_URL.replace(/\/$/, "")}/${webhookBasePath}/${workflowPath}`;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-ff-signature": signature,
+        "x-ff-timestamp": timestamp,
+        "x-ff-nonce": nonce
+      },
+      body
+    });
+  } catch (error) {
+    await transitionJob(job.id, "FAILED", "n8n webhook network error", {
+      errorCode: "N8N_NETWORK_ERROR",
+      errorMessage: error instanceof Error ? error.message : "Unknown network error"
+    });
+    const upstreamError = new Error("n8n webhook network error");
+    (upstreamError as Error & { statusCode: number }).statusCode = 502;
+    throw upstreamError;
+  }
   if (!response.ok) {
-    await transitionJob(job.id, "FAILED", "n8n submission failed", { errorCode: "N8N_SUBMIT_FAILED", errorMessage: response.statusText });
-    throw new Error("n8n submission failed");
+    const responseText = await response.text().catch(() => "");
+    const detail = `${response.status} ${response.statusText}${responseText ? ` - ${responseText.slice(0, 300)}` : ""}`;
+    await transitionJob(job.id, "FAILED", "n8n webhook submission failed", { errorCode: "N8N_SUBMIT_FAILED", errorMessage: detail });
+    const upstreamError = new Error(`n8n webhook submission failed: ${detail}`);
+    (upstreamError as Error & { statusCode: number }).statusCode = 502;
+    throw upstreamError;
   }
   await transitionJob(job.id, "WAITING_FOR_CALLBACK", "n8n acknowledged request");
   return { mode: config.INTEGRATION_MODE, jobId: job.id };
