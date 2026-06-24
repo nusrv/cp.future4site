@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../db.js";
+import { config } from "../config.js";
 import { requirePermission } from "../security/auth.js";
 import { audit } from "../services/audit.js";
 import { createAutomationJob, dispatchJob } from "../services/automation.js";
@@ -62,7 +63,7 @@ export async function contentRoutes(app: FastifyInstance) {
     const job = await createAutomationJob({
       jobType: "content_generation",
       title: `Generate content: ${content.topic.slice(0, 80)}`,
-      workflowName: "platform-content-request-intake",
+      workflowName: config.N8N_CONTENT_WEBHOOK_PATH,
       relatedEntityType: "content_request",
       relatedEntityId: content.id,
       contentRequestId: content.id,
@@ -143,7 +144,7 @@ export async function contentRoutes(app: FastifyInstance) {
       const job = await createAutomationJob({
         jobType: `publish_${platform}`,
         title: `${input.dryRun ? "Dry-run" : "Publish"} ${platform}`,
-        workflowName: `${platform}-publishing`,
+        workflowName: config.N8N_PUBLISH_WEBHOOK_PATH,
         relatedEntityType: "content_item",
         relatedEntityId: item.id,
         requestedByUserId: current.user.id,
@@ -176,4 +177,3 @@ export async function contentRoutes(app: FastifyInstance) {
     return { records };
   });
 }
-

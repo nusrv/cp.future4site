@@ -22,6 +22,9 @@ npm run n8n:verify-workflows
 
 Use these paths in `.env` and n8n:
 
+- `N8N_BASE_URL=https://wap.nusrv.com`
+- `N8N_WEBHOOK_BASE_PATH=webhook-test` for n8n test webhooks
+- `N8N_WEBHOOK_BASE_PATH=webhook` for active production webhooks
 - Content generation: `future-foresight/content-generation`
 - Publishing dry-run: `future-foresight/publish-dry-run`
 - Lead intake: `future-foresight/lead-intake`
@@ -29,6 +32,20 @@ Use these paths in `.env` and n8n:
 - Knowledge Base sync: `future-foresight/kb-sync`
 - Claim validation: `future-foresight/claim-validation`
 - Magnific generation: `future-foresight/magnific-generation`
+
+For your current n8n test URL:
+
+```text
+https://wap.nusrv.com/webhook-test/future-foresight/content-generation
+```
+
+configure:
+
+```env
+N8N_BASE_URL=https://wap.nusrv.com
+N8N_WEBHOOK_BASE_PATH=webhook-test
+N8N_CONTENT_WEBHOOK_PATH=future-foresight/content-generation
+```
 
 ## Credentials To Add In n8n Later
 
@@ -49,4 +66,3 @@ Before activating any workflow:
 - Confirm output is stored in the platform.
 - Confirm failed paths are visible in Automation Jobs.
 - Keep Meta publishing blocked until owner approval and dry-run tests are complete.
-

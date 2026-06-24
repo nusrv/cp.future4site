@@ -106,7 +106,9 @@ export async function dispatchJob(jobId: string) {
   });
   const signature = signPayload(config.N8N_WEBHOOK_SECRET, timestamp, nonce, body);
   await transitionJob(job.id, "SUBMITTED", "Submitting to n8n");
-  const response = await fetch(`${config.N8N_BASE_URL.replace(/\/$/, "")}/webhook/${job.workflowName}`, {
+  const webhookBasePath = config.N8N_WEBHOOK_BASE_PATH.replace(/^\/|\/$/g, "");
+  const workflowPath = job.workflowName.replace(/^\/|\/$/g, "");
+  const response = await fetch(`${config.N8N_BASE_URL.replace(/\/$/, "")}/${webhookBasePath}/${workflowPath}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",

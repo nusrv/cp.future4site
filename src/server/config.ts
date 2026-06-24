@@ -11,6 +11,9 @@ const envSchema = z.object({
   INTEGRATION_MODE: integrationModeSchema.default("mock"),
   N8N_LIVE_ENABLED: z.coerce.boolean().default(false),
   N8N_BASE_URL: z.string().optional().default(""),
+  N8N_WEBHOOK_BASE_PATH: z.string().optional().default("webhook"),
+  N8N_CONTENT_WEBHOOK_PATH: z.string().optional().default("future-foresight/content-generation"),
+  N8N_PUBLISH_WEBHOOK_PATH: z.string().optional().default("future-foresight/publish-dry-run"),
   N8N_WEBHOOK_SECRET: z.string().optional().default(""),
   N8N_API_KEY: z.string().optional().default(""),
   PLATFORM_CALLBACK_SECRET: z.string().min(32),
@@ -26,4 +29,3 @@ const envSchema = z.object({
 export const config = envSchema.parse(process.env);
 
 export type AppConfig = typeof config;
-
