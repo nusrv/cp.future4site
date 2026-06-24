@@ -137,7 +137,6 @@ workflow(
     codeNode("validate", "Validate Draft Request", ack("content_generation")),
     respondNode(),
     codeNode("prepare-callback", "Prepare Signed Mock Callback", `
-const crypto = require("crypto");
 const body = $json.body ?? $json;
 const secret = $env.PLATFORM_CALLBACK_SECRET;
 
@@ -172,7 +171,20 @@ const callbackBody = {
   warnings: ["Connection test only."]
 };
 const raw = JSON.stringify(callbackBody);
-const signature = crypto.createHmac("sha256", secret).update(timestamp + "." + nonce + "." + raw).digest("hex");
+const encoder = new TextEncoder();
+const key = await globalThis.crypto.subtle.importKey(
+  "raw",
+  encoder.encode(secret),
+  { name: "HMAC", hash: "SHA-256" },
+  false,
+  ["sign"]
+);
+const signatureBuffer = await globalThis.crypto.subtle.sign(
+  "HMAC",
+  key,
+  encoder.encode(timestamp + "." + nonce + "." + raw)
+);
+const signature = Array.from(new Uint8Array(signatureBuffer)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 
 return [{
   json: {
