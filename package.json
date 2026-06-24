@@ -23,6 +23,7 @@
     "n8n:check-workflows": "node scripts/check-n8n-workflows.mjs",
     "n8n:push-workflows": "node scripts/push-n8n-workflows.mjs",
     "n8n:verify-workflows": "node scripts/verify-n8n-workflows.mjs",
+    "n8n:export-workflow": "node scripts/export-n8n-workflow.mjs",
     "audit:deps": "npm audit --audit-level=high"
   },
   "dependencies": {
