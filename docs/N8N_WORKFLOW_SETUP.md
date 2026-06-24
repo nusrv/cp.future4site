@@ -11,6 +11,19 @@ npm run n8n:push-workflows
 npm run n8n:verify-workflows
 ```
 
+The push and verify scripts load n8n API credentials from the parent project `.env` first:
+
+```text
+G:\Other computers\My Computer\Dev_Projects\Future4site\.env
+```
+
+This keeps local n8n operator credentials separate from the deployed CP `.env` in `future-foresight-admin/.env`.
+If needed, override the env file explicitly:
+
+```bash
+N8N_ENV_FILE=/path/to/.env npm run n8n:push-workflows
+```
+
 ## Safety State
 
 - Workflows are created inactive.

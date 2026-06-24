@@ -2,16 +2,23 @@ import fs from "node:fs";
 import path from "node:path";
 
 function loadEnv() {
-  const envPath = path.join(process.cwd(), ".env");
-  if (!fs.existsSync(envPath)) return;
-  for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const index = trimmed.indexOf("=");
-    if (index === -1) continue;
-    const key = trimmed.slice(0, index).trim();
-    const value = trimmed.slice(index + 1).trim().replace(/^["']|["']$/g, "");
-    if (!process.env[key]) process.env[key] = value;
+  const envPaths = [
+    process.env.N8N_ENV_FILE,
+    path.join(process.cwd(), "..", ".env"),
+    path.join(process.cwd(), ".env")
+  ].filter(Boolean);
+
+  for (const envPath of envPaths) {
+    if (!fs.existsSync(envPath)) continue;
+    for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const index = trimmed.indexOf("=");
+      if (index === -1) continue;
+      const key = trimmed.slice(0, index).trim();
+      const value = trimmed.slice(index + 1).trim().replace(/^["']|["']$/g, "");
+      if (!process.env[key]) process.env[key] = value;
+    }
   }
 }
 
@@ -61,4 +68,3 @@ for (const name of expectedNames) {
 
 if (failed) process.exit(1);
 console.log(`Verified ${expectedNames.length} n8n workflows exist and are inactive.`);
-
