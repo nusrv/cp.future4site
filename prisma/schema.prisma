@@ -1,0 +1,559 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum SessionStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum VisibilityScope {
+  PUBLIC_SAFE
+  INTERNAL
+  RESTRICTED
+  SUPPLIER_CONFIDENTIAL
+}
+
+enum IntegrationMode {
+  MOCK
+  DRY_RUN
+  LIVE
+}
+
+enum AutomationStatus {
+  DRAFT
+  QUEUED
+  SUBMITTED
+  RUNNING
+  WAITING_FOR_EXTERNAL_SERVICE
+  WAITING_FOR_CALLBACK
+  COMPLETED
+  COMPLETED_WITH_WARNINGS
+  FAILED
+  RETRY_SCHEDULED
+  AWAITING_HUMAN_REVIEW
+  REVISION_REQUESTED
+  APPROVED_INTERNAL
+  APPROVED_FOR_PUBLICATION
+  REJECTED
+  CANCEL_REQUESTED
+  CANCELLED
+  ARCHIVED
+}
+
+enum ContentStatus {
+  DRAFT
+  SUBMITTED
+  GENERATING
+  WAITING_FOR_EXTERNAL_SERVICE
+  GENERATION_COMPLETED
+  AWAITING_REVIEW
+  REVISION_REQUESTED
+  APPROVED_INTERNAL
+  APPROVED_PUBLICATION
+  REJECTED
+  ARCHIVED
+  FAILED
+}
+
+enum PublishPlatform {
+  FACEBOOK
+  INSTAGRAM
+}
+
+enum PublishStatus {
+  DRAFT
+  DRY_RUN
+  QUEUED
+  PUBLISHED
+  PARTIAL_SUCCESS
+  FAILED
+  CANCELLED
+}
+
+model User {
+  id                    String       @id @default(cuid())
+  username              String       @unique
+  displayName           String
+  email                 String?
+  passwordHash          String       @db.VarChar(255)
+  status                UserStatus   @default(ACTIVE)
+  mustChangePassword    Boolean      @default(false)
+  failedLoginCount      Int          @default(0)
+  lockedUntil           DateTime?
+  lastLoginAt           DateTime?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  roles                 UserRole[]
+  sessions              Session[]
+  auditEvents           AuditEvent[] @relation("AuditActor")
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?  @db.Text
+  users       UserRole[]
+}
+
+model Permission {
+  id          String @id @default(cuid())
+  key         String @unique
+  description String @db.Text
+}
+
+model UserRole {
+  id        String @id @default(cuid())
+  userId    String
+  roleId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, roleId])
+}
+
+model Session {
+  id        String        @id @default(cuid())
+  userId    String
+  tokenHash String        @unique
+  status    SessionStatus @default(ACTIVE)
+  ipAddress String?
+  userAgent String?       @db.Text
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime      @default(now())
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuditEvent {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  action      String
+  entityType  String
+  entityId    String?
+  summary     String   @db.Text
+  metadata    Json?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+  actor       User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model IntegrationSetting {
+  id          String          @id @default(cuid())
+  service     String
+  mode        IntegrationMode @default(MOCK)
+  enabled     Boolean         @default(false)
+  reference   String?
+  status      String          @default("not_configured")
+  lastCheckedAt DateTime?
+  notes       String?         @db.Text
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+model AutomationJob {
+  id                 String           @id @default(cuid())
+  jobType            String
+  title              String
+  relatedEntityType  String?
+  relatedEntityId    String?
+  contentRequestId   String?
+  requestedByUserId  String?
+  priority           String           @default("normal")
+  workflowName       String
+  workflowVersion    String           @default("mock-v1")
+  inputPayload       Json
+  currentStatus      AutomationStatus @default(QUEUED)
+  currentStep        String?
+  n8nExecutionId     String?
+  externalService    String?
+  externalCreationId String?
+  outputPayload      Json?
+  errorCode          String?
+  errorMessage       String?          @db.Text
+  retryCount         Int              @default(0)
+  maxRetries         Int              @default(3)
+  creditCost         Int?
+  moneyCost          Decimal?         @db.Decimal(10, 2)
+  humanReviewStatus  String           @default("not_required")
+  approvalId         String?
+  idempotencyKey     String           @unique
+  correlationId      String           @unique
+  archiveStatus      String           @default("active")
+  visibilityScope    VisibilityScope  @default(INTERNAL)
+  startedAt          DateTime?
+  completedAt        DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  events             AutomationJobEvent[]
+}
+
+model AutomationJobEvent {
+  id             String           @id @default(cuid())
+  jobId          String
+  eventType      String
+  previousStatus AutomationStatus?
+  newStatus      AutomationStatus?
+  actorType      String           @default("platform")
+  actorId        String?
+  message        String           @db.Text
+  payloadSummary Json?
+  retryNumber    Int              @default(0)
+  externalReference String?
+  createdAt      DateTime         @default(now())
+  job            AutomationJob    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, createdAt])
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  legalName   String
+  displayName String?
+  country     String?
+  market      String?
+  status      String   @default("active")
+  notes       String?  @db.Text
+  synthetic   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  roles       OrganizationRole[]
+  contacts    Contact[]
+  leads       Lead[]
+  inquiries   Inquiry[]
+  customerProfile CustomerProfile?
+  supplierProfile SupplierProfile?
+  deals       Deal[]
+}
+
+model OrganizationRole {
+  id             String       @id @default(cuid())
+  organizationId String
+  role           String
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, role])
+}
+
+model Contact {
+  id             String        @id @default(cuid())
+  organizationId String?
+  fullName       String
+  email          String?
+  phone          String?
+  whatsapp       String?
+  country        String?
+  status         String        @default("active")
+  synthetic      Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  leads          Lead[]
+}
+
+model Lead {
+  id                String       @id @default(cuid())
+  sourceLeadId      String?      @unique
+  organizationId    String?
+  contactId         String?
+  leadType          String
+  source            String       @default("manual")
+  status            String       @default("new")
+  quality           String       @default("unreviewed")
+  firstTouchDueAt   DateTime?
+  firstTouchDoneAt  DateTime?
+  ownerUserId       String?
+  rawPayload        Json?
+  rawPayloadRestricted Boolean   @default(true)
+  synthetic         Boolean      @default(false)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  organization      Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  contact           Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  inquiries         Inquiry[]
+}
+
+model Inquiry {
+  id             String        @id @default(cuid())
+  leadId         String?
+  organizationId String?
+  inquiryType    String
+  product        String?
+  quantity       String?
+  quantityUnit   String?
+  packaging      String?
+  destination    String?
+  incoterms      String?
+  paymentTerms   String?
+  certifications String?
+  message        String?       @db.Text
+  status         String        @default("received")
+  synthetic      Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  lead           Lead?         @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+}
+
+model CustomerProfile {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  status         String       @default("prospect")
+  market         String?
+  notes          String?      @db.Text
+  synthetic      Boolean      @default(false)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model SupplierProfile {
+  id             String          @id @default(cuid())
+  organizationId String          @unique
+  verificationStatus String      @default("unreviewed")
+  productOffered String?
+  monthlyCapacityMt String?
+  originCountry  String?
+  certifications String?         @db.Text
+  internalNotes  String?         @db.Text
+  visibilityScope VisibilityScope @default(SUPPLIER_CONFIDENTIAL)
+  synthetic      Boolean         @default(false)
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model Deal {
+  id             String       @id @default(cuid())
+  organizationId String
+  title          String
+  status         String       @default("open")
+  stage          String       @default("lead_review")
+  ownerUserId    String?
+  nextAction     String?
+  nextActionDueAt DateTime?
+  synthetic      Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lineItems      DealLineItem[]
+  stageHistory   DealStageHistory[]
+}
+
+model DealStage {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  name      String
+  sortOrder Int
+  active    Boolean  @default(true)
+}
+
+model DealStageHistory {
+  id        String   @id @default(cuid())
+  dealId    String
+  stage     String
+  reason    String?  @db.Text
+  enteredAt DateTime @default(now())
+  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+}
+
+model DealLineItem {
+  id          String @id @default(cuid())
+  dealId      String
+  productId   String?
+  description String? @db.Text
+  quantity    String?
+  unit        String?
+  packaging   String?
+  destination String?
+  status      String @default("requested")
+  deal        Deal   @relation(fields: [dealId], references: [id], onDelete: Cascade)
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  relatedType String?
+  relatedId   String?
+  ownerUserId String?
+  status      String   @default("open")
+  dueAt       DateTime?
+  completedAt DateTime?
+  synthetic   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Document {
+  id          String          @id @default(cuid())
+  documentType String
+  title       String
+  fileId      String?
+  relatedType String?
+  relatedId   String?
+  status      String          @default("draft")
+  visibilityScope VisibilityScope @default(RESTRICTED)
+  synthetic   Boolean         @default(false)
+  createdAt   DateTime        @default(now())
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  name        String
+  category    String
+  status      String   @default("active")
+  tdsStatus   String   @default("not_found")
+  publicMarketingAllowed Boolean @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PackagingFormat {
+  id        String @id @default(cuid())
+  label     String @unique
+  status    String @default("approved")
+  visualAssetStatus String @default("missing")
+}
+
+model KnowledgeIndex {
+  id          String          @id @default(cuid())
+  claimId     String          @unique
+  approvedWording String      @db.Text
+  sourceFile  String
+  sourceSection String
+  contentHash String?
+  verificationStatus String   @default("verified")
+  visibilityScope VisibilityScope @default(PUBLIC_SAFE)
+  restrictions String?        @db.Text
+  lastSyncedAt DateTime?
+  conflictState String        @default("none")
+  synthetic    Boolean        @default(false)
+}
+
+model Campaign {
+  id          String   @id @default(cuid())
+  name        String
+  brand       String
+  businessLine String?
+  status      String   @default("draft")
+  synthetic   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model ContentRequest {
+  id          String        @id @default(cuid())
+  topic       String        @db.Text
+  brand       String
+  businessLine String
+  product     String?
+  market      String?
+  audience    String?
+  objective   String?       @db.Text
+  channel     String?
+  format      String
+  cta         String?
+  internalNotes String?     @db.Text
+  status      ContentStatus @default(DRAFT)
+  requestedPublishingChannels Json?
+  createdByUserId String?
+  synthetic   Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  items       ContentItem[]
+  assets      CreativeAsset[]
+}
+
+model ContentItem {
+  id          String        @id @default(cuid())
+  contentRequestId String
+  version     Int           @default(1)
+  headline    String?
+  caption     String?       @db.Text
+  cta         String?
+  hashtags    String?       @db.Text
+  status      ContentStatus @default(GENERATION_COMPLETED)
+  metadata    Json?
+  createdAt   DateTime      @default(now())
+  request     ContentRequest @relation(fields: [contentRequestId], references: [id], onDelete: Cascade)
+  publishingRecords PublishingRecord[]
+}
+
+model CreativeAsset {
+  id          String          @id @default(cuid())
+  contentRequestId String?
+  fileId      String?
+  assetType   String
+  status      String          @default("draft")
+  approvalStatus String       @default("not_approved")
+  sourceTool  String          @default("mock")
+  metadata    Json?
+  visibilityScope VisibilityScope @default(INTERNAL)
+  createdAt   DateTime        @default(now())
+  request     ContentRequest? @relation(fields: [contentRequestId], references: [id], onDelete: SetNull)
+}
+
+model FileObject {
+  id          String          @id @default(cuid())
+  storageKey  String          @unique
+  originalName String
+  mimeType    String
+  sizeBytes   Int
+  sha256Hash  String
+  width       Int?
+  height      Int?
+  durationSeconds Int?
+  assetType   String
+  visibilityScope VisibilityScope @default(INTERNAL)
+  approvalStatus String       @default("not_approved")
+  version     Int             @default(1)
+  createdByUserId String?
+  synthetic   Boolean         @default(false)
+  createdAt   DateTime        @default(now())
+}
+
+model Approval {
+  id          String   @id @default(cuid())
+  entityType  String
+  entityId    String
+  approvalType String
+  status      String   @default("requested")
+  requestedByUserId String?
+  decidedByUserId String?
+  decisionNotes String? @db.Text
+  decidedAt   DateTime?
+  createdAt   DateTime @default(now())
+}
+
+model PublishingRecord {
+  id          String        @id @default(cuid())
+  contentItemId String
+  platform    PublishPlatform
+  status      PublishStatus @default(DRAFT)
+  mode        IntegrationMode @default(MOCK)
+  idempotencyKey String     @unique
+  automationJobId String?
+  requestedByUserId String?
+  approvedByUserId String?
+  platformPostId String?
+  platformUrl String?
+  publishedAt DateTime?
+  warnings    Json?
+  errors      Json?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  contentItem ContentItem   @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+}
+

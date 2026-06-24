@@ -1,0 +1,21 @@
+{
+  "name": "Future Foresight - Facebook Instagram Publishing - Draft",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { status: 'placeholder', warning: 'DO NOT ACTIVATE until Meta permissions, long-lived token, approval validation, public media hosting, duplicate protection, and dry-run tests are complete.' } }];"
+      },
+      "id": "future-publishing-placeholder",
+      "name": "Future Meta Publishing Placeholder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "notes": "Unconnected future workflow placeholder. No Meta HTTP nodes or credentials are included."
+    }
+  ],
+  "connections": {},
+  "settings": { "executionOrder": "v1" },
+  "tags": ["future-foresight", "draft", "meta", "blocked"]
+}
+

@@ -1,0 +1,21 @@
+{
+  "name": "Future Foresight - Lead Operations Program - Draft",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { workflowsCovered: ['lead-normalization', 'buyer-supplier-routing', 'duplicate-detection-support', 'first-touch-task-creation', 'follow-up-reminders', 'weekly-management-report', 'failed-workflow-notifications'], status: 'draft-specification-only' } }];"
+      },
+      "id": "lead-program-spec",
+      "name": "Lead Operations Draft Spec",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "notes": "Documents planned operational workflows. Split into separate activated workflows only after platform records and permissions are tested."
+    }
+  ],
+  "connections": {},
+  "settings": { "executionOrder": "v1" },
+  "tags": ["future-foresight", "draft", "lead-ops"]
+}
+

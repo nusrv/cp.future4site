@@ -1,0 +1,16 @@
+node_modules/
+.npm-cache/
+dist/
+dist-client/
+.vite/
+coverage/
+playwright-report/
+test-results/
+.env
+.env.*
+!.env.example
+storage/*
+!storage/.gitkeep
+*.log
+future4site_CP_Prompt.txt
+*.local

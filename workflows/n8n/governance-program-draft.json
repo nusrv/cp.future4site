@@ -1,0 +1,21 @@
+{
+  "name": "Future Foresight - Governance Program - Draft",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { workflowsCovered: ['knowledge-base-index-sync', 'approval-state-validation', 'duplicate-job-prevention', 'dead-letter-handling', 'integration-health-monitoring', 'workflow-backup-export'], status: 'draft-specification-only' } }];"
+      },
+      "id": "governance-program-spec",
+      "name": "Governance Draft Spec",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "notes": "Documents planned governance workflows. No credentials are included."
+    }
+  ],
+  "connections": {},
+  "settings": { "executionOrder": "v1" },
+  "tags": ["future-foresight", "draft", "governance"]
+}
+

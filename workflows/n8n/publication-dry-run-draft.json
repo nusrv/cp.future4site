@@ -1,0 +1,53 @@
+{
+  "name": "Future Foresight - Publication Dry Run - Draft",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "future-foresight/publish-dry-run",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "publish-webhook",
+      "name": "Platform Publish Dry Run Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "notes": "Receives signed publish dry-run requests. This path must never call Meta endpoints."
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { dryRun: true, wouldPublish: $json.platforms || [], metaCalled: false, status: 'validated' } }];"
+      },
+      "id": "dry-run-summary",
+      "name": "Dry Run Summary Only",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 0],
+      "notes": "Safe dry-run node. It returns a summary and does not connect to Meta HTTP nodes."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "respond",
+      "name": "Respond To Platform",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [520, 0],
+      "notes": "Returns dry-run result."
+    }
+  ],
+  "connections": {
+    "Platform Publish Dry Run Webhook": {
+      "main": [[{ "node": "Dry Run Summary Only", "type": "main", "index": 0 }]]
+    },
+    "Dry Run Summary Only": {
+      "main": [[{ "node": "Respond To Platform", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": ["future-foresight", "draft", "dry-run", "publishing"]
+}
+

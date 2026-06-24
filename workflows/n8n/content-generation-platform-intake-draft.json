@@ -1,0 +1,53 @@
+{
+  "name": "Future Foresight - Content Generation Platform Intake - Draft",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "future-foresight/content-generation",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "content-webhook",
+      "name": "Platform Content Request Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "notes": "Receives signed content-generation requests from the internal platform. Validate signature before production activation."
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { accepted: true, mode: 'draft', status: 'queued', note: 'Replace with KB retrieval, claim validation, AI/Magnific generation, and signed callback.' } }];"
+      },
+      "id": "draft-ack",
+      "name": "Draft Acknowledgement",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 0],
+      "notes": "Draft placeholder. Does not call external services."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "respond",
+      "name": "Respond To Platform",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [520, 0],
+      "notes": "Returns an acknowledgement only."
+    }
+  ],
+  "connections": {
+    "Platform Content Request Webhook": {
+      "main": [[{ "node": "Draft Acknowledgement", "type": "main", "index": 0 }]]
+    },
+    "Draft Acknowledgement": {
+      "main": [[{ "node": "Respond To Platform", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": ["future-foresight", "draft", "marketing"]
+}
+

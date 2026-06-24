@@ -1,0 +1,21 @@
+{
+  "name": "Future Foresight - Content Result Callback - Draft",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { callbackContract: 'POST /api/automation/callback', requiredHeaders: ['x-ff-signature', 'x-ff-timestamp', 'x-ff-correlation-id'], status: 'draft' } }];"
+      },
+      "id": "callback-contract",
+      "name": "Callback Contract Placeholder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "notes": "Documents the signed platform callback contract. No HTTP request node is connected in this draft."
+    }
+  ],
+  "connections": {},
+  "settings": { "executionOrder": "v1" },
+  "tags": ["future-foresight", "draft", "callback"]
+}
+

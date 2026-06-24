@@ -1,0 +1,21 @@
+{
+  "name": "Future Foresight - Marketing Generation Program - Draft",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { workflowsCovered: ['knowledge-base-evidence-retrieval', 'copy-generation', 'claim-validation', 'prompt-preparation', 'magnific-image-generation', 'magnific-video-generation', 'image-resizing', 'revision-regeneration', 'asset-metadata-update'], status: 'draft-specification-only' } }];"
+      },
+      "id": "marketing-program-spec",
+      "name": "Marketing Generation Draft Spec",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "notes": "Documents planned generation workflows. External services are not called in this draft."
+    }
+  ],
+  "connections": {},
+  "settings": { "executionOrder": "v1" },
+  "tags": ["future-foresight", "draft", "marketing-generation"]
+}
+
