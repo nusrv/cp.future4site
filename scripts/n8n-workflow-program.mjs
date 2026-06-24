@@ -48,6 +48,34 @@ function respondNode(id = "respond", position = [520, 0]) {
   };
 }
 
+function callbackHttpNode(id = "callback", position = [780, 0]) {
+  return {
+    id,
+    name: "Send Signed Callback To CP",
+    type: "n8n-nodes-base.httpRequest",
+    typeVersion: 4,
+    position,
+    parameters: {
+      method: "POST",
+      url: "={{ $json.callback_url }}",
+      sendHeaders: true,
+      headerParameters: {
+        parameters: [
+          { name: "content-type", value: "application/json" },
+          { name: "x-ff-signature", value: "={{ $json.callback_headers.signature }}" },
+          { name: "x-ff-timestamp", value: "={{ $json.callback_headers.timestamp }}" },
+          { name: "x-ff-nonce", value: "={{ $json.callback_headers.nonce }}" }
+        ]
+      },
+      sendBody: true,
+      contentType: "json",
+      jsonBody: "={{ JSON.stringify($json.callback_body) }}",
+      options: {}
+    },
+    notes: "Sends mock completion back to the CP callback endpoint. Requires PLATFORM_CALLBACK_SECRET to be available to n8n as an environment variable."
+  };
+}
+
 function httpPlaceholder(id, name, position, notes) {
   return {
     id,
@@ -107,11 +135,60 @@ workflow(
   [
     webhookNode("content-webhook", "Platform Content Request Webhook", "future-foresight/content-generation"),
     codeNode("validate", "Validate Draft Request", ack("content_generation")),
-    respondNode()
+    respondNode(),
+    codeNode("prepare-callback", "Prepare Signed Mock Callback", `
+const crypto = require("crypto");
+const body = $json.body ?? $json;
+const secret = $env.PLATFORM_CALLBACK_SECRET;
+
+if (!secret) {
+  throw new Error("Missing PLATFORM_CALLBACK_SECRET in n8n environment");
+}
+if (!body.job_id || !body.correlation_id || !body.callback_url) {
+  throw new Error("Missing job_id, correlation_id, or callback_url from CP request");
+}
+
+const timestamp = new Date().toISOString();
+const nonce = "n8n_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+const callbackBody = {
+  job_id: body.job_id,
+  correlation_id: body.correlation_id,
+  idempotency_key: body.idempotency_key,
+  workflow_type: body.workflow_type ?? "content_generation",
+  workflow_version: body.workflow_version ?? "mock-v1",
+  status: "completed",
+  current_step: "Mock n8n callback completed",
+  nonce,
+  signature_timestamp: timestamp,
+  signature: "",
+  outputs: {
+    headline: "Mock Content Test",
+    caption: "This is a CP to n8n to CP callback connection test only.",
+    cta: "Request a Quote",
+    hashtags: ["#FutureOils", "#ConnectionTest"],
+    warnings: ["No AI, Magnific, Meta, email, or publishing service was called."]
+  },
+  files: [],
+  warnings: ["Connection test only."]
+};
+const raw = JSON.stringify(callbackBody);
+const signature = crypto.createHmac("sha256", secret).update(timestamp + "." + nonce + "." + raw).digest("hex");
+
+return [{
+  json: {
+    callback_url: body.callback_url,
+    callback_headers: { signature, timestamp, nonce },
+    callback_body: callbackBody
+  }
+}];
+`.trim(), [780, 0], "Builds a signed mock completion callback after the webhook response is sent to CP."),
+    callbackHttpNode("send-callback", [1040, 0])
   ],
   {
     "Platform Content Request Webhook": { main: [[{ node: "Validate Draft Request", type: "main", index: 0 }]] },
-    "Validate Draft Request": { main: [[{ node: "Respond To Platform", type: "main", index: 0 }]] }
+    "Validate Draft Request": { main: [[{ node: "Respond To Platform", type: "main", index: 0 }]] },
+    "Respond To Platform": { main: [[{ node: "Prepare Signed Mock Callback", type: "main", index: 0 }]] },
+    "Prepare Signed Mock Callback": { main: [[{ node: "Send Signed Callback To CP", type: "main", index: 0 }]] }
   },
   ["marketing", "webhook"]
 );
@@ -316,4 +393,3 @@ workflow(
 );
 
 console.log(`Generated workflow program in ${outDir}`);
-

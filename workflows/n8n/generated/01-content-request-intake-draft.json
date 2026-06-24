@@ -47,6 +47,60 @@
         "responseBody": "={{ $json }}"
       },
       "notes": "Returns a safe acknowledgement or dry-run result."
+    },
+    {
+      "id": "prepare-callback",
+      "name": "Prepare Signed Mock Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const crypto = require(\"crypto\");\nconst body = $json.body ?? $json;\nconst secret = $env.PLATFORM_CALLBACK_SECRET;\n\nif (!secret) {\n  throw new Error(\"Missing PLATFORM_CALLBACK_SECRET in n8n environment\");\n}\nif (!body.job_id || !body.correlation_id || !body.callback_url) {\n  throw new Error(\"Missing job_id, correlation_id, or callback_url from CP request\");\n}\n\nconst timestamp = new Date().toISOString();\nconst nonce = \"n8n_\" + Date.now() + \"_\" + Math.random().toString(36).slice(2);\nconst callbackBody = {\n  job_id: body.job_id,\n  correlation_id: body.correlation_id,\n  idempotency_key: body.idempotency_key,\n  workflow_type: body.workflow_type ?? \"content_generation\",\n  workflow_version: body.workflow_version ?? \"mock-v1\",\n  status: \"completed\",\n  current_step: \"Mock n8n callback completed\",\n  nonce,\n  signature_timestamp: timestamp,\n  signature: \"\",\n  outputs: {\n    headline: \"Mock Content Test\",\n    caption: \"This is a CP to n8n to CP callback connection test only.\",\n    cta: \"Request a Quote\",\n    hashtags: [\"#FutureOils\", \"#ConnectionTest\"],\n    warnings: [\"No AI, Magnific, Meta, email, or publishing service was called.\"]\n  },\n  files: [],\n  warnings: [\"Connection test only.\"]\n};\nconst raw = JSON.stringify(callbackBody);\nconst signature = crypto.createHmac(\"sha256\", secret).update(timestamp + \".\" + nonce + \".\" + raw).digest(\"hex\");\n\nreturn [{\n  json: {\n    callback_url: body.callback_url,\n    callback_headers: { signature, timestamp, nonce },\n    callback_body: callbackBody\n  }\n}];"
+      },
+      "notes": "Builds a signed mock completion callback after the webhook response is sent to CP."
+    },
+    {
+      "id": "send-callback",
+      "name": "Send Signed Callback To CP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1040,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-ff-signature",
+              "value": "={{ $json.callback_headers.signature }}"
+            },
+            {
+              "name": "x-ff-timestamp",
+              "value": "={{ $json.callback_headers.timestamp }}"
+            },
+            {
+              "name": "x-ff-nonce",
+              "value": "={{ $json.callback_headers.nonce }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{ JSON.stringify($json.callback_body) }}",
+        "options": {}
+      },
+      "notes": "Sends mock completion back to the CP callback endpoint. Requires PLATFORM_CALLBACK_SECRET to be available to n8n as an environment variable."
     }
   ],
   "connections": {
@@ -66,6 +120,28 @@
         [
           {
             "node": "Respond To Platform",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond To Platform": {
+      "main": [
+        [
+          {
+            "node": "Prepare Signed Mock Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Signed Mock Callback": {
+      "main": [
+        [
+          {
+            "node": "Send Signed Callback To CP",
             "type": "main",
             "index": 0
           }
