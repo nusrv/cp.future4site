@@ -63,10 +63,27 @@ N8N_CONTENT_WEBHOOK_PATH=future-foresight/content-generation
 ## Credentials To Add In n8n Later
 
 - Platform callback shared secret, represented by an environment variable or n8n credential.
+- Text-generation LLM environment variables for the content workflow:
+  - `LLM_TOKEN`
+  - `LLM_BASE_URL`, optional, defaults to `https://api.openai.com/v1/chat/completions`
+  - `LLM_MODEL`, optional, defaults to `gpt-4o-mini`
 - Magnific credential for generation workflows.
 - Meta credential for Facebook and Instagram publishing.
 - SMTP or notification channel credentials if reminder/report workflows send messages.
 - Platform API credential if n8n writes back through platform APIs.
+
+If `LLM_TOKEN` is not configured, `FF Admin - Content Request Intake - Draft` still returns a deterministic safe draft with a warning. That keeps the CP-to-n8n-to-CP flow testable while LLM credentials are being prepared or changed.
+
+The content workflow currently performs:
+
+1. Capture and validate the CP request.
+2. Respond to CP so the job can enter `WAITING_FOR_CALLBACK`.
+3. Build approved evidence and prohibited-claim rules.
+4. Generate English B2B text using an OpenAI-compatible LLM when configured.
+5. Sanitize output and replace unsafe text with a safe fallback.
+6. Sign and send the callback to CP.
+
+Magnific image/video generation remains deferred and disabled.
 
 ## Activation Checklist
 

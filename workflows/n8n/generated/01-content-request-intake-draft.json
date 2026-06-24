@@ -20,8 +20,8 @@
       "notes": "Webhook is intentionally draft/inactive. Protect with signature validation before activation."
     },
     {
-      "id": "validate",
-      "name": "Validate Draft Request",
+      "id": "capture",
+      "name": "Capture And Validate CP Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -29,9 +29,9 @@
         0
       ],
       "parameters": {
-        "jsCode": "const body = $json.body ?? $json;\nreturn [{\n  json: {\n    accepted: true,\n    workflow_type: \"content_generation\",\n    active: false,\n    draft: true,\n    external_calls_made: false,\n    next_setup: \"Add credentials, signature validation, real processing nodes, and signed platform callback before activation.\",\n    received_job_id: body.job_id ?? null,\n    received_correlation_id: body.correlation_id ?? null\n  }\n}];"
+        "jsCode": "const body = $json.body ?? $json;\nif (!body.job_id || !body.correlation_id || !body.callback_url) {\n  throw new Error(\"Missing job_id, correlation_id, or callback_url from CP request\");\n}\nreturn [{\n  json: {\n    cp: body,\n    accepted: true,\n    workflow_type: \"content_generation\",\n    draft: false,\n    stage: \"request_accepted\",\n    received_job_id: body.job_id,\n    received_correlation_id: body.correlation_id\n  }\n}];"
       },
-      "notes": "Draft code placeholder. No credentials or external calls."
+      "notes": "Validates the CP request and preserves the original payload for post-response processing."
     },
     {
       "id": "respond",
@@ -49,8 +49,8 @@
       "notes": "Returns a safe acknowledgement or dry-run result."
     },
     {
-      "id": "prepare-callback",
-      "name": "Prepare Signed Mock Callback",
+      "id": "evidence",
+      "name": "Build Approved Evidence And Prompt",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -58,9 +58,51 @@
         0
       ],
       "parameters": {
-        "jsCode": "const body = $json.body ?? $json;\nconst secret = $env.PLATFORM_CALLBACK_SECRET;\n\nif (!secret) {\n  throw new Error(\"Missing PLATFORM_CALLBACK_SECRET in n8n environment\");\n}\nif (!body.job_id || !body.correlation_id || !body.callback_url) {\n  throw new Error(\"Missing job_id, correlation_id, or callback_url from CP request\");\n}\n\nconst timestamp = new Date().toISOString();\nconst nonce = \"n8n_\" + Date.now() + \"_\" + Math.random().toString(36).slice(2);\nconst callbackBody = {\n  job_id: body.job_id,\n  correlation_id: body.correlation_id,\n  idempotency_key: body.idempotency_key,\n  workflow_type: body.workflow_type ?? \"content_generation\",\n  workflow_version: body.workflow_version ?? \"mock-v1\",\n  status: \"completed\",\n  current_step: \"Mock n8n callback completed\",\n  nonce,\n  signature_timestamp: timestamp,\n  signature: \"\",\n  outputs: {\n    headline: \"Mock Content Test\",\n    caption: \"This is a CP to n8n to CP callback connection test only.\",\n    cta: \"Request a Quote\",\n    hashtags: [\"#FutureOils\", \"#ConnectionTest\"],\n    warnings: [\"No AI, Magnific, Meta, email, or publishing service was called.\"]\n  },\n  files: [],\n  warnings: [\"Connection test only.\"]\n};\nconst raw = JSON.stringify(callbackBody);\nconst encoder = new TextEncoder();\nconst key = await globalThis.crypto.subtle.importKey(\n  \"raw\",\n  encoder.encode(secret),\n  { name: \"HMAC\", hash: \"SHA-256\" },\n  false,\n  [\"sign\"]\n);\nconst signatureBuffer = await globalThis.crypto.subtle.sign(\n  \"HMAC\",\n  key,\n  encoder.encode(timestamp + \".\" + nonce + \".\" + raw)\n);\nconst signature = Array.from(new Uint8Array(signatureBuffer)).map((byte) => byte.toString(16).padStart(2, \"0\")).join(\"\");\n\nreturn [{\n  json: {\n    callback_url: body.callback_url,\n    callback_headers: { signature, timestamp, nonce },\n    callback_body: callbackBody\n  }\n}];"
+        "jsCode": "const cp = $json.cp ?? $json.body ?? $json;\nconst payload = cp.payload ?? {};\n\nconst evidence = [\n  {\n    claim: \"Future Oils is the edible-oils brand used for this content stream.\",\n    source_file: \"Projects/Marketing/content/evidence-ledger.md\",\n    source_section: \"Week 1 approved claims\",\n    public_use: true\n  },\n  {\n    claim: \"Approved public packaging range: 1L, 2L, 4L, 5L, 10L, 18L, 20L, and Flexitank.\",\n    source_file: \"Projects/Marketing/content/evidence-ledger.md\",\n    source_section: \"Packaging range\",\n    public_use: true\n  },\n  {\n    claim: \"Future Oils public social content must stay focused on edible oils only.\",\n    source_file: \"Projects/Marketing/content/phase-1-content-system.md\",\n    source_section: \"Content governance\",\n    public_use: true\n  },\n  {\n    claim: \"CTA channels approved for public content include quote/LOI form, WhatsApp, and info@future4site.com.\",\n    source_file: \"Projects/Marketing/content/evidence-ledger.md\",\n    source_section: \"Approved CTA details\",\n    public_use: true\n  }\n];\n\nconst prohibited = [\n  \"prices\",\n  \"100% pure as a technical guarantee\",\n  \"trans fat free\",\n  \"health or nutrition claims\",\n  \"shipping or delivery guarantees\",\n  \"availability or stock guarantees\",\n  \"certification badges or unsupported certification claims\",\n  \"supplier names or supplier details\",\n  \"sugar or metals\",\n  \"3L or 17L packaging\"\n];\n\nconst prompt = [\n  \"Create English-only B2B social media copy for Future Oils.\",\n  \"Return JSON only with fields: headline, caption, cta, hashtags, evidence_references, warnings.\",\n  \"Use only the approved evidence provided.\",\n  \"Do not invent prices, availability, guarantees, origins, shipping terms, certifications, nutrition, or health claims.\",\n  \"Do not mention sugar, metals, suppliers, 3L, or 17L.\",\n  \"Keep the tone premium, direct, and suitable for importers/distributors.\",\n  \"\",\n  \"CONTENT REQUEST:\",\n  JSON.stringify(payload, null, 2),\n  \"\",\n  \"APPROVED EVIDENCE:\",\n  JSON.stringify(evidence, null, 2),\n  \"\",\n  \"PROHIBITED CLAIMS:\",\n  JSON.stringify(prohibited, null, 2)\n].join(\"\\n\");\n\nreturn [{ json: { cp, payload, evidence, prohibited, prompt } }];"
       },
-      "notes": "Builds a signed mock completion callback after the webhook response is sent to CP."
+      "notes": "Builds approved evidence, restrictions, and a strict JSON-only prompt."
+    },
+    {
+      "id": "generate",
+      "name": "Generate Text Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const item = $json;\nconst payload = item.payload ?? {};\nconst evidence = item.evidence ?? [];\n\nfunction fallbackOutput(reason) {\n  const topic = String(payload.topic || \"Future Oils B2B inquiry\").slice(0, 120);\n  const product = payload.product ? String(payload.product) : \"edible oils\";\n  return {\n    headline: topic.length > 4 ? topic : \"Future Oils for B2B Buyers\",\n    caption: [\n      \"Future Oils supports B2B enquiries for \" + product + \".\",\n      \"Share your request through the official inquiry process so the team can review product, format, market, and contact details.\",\n      \"Approved formats: 1L, 2L, 4L, 5L, 10L, 18L, 20L, and Flexitank.\",\n      \"Request a Quote\"\n    ].join(\"\\n\\n\"),\n    cta: payload.cta || \"Request a Quote\",\n    hashtags: [\"#FutureOils\", \"#EdibleOils\", \"#B2BTrade\"],\n    evidence_references: evidence.map((entry) => ({\n      source_file: entry.source_file,\n      source_section: entry.source_section\n    })),\n    warnings: [reason]\n  };\n}\n\nasync function callLlm() {\n  const token = $env.LLM_TOKEN;\n  if (!token) return fallbackOutput(\"LLM_TOKEN not configured in n8n; deterministic safe draft returned.\");\n\n  const endpoint = $env.LLM_BASE_URL || \"https://api.openai.com/v1/chat/completions\";\n  const model = $env.LLM_MODEL || \"gpt-4o-mini\";\n  const response = await fetch(endpoint, {\n    method: \"POST\",\n    headers: {\n      \"content-type\": \"application/json\",\n      authorization: \"Bearer \" + token\n    },\n    body: JSON.stringify({\n      model,\n      temperature: 0.4,\n      response_format: { type: \"json_object\" },\n      messages: [\n        {\n          role: \"system\",\n          content: \"You are a cautious B2B marketing copy assistant. Return valid JSON only. Never invent unsupported commercial, technical, health, shipping, availability, supplier, or certification claims.\"\n        },\n        {\n          role: \"user\",\n          content: item.prompt\n        }\n      ]\n    })\n  });\n\n  if (!response.ok) {\n    const text = await response.text().catch(() => \"\");\n    return fallbackOutput(\"LLM request failed: \" + response.status + \" \" + response.statusText + (text ? \" - \" + text.slice(0, 160) : \"\"));\n  }\n\n  const data = await response.json();\n  const content = data.choices?.[0]?.message?.content;\n  if (!content) return fallbackOutput(\"LLM returned no content.\");\n\n  try {\n    const fence = String.fromCharCode(96, 96, 96);\n    let cleaned = String(content).trim();\n    if (cleaned.startsWith(fence)) {\n      cleaned = cleaned\n        .replace(new RegExp(\"^\" + fence + \"[a-zA-Z]*\\\\s*\"), \"\")\n        .replace(new RegExp(fence + \"$\"), \"\")\n        .trim();\n    }\n    return JSON.parse(cleaned);\n  } catch (error) {\n    return fallbackOutput(\"LLM returned invalid JSON; deterministic safe draft returned.\");\n  }\n}\n\nconst output = await callLlm();\nreturn [{ json: { ...item, generated_output: output } }];"
+      },
+      "notes": "Calls an OpenAI-compatible LLM if LLM_TOKEN is configured; otherwise returns a safe deterministic draft."
+    },
+    {
+      "id": "validate-output",
+      "name": "Validate And Sanitize Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const item = $json;\nconst payload = item.payload ?? {};\nconst evidence = item.evidence ?? [];\nlet output = item.generated_output ?? {};\nconst warnings = Array.isArray(output.warnings) ? [...output.warnings] : [];\n\nfunction fallbackOutput(reason) {\n  warnings.push(reason);\n  return {\n    headline: String(payload.topic || \"Future Oils for B2B Buyers\").slice(0, 120),\n    caption: [\n      \"Future Oils supports B2B enquiries for edible oils.\",\n      \"Share your request through the official inquiry process so the team can review product, format, market, and contact details.\",\n      \"Approved formats: 1L, 2L, 4L, 5L, 10L, 18L, 20L, and Flexitank.\",\n      \"Request a Quote\"\n    ].join(\"\\n\\n\"),\n    cta: payload.cta || \"Request a Quote\",\n    hashtags: [\"#FutureOils\", \"#EdibleOils\", \"#B2BTrade\"],\n    evidence_references: evidence.map((entry) => ({\n      source_file: entry.source_file,\n      source_section: entry.source_section\n    })),\n    warnings\n  };\n}\n\nconst joined = [output.headline, output.caption, output.cta, ...(Array.isArray(output.hashtags) ? output.hashtags : [])]\n  .filter(Boolean)\n  .join(\" \")\n  .toLowerCase();\n\nconst blockedPatterns = [\n  { pattern: /100%\\s*pure|trans\\s*fat\\s*free/i, reason: \"Unsupported purity/nutrition claim detected.\" },\n  { pattern: /guaranteed|guarantee|always available|in stock|immediate delivery|fast shipping|delivery within/i, reason: \"Unsupported availability/shipping/commercial guarantee detected.\" },\n  { pattern: /certified|certificate|iso|haccp|halal/i, reason: \"Unsupported certification wording detected.\" },\n  { pattern: /supplier|factory|origin country|manufacturer/i, reason: \"Potential supplier/internal information wording detected.\" },\n  { pattern: /\\b3l\\b|\\b17l\\b/i, reason: \"Unavailable packaging size detected.\" },\n  { pattern: /sugar|metal|metals|aluminium|copper|steel/i, reason: \"Non-edible-oil category detected.\" },\n  { pattern: /\\$|usd|eur|price|payment terms/i, reason: \"Unsupported price or payment wording detected.\" }\n];\n\nconst violations = blockedPatterns.filter((rule) => rule.pattern.test(joined)).map((rule) => rule.reason);\nif (violations.length) {\n  output = fallbackOutput(\"Unsafe generated output replaced. \" + violations.join(\" \"));\n} else {\n  output = {\n    headline: typeof output.headline === \"string\" ? output.headline.slice(0, 160) : \"Future Oils for B2B Buyers\",\n    caption: typeof output.caption === \"string\" ? output.caption : fallbackOutput(\"Missing caption; safe fallback used.\").caption,\n    cta: typeof output.cta === \"string\" ? output.cta.slice(0, 80) : \"Request a Quote\",\n    hashtags: Array.isArray(output.hashtags) ? output.hashtags.filter((tag) => typeof tag === \"string\").slice(0, 8) : [\"#FutureOils\", \"#EdibleOils\", \"#B2BTrade\"],\n    evidence_references: Array.isArray(output.evidence_references) ? output.evidence_references : evidence.map((entry) => ({ source_file: entry.source_file, source_section: entry.source_section })),\n    warnings\n  };\n}\n\nconst status = output.warnings?.length ? \"completed_with_warnings\" : \"completed\";\nreturn [{ json: { ...item, safe_output: output, callback_status: status } }];"
+      },
+      "notes": "Validates LLM output against hard safety rules and replaces unsafe text with a safe fallback."
+    },
+    {
+      "id": "prepare-callback",
+      "name": "Prepare Signed Content Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const item = $json;\nconst body = item.cp ?? {};\nconst secret = $env.PLATFORM_CALLBACK_SECRET;\n\nif (!secret) {\n  throw new Error(\"Missing PLATFORM_CALLBACK_SECRET in n8n environment\");\n}\nif (!body.job_id || !body.correlation_id || !body.callback_url) {\n  throw new Error(\"Missing job_id, correlation_id, or callback_url from CP request\");\n}\n\nconst timestamp = new Date().toISOString();\nconst nonce = \"n8n_\" + Date.now() + \"_\" + Math.random().toString(36).slice(2);\nconst callbackBody = {\n  job_id: body.job_id,\n  correlation_id: body.correlation_id,\n  idempotency_key: body.idempotency_key,\n  workflow_type: body.workflow_type ?? \"content_generation\",\n  workflow_version: body.workflow_version ?? \"mock-v1\",\n  status: item.callback_status ?? \"completed\",\n  current_step: \"Real text generation completed\",\n  nonce,\n  signature_timestamp: timestamp,\n  signature: \"\",\n  outputs: item.safe_output,\n  files: [],\n  warnings: item.safe_output?.warnings ?? []\n};\nconst raw = JSON.stringify(callbackBody);\nconst encoder = new TextEncoder();\nconst key = await globalThis.crypto.subtle.importKey(\n  \"raw\",\n  encoder.encode(secret),\n  { name: \"HMAC\", hash: \"SHA-256\" },\n  false,\n  [\"sign\"]\n);\nconst signatureBuffer = await globalThis.crypto.subtle.sign(\n  \"HMAC\",\n  key,\n  encoder.encode(timestamp + \".\" + nonce + \".\" + raw)\n);\nconst signature = Array.from(new Uint8Array(signatureBuffer)).map((byte) => byte.toString(16).padStart(2, \"0\")).join(\"\");\n\nreturn [{\n  json: {\n    callback_url: body.callback_url,\n    callback_headers: { signature, timestamp, nonce },\n    callback_body: callbackBody\n  }\n}];"
+      },
+      "notes": "Builds a signed content-generation callback after text generation and validation."
     },
     {
       "id": "send-callback",
@@ -68,7 +110,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [
-        1040,
+        1820,
         0
       ],
       "parameters": {
@@ -108,14 +150,14 @@
       "main": [
         [
           {
-            "node": "Validate Draft Request",
+            "node": "Capture And Validate CP Request",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Validate Draft Request": {
+    "Capture And Validate CP Request": {
       "main": [
         [
           {
@@ -130,14 +172,47 @@
       "main": [
         [
           {
-            "node": "Prepare Signed Mock Callback",
+            "node": "Build Approved Evidence And Prompt",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Prepare Signed Mock Callback": {
+    "Build Approved Evidence And Prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate Text Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Text Output": {
+      "main": [
+        [
+          {
+            "node": "Validate And Sanitize Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate And Sanitize Output": {
+      "main": [
+        [
+          {
+            "node": "Prepare Signed Content Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Signed Content Callback": {
       "main": [
         [
           {

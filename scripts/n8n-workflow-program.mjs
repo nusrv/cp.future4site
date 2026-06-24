@@ -134,10 +134,232 @@ workflow(
   "FF Admin - Content Request Intake - Draft",
   [
     webhookNode("content-webhook", "Platform Content Request Webhook", "future-foresight/content-generation"),
-    codeNode("validate", "Validate Draft Request", ack("content_generation")),
-    respondNode(),
-    codeNode("prepare-callback", "Prepare Signed Mock Callback", `
+    codeNode("capture", "Capture And Validate CP Request", `
 const body = $json.body ?? $json;
+if (!body.job_id || !body.correlation_id || !body.callback_url) {
+  throw new Error("Missing job_id, correlation_id, or callback_url from CP request");
+}
+return [{
+  json: {
+    cp: body,
+    accepted: true,
+    workflow_type: "content_generation",
+    draft: false,
+    stage: "request_accepted",
+    received_job_id: body.job_id,
+    received_correlation_id: body.correlation_id
+  }
+}];
+`.trim(), [260, 0], "Validates the CP request and preserves the original payload for post-response processing."),
+    respondNode(),
+    codeNode("evidence", "Build Approved Evidence And Prompt", `
+const cp = $json.cp ?? $json.body ?? $json;
+const payload = cp.payload ?? {};
+
+const evidence = [
+  {
+    claim: "Future Oils is the edible-oils brand used for this content stream.",
+    source_file: "Projects/Marketing/content/evidence-ledger.md",
+    source_section: "Week 1 approved claims",
+    public_use: true
+  },
+  {
+    claim: "Approved public packaging range: 1L, 2L, 4L, 5L, 10L, 18L, 20L, and Flexitank.",
+    source_file: "Projects/Marketing/content/evidence-ledger.md",
+    source_section: "Packaging range",
+    public_use: true
+  },
+  {
+    claim: "Future Oils public social content must stay focused on edible oils only.",
+    source_file: "Projects/Marketing/content/phase-1-content-system.md",
+    source_section: "Content governance",
+    public_use: true
+  },
+  {
+    claim: "CTA channels approved for public content include quote/LOI form, WhatsApp, and info@future4site.com.",
+    source_file: "Projects/Marketing/content/evidence-ledger.md",
+    source_section: "Approved CTA details",
+    public_use: true
+  }
+];
+
+const prohibited = [
+  "prices",
+  "100% pure as a technical guarantee",
+  "trans fat free",
+  "health or nutrition claims",
+  "shipping or delivery guarantees",
+  "availability or stock guarantees",
+  "certification badges or unsupported certification claims",
+  "supplier names or supplier details",
+  "sugar or metals",
+  "3L or 17L packaging"
+];
+
+const prompt = [
+  "Create English-only B2B social media copy for Future Oils.",
+  "Return JSON only with fields: headline, caption, cta, hashtags, evidence_references, warnings.",
+  "Use only the approved evidence provided.",
+  "Do not invent prices, availability, guarantees, origins, shipping terms, certifications, nutrition, or health claims.",
+  "Do not mention sugar, metals, suppliers, 3L, or 17L.",
+  "Keep the tone premium, direct, and suitable for importers/distributors.",
+  "",
+  "CONTENT REQUEST:",
+  JSON.stringify(payload, null, 2),
+  "",
+  "APPROVED EVIDENCE:",
+  JSON.stringify(evidence, null, 2),
+  "",
+  "PROHIBITED CLAIMS:",
+  JSON.stringify(prohibited, null, 2)
+].join("\\n");
+
+return [{ json: { cp, payload, evidence, prohibited, prompt } }];
+`.trim(), [780, 0], "Builds approved evidence, restrictions, and a strict JSON-only prompt."),
+    codeNode("generate", "Generate Text Output", `
+const item = $json;
+const payload = item.payload ?? {};
+const evidence = item.evidence ?? [];
+
+function fallbackOutput(reason) {
+  const topic = String(payload.topic || "Future Oils B2B inquiry").slice(0, 120);
+  const product = payload.product ? String(payload.product) : "edible oils";
+  return {
+    headline: topic.length > 4 ? topic : "Future Oils for B2B Buyers",
+    caption: [
+      "Future Oils supports B2B enquiries for " + product + ".",
+      "Share your request through the official inquiry process so the team can review product, format, market, and contact details.",
+      "Approved formats: 1L, 2L, 4L, 5L, 10L, 18L, 20L, and Flexitank.",
+      "Request a Quote"
+    ].join("\\n\\n"),
+    cta: payload.cta || "Request a Quote",
+    hashtags: ["#FutureOils", "#EdibleOils", "#B2BTrade"],
+    evidence_references: evidence.map((entry) => ({
+      source_file: entry.source_file,
+      source_section: entry.source_section
+    })),
+    warnings: [reason]
+  };
+}
+
+async function callLlm() {
+  const token = $env.LLM_TOKEN;
+  if (!token) return fallbackOutput("LLM_TOKEN not configured in n8n; deterministic safe draft returned.");
+
+  const endpoint = $env.LLM_BASE_URL || "https://api.openai.com/v1/chat/completions";
+  const model = $env.LLM_MODEL || "gpt-4o-mini";
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: "Bearer " + token
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.4,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: "You are a cautious B2B marketing copy assistant. Return valid JSON only. Never invent unsupported commercial, technical, health, shipping, availability, supplier, or certification claims."
+        },
+        {
+          role: "user",
+          content: item.prompt
+        }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    return fallbackOutput("LLM request failed: " + response.status + " " + response.statusText + (text ? " - " + text.slice(0, 160) : ""));
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) return fallbackOutput("LLM returned no content.");
+
+  try {
+    const fence = String.fromCharCode(96, 96, 96);
+    let cleaned = String(content).trim();
+    if (cleaned.startsWith(fence)) {
+      cleaned = cleaned
+        .replace(new RegExp("^" + fence + "[a-zA-Z]*\\\\s*"), "")
+        .replace(new RegExp(fence + "$"), "")
+        .trim();
+    }
+    return JSON.parse(cleaned);
+  } catch (error) {
+    return fallbackOutput("LLM returned invalid JSON; deterministic safe draft returned.");
+  }
+}
+
+const output = await callLlm();
+return [{ json: { ...item, generated_output: output } }];
+`.trim(), [1040, 0], "Calls an OpenAI-compatible LLM if LLM_TOKEN is configured; otherwise returns a safe deterministic draft."),
+    codeNode("validate-output", "Validate And Sanitize Output", `
+const item = $json;
+const payload = item.payload ?? {};
+const evidence = item.evidence ?? [];
+let output = item.generated_output ?? {};
+const warnings = Array.isArray(output.warnings) ? [...output.warnings] : [];
+
+function fallbackOutput(reason) {
+  warnings.push(reason);
+  return {
+    headline: String(payload.topic || "Future Oils for B2B Buyers").slice(0, 120),
+    caption: [
+      "Future Oils supports B2B enquiries for edible oils.",
+      "Share your request through the official inquiry process so the team can review product, format, market, and contact details.",
+      "Approved formats: 1L, 2L, 4L, 5L, 10L, 18L, 20L, and Flexitank.",
+      "Request a Quote"
+    ].join("\\n\\n"),
+    cta: payload.cta || "Request a Quote",
+    hashtags: ["#FutureOils", "#EdibleOils", "#B2BTrade"],
+    evidence_references: evidence.map((entry) => ({
+      source_file: entry.source_file,
+      source_section: entry.source_section
+    })),
+    warnings
+  };
+}
+
+const joined = [output.headline, output.caption, output.cta, ...(Array.isArray(output.hashtags) ? output.hashtags : [])]
+  .filter(Boolean)
+  .join(" ")
+  .toLowerCase();
+
+const blockedPatterns = [
+  { pattern: /100%\\s*pure|trans\\s*fat\\s*free/i, reason: "Unsupported purity/nutrition claim detected." },
+  { pattern: /guaranteed|guarantee|always available|in stock|immediate delivery|fast shipping|delivery within/i, reason: "Unsupported availability/shipping/commercial guarantee detected." },
+  { pattern: /certified|certificate|iso|haccp|halal/i, reason: "Unsupported certification wording detected." },
+  { pattern: /supplier|factory|origin country|manufacturer/i, reason: "Potential supplier/internal information wording detected." },
+  { pattern: /\\b3l\\b|\\b17l\\b/i, reason: "Unavailable packaging size detected." },
+  { pattern: /sugar|metal|metals|aluminium|copper|steel/i, reason: "Non-edible-oil category detected." },
+  { pattern: /\\$|usd|eur|price|payment terms/i, reason: "Unsupported price or payment wording detected." }
+];
+
+const violations = blockedPatterns.filter((rule) => rule.pattern.test(joined)).map((rule) => rule.reason);
+if (violations.length) {
+  output = fallbackOutput("Unsafe generated output replaced. " + violations.join(" "));
+} else {
+  output = {
+    headline: typeof output.headline === "string" ? output.headline.slice(0, 160) : "Future Oils for B2B Buyers",
+    caption: typeof output.caption === "string" ? output.caption : fallbackOutput("Missing caption; safe fallback used.").caption,
+    cta: typeof output.cta === "string" ? output.cta.slice(0, 80) : "Request a Quote",
+    hashtags: Array.isArray(output.hashtags) ? output.hashtags.filter((tag) => typeof tag === "string").slice(0, 8) : ["#FutureOils", "#EdibleOils", "#B2BTrade"],
+    evidence_references: Array.isArray(output.evidence_references) ? output.evidence_references : evidence.map((entry) => ({ source_file: entry.source_file, source_section: entry.source_section })),
+    warnings
+  };
+}
+
+const status = output.warnings?.length ? "completed_with_warnings" : "completed";
+return [{ json: { ...item, safe_output: output, callback_status: status } }];
+`.trim(), [1300, 0], "Validates LLM output against hard safety rules and replaces unsafe text with a safe fallback."),
+    codeNode("prepare-callback", "Prepare Signed Content Callback", `
+const item = $json;
+const body = item.cp ?? {};
 const secret = $env.PLATFORM_CALLBACK_SECRET;
 
 if (!secret) {
@@ -155,20 +377,14 @@ const callbackBody = {
   idempotency_key: body.idempotency_key,
   workflow_type: body.workflow_type ?? "content_generation",
   workflow_version: body.workflow_version ?? "mock-v1",
-  status: "completed",
-  current_step: "Mock n8n callback completed",
+  status: item.callback_status ?? "completed",
+  current_step: "Real text generation completed",
   nonce,
   signature_timestamp: timestamp,
   signature: "",
-  outputs: {
-    headline: "Mock Content Test",
-    caption: "This is a CP to n8n to CP callback connection test only.",
-    cta: "Request a Quote",
-    hashtags: ["#FutureOils", "#ConnectionTest"],
-    warnings: ["No AI, Magnific, Meta, email, or publishing service was called."]
-  },
+  outputs: item.safe_output,
   files: [],
-  warnings: ["Connection test only."]
+  warnings: item.safe_output?.warnings ?? []
 };
 const raw = JSON.stringify(callbackBody);
 const encoder = new TextEncoder();
@@ -193,14 +409,17 @@ return [{
     callback_body: callbackBody
   }
 }];
-`.trim(), [780, 0], "Builds a signed mock completion callback after the webhook response is sent to CP."),
-    callbackHttpNode("send-callback", [1040, 0])
+`.trim(), [1560, 0], "Builds a signed content-generation callback after text generation and validation."),
+    callbackHttpNode("send-callback", [1820, 0])
   ],
   {
-    "Platform Content Request Webhook": { main: [[{ node: "Validate Draft Request", type: "main", index: 0 }]] },
-    "Validate Draft Request": { main: [[{ node: "Respond To Platform", type: "main", index: 0 }]] },
-    "Respond To Platform": { main: [[{ node: "Prepare Signed Mock Callback", type: "main", index: 0 }]] },
-    "Prepare Signed Mock Callback": { main: [[{ node: "Send Signed Callback To CP", type: "main", index: 0 }]] }
+    "Platform Content Request Webhook": { main: [[{ node: "Capture And Validate CP Request", type: "main", index: 0 }]] },
+    "Capture And Validate CP Request": { main: [[{ node: "Respond To Platform", type: "main", index: 0 }]] },
+    "Respond To Platform": { main: [[{ node: "Build Approved Evidence And Prompt", type: "main", index: 0 }]] },
+    "Build Approved Evidence And Prompt": { main: [[{ node: "Generate Text Output", type: "main", index: 0 }]] },
+    "Generate Text Output": { main: [[{ node: "Validate And Sanitize Output", type: "main", index: 0 }]] },
+    "Validate And Sanitize Output": { main: [[{ node: "Prepare Signed Content Callback", type: "main", index: 0 }]] },
+    "Prepare Signed Content Callback": { main: [[{ node: "Send Signed Callback To CP", type: "main", index: 0 }]] }
   },
   ["marketing", "webhook"]
 );
