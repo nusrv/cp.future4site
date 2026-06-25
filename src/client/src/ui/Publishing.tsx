@@ -14,7 +14,8 @@ export function Publishing() {
         {approved.length === 0 ? <div className="panel p-6">No content is approved for publication.</div> : null}
         {approved.map((req: any) => <article className="panel p-5" key={req.id}>
           <h2 className="text-xl font-black">{req.topic}</h2>
-          <p className="text-sm text-[var(--text-muted)] mt-1">{req.items[0].caption}</p>
+          <p className="text-sm text-[var(--text-muted)] mt-1 whitespace-pre-line leading-6">{req.items[0].caption}</p>
+          {req.items[0].hashtags ? <p className="mt-2 text-xs font-bold text-[var(--olive)]">{req.items[0].hashtags}</p> : null}
           <div className="mt-4 flex flex-wrap gap-2">
             <button className="btn btn-secondary" onClick={() => publish.mutate({ id: req.items[0].id, platforms: ["facebook"], dryRun: true })}>Dry-run Facebook</button>
             <button className="btn btn-secondary" onClick={() => publish.mutate({ id: req.items[0].id, platforms: ["instagram"], dryRun: true })}>Dry-run Instagram</button>

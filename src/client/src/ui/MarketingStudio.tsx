@@ -57,7 +57,8 @@ export function MarketingStudio() {
               {req.items?.[0] ? <div className="card mt-4">
                 <div className="badge badge-mock">Mock generation preview</div>
                 <h3 className="font-black mt-3">{req.items[0].headline}</h3>
-                <p className="mt-2 text-sm">{req.items[0].caption}</p>
+                <p className="mt-2 whitespace-pre-line text-sm leading-6">{req.items[0].caption}</p>
+                {req.items[0].hashtags ? <p className="mt-3 text-xs font-bold text-[var(--olive)]">{req.items[0].hashtags}</p> : null}
                 <div className="mt-3 text-sm text-[var(--text-muted)]">CTA: {req.items[0].cta}</div>
               </div> : <div className="card mt-4 text-[var(--text-muted)]">No generated output yet.</div>}
               <div className="mt-4 flex flex-wrap gap-2">
