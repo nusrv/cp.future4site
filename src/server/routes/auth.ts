@@ -139,6 +139,29 @@ export async function authRoutes(app: FastifyInstance) {
     await audit({ actorUserId: current.user.id, action: "admin.password_reset", entityType: "user", entityId: params.id, summary: "Administrator reset user password" });
     return { ok: true };
   });
+
+  app.delete("/api/admin/users/:id", { preHandler: requirePermission("admin.users.manage") }, async (request, reply) => {
+    const current = request.currentUser!;
+    const params = z.object({ id: z.string() }).parse(request.params);
+    if (params.id === current.user.id) {
+      reply.code(400);
+      return { error: "You cannot delete your own user account" };
+    }
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: params.id }, include: { roles: { include: { role: true } } } });
+    const ownerAdminCount = await prisma.user.count({
+      where: {
+        status: "ACTIVE",
+        roles: { some: { role: { key: "OWNER_ADMIN" } } }
+      }
+    });
+    if (user.status === "ACTIVE" && user.roles.some((roleLink) => roleLink.role.key === "OWNER_ADMIN") && ownerAdminCount <= 1) {
+      reply.code(400);
+      return { error: "Cannot delete the last active owner administrator" };
+    }
+    await prisma.user.delete({ where: { id: params.id } });
+    await audit({ actorUserId: current.user.id, action: "admin.user_deleted", entityType: "user", entityId: params.id, summary: `Deleted user ${user.username}` });
+    return { ok: true };
+  });
 }
 
 function serializeUser(user: any, roleKeys?: string[], permissions?: string[]) {

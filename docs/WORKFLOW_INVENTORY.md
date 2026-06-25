@@ -9,6 +9,8 @@ All workflow exports in `workflows/n8n/` are draft, inactive, and sanitized.
 | lead-intake-live | Live outside this repo; reference only | No |
 | content-generation-platform-intake | Draft | Yes |
 | content-result-callback | Draft | Yes |
+| creative-image-generation | Planned draft connection from CP approval | Yes |
+| creative-video-generation | Planned draft connection from CP approval | Yes |
 | publication-dry-run | Draft | Yes |
 | facebook-instagram-publishing | Draft | Later |
 | lead-normalization | Draft | Later |

@@ -49,6 +49,8 @@ Use these paths in `.env` and n8n:
 - `N8N_WEBHOOK_BASE_PATH=webhook-test` for n8n test webhooks
 - `N8N_WEBHOOK_BASE_PATH=webhook` for active production webhooks
 - Content generation: `future-foresight/content-generation`
+- Creative image generation: `future-foresight/creative-image-generation`
+- Creative video generation: `future-foresight/creative-video-generation`
 - Publishing dry-run: `future-foresight/publish-dry-run`
 - Lead intake: `future-foresight/lead-intake`
 - Lead routing: `future-foresight/lead-routing`
@@ -68,6 +70,8 @@ configure:
 N8N_BASE_URL=https://wap.nusrv.com
 N8N_WEBHOOK_BASE_PATH=webhook-test
 N8N_CONTENT_WEBHOOK_PATH=future-foresight/content-generation
+N8N_CREATIVE_IMAGE_WEBHOOK_PATH=future-foresight/creative-image-generation
+N8N_CREATIVE_VIDEO_WEBHOOK_PATH=future-foresight/creative-video-generation
 ```
 
 ## Credentials To Add In n8n Later

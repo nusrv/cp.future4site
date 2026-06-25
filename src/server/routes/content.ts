@@ -129,8 +129,12 @@ export async function contentRoutes(app: FastifyInstance) {
         decidedAt: new Date()
       }
     });
+    let creativeJob = null;
+    if (input.decision === "approved_publication") {
+      creativeJob = await requestCreativeProduction(updated.id, current.user.id);
+    }
     await audit({ actorUserId: current.user.id, action: `content.${input.decision}`, entityType: "content_request", entityId: params.id, summary: `Content review: ${input.decision}` });
-    return { request: updated };
+    return { request: updated, creativeJob };
   });
 
   app.post("/api/content/items/:id/publish", { preHandler: requirePermission("publishing.request") }, async (request) => {
@@ -176,4 +180,66 @@ export async function contentRoutes(app: FastifyInstance) {
     await audit({ actorUserId: current.user.id, action: "publishing.requested", entityType: "content_item", entityId: item.id, summary: `Publishing requested for ${input.platforms.join(", ")}` });
     return { records };
   });
+}
+
+async function requestCreativeProduction(contentRequestId: string, requestedByUserId: string) {
+  const content = await prisma.contentRequest.findUniqueOrThrow({
+    where: { id: contentRequestId },
+    include: { items: { orderBy: { version: "desc" }, take: 1 }, assets: true }
+  });
+  const latestItem = content.items[0];
+  const creativeType = getCreativeWorkflowType(content.format);
+  if (!creativeType) return null;
+
+  const workflowName = creativeType === "creative_video_generation"
+    ? config.N8N_CREATIVE_VIDEO_WEBHOOK_PATH
+    : config.N8N_CREATIVE_IMAGE_WEBHOOK_PATH;
+  const job = await createAutomationJob({
+    jobType: creativeType,
+    title: `${creativeType === "creative_video_generation" ? "Generate video" : "Generate image"}: ${content.topic.slice(0, 80)}`,
+    workflowName,
+    relatedEntityType: "content_request",
+    relatedEntityId: content.id,
+    contentRequestId: content.id,
+    requestedByUserId,
+    idempotencyKey: `creative:${creativeType}:${content.id}`,
+    inputPayload: {
+      content_request_id: content.id,
+      content_item_id: latestItem?.id ?? null,
+      format: content.format,
+      brand: content.brand,
+      business_line: content.businessLine,
+      product: content.product,
+      market: content.market,
+      audience: content.audience,
+      objective: content.objective,
+      channel: content.channel,
+      requested_publishing_channels: content.requestedPublishingChannels,
+      headline: latestItem?.headline ?? null,
+      caption: latestItem?.caption ?? null,
+      cta: latestItem?.cta ?? content.cta ?? null,
+      hashtags: latestItem?.hashtags ?? null,
+      approval_status: "approved_publication",
+      human_review_required: true
+    }
+  });
+
+  try {
+    await dispatchJob(job.id);
+  } catch (error) {
+    await audit({
+      actorUserId: requestedByUserId,
+      action: "content.creative_workflow_dispatch_failed",
+      entityType: "content_request",
+      entityId: content.id,
+      summary: error instanceof Error ? error.message : "Creative workflow dispatch failed"
+    });
+  }
+  return prisma.automationJob.findUnique({ where: { id: job.id } });
+}
+
+function getCreativeWorkflowType(format: string) {
+  if (format === "text_video") return "creative_video_generation";
+  if (format === "text_image" || format === "carousel") return "creative_image_generation";
+  return null;
 }

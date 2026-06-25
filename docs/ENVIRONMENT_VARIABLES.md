@@ -14,6 +14,8 @@ Use `.env.example` as the contract. Do not commit real `.env` files.
 - `N8N_BASE_URL`
 - `N8N_WEBHOOK_SECRET`
 - `N8N_CONTENT_WEBHOOK_PATH`
+- `N8N_CREATIVE_IMAGE_WEBHOOK_PATH`
+- `N8N_CREATIVE_VIDEO_WEBHOOK_PATH`
 - `N8N_PUBLISH_WEBHOOK_PATH`
 
 ## Required For Production Publishing

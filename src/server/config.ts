@@ -13,6 +13,8 @@ const envSchema = z.object({
   N8N_BASE_URL: z.string().optional().default(""),
   N8N_WEBHOOK_BASE_PATH: z.string().optional().default("webhook"),
   N8N_CONTENT_WEBHOOK_PATH: z.string().optional().default("future-foresight/content-generation"),
+  N8N_CREATIVE_IMAGE_WEBHOOK_PATH: z.string().optional().default("future-foresight/creative-image-generation"),
+  N8N_CREATIVE_VIDEO_WEBHOOK_PATH: z.string().optional().default("future-foresight/creative-video-generation"),
   N8N_PUBLISH_WEBHOOK_PATH: z.string().optional().default("future-foresight/publish-dry-run"),
   N8N_WEBHOOK_SECRET: z.string().optional().default(""),
   N8N_API_KEY: z.string().optional().default(""),
