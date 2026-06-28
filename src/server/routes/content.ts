@@ -279,7 +279,7 @@ async function requestCreativeProduction(contentRequestId: string, requestedByUs
   if (refreshed?.currentStatus === "COMPLETED") {
     const output = refreshed.outputPayload as Record<string, unknown> | null;
     const files = Array.isArray(output?.files) ? output.files as Record<string, unknown>[] : [];
-    const existing = await prisma.creativeAsset.findFirst({ where: { contentRequestId: content.id, metadata: { path: ["automationJobId"], equals: job.id } } });
+    const existing = await prisma.creativeAsset.findFirst({ where: { contentRequestId: content.id, metadata: { path: "$.automationJobId", equals: job.id } } });
     if (!existing) await prisma.creativeAsset.create({ data: {
       contentRequestId: content.id,
       assetType: creativeType === "creative_video_generation" ? "video" : "image",
