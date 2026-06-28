@@ -83,7 +83,7 @@ export async function automationRoutes(app: FastifyInstance) {
     const newStatus = input.status.toUpperCase() as any;
     const result = await prisma.$transaction(async (tx) => {
       const existingNonce = await tx.automationJobEvent.findFirst({ where: { externalReference: nonce } });
-      if (existingNonce) return { duplicate: true, contentItemId: undefined as string | undefined };
+      if (existingNonce) return { duplicate: true, contentItemId: undefined as string | undefined, creativeAssetId: undefined as string | undefined };
 
       const currentJob = await tx.automationJob.findUniqueOrThrow({ where: { id: input.job_id } });
       await tx.automationJob.update({
@@ -156,10 +156,43 @@ export async function automationRoutes(app: FastifyInstance) {
         }
       }
 
-      return { duplicate: false, contentItemId };
+      let creativeAssetId: string | undefined;
+      if (["creative_image_generation", "creative_video_generation"].includes(currentJob.jobType) && currentJob.contentRequestId) {
+        if (completedContentStatuses.has(input.status)) {
+          const existingMaterialization = await tx.automationJobEvent.findFirst({ where: { jobId: currentJob.id, eventType: "creative_result_materialized" } });
+          if (existingMaterialization) {
+            creativeAssetId = existingMaterialization.externalReference ?? undefined;
+          } else {
+            const outputFiles = Array.isArray((input.outputs as Record<string, unknown> | undefined)?.files)
+              ? (input.outputs as Record<string, unknown>).files as Record<string, unknown>[]
+              : [];
+            const file = input.files?.[0] ?? outputFiles[0];
+            const asset = await tx.creativeAsset.create({ data: {
+              contentRequestId: currentJob.contentRequestId,
+              assetType: currentJob.jobType === "creative_video_generation" ? "video" : "image",
+              status: "ready_for_review",
+              approvalStatus: "not_approved",
+              sourceTool: "n8n",
+              metadata: { automationJobId: currentJob.id, file: file ?? null, output: input.outputs ?? {} } as Prisma.InputJsonValue
+            } });
+            creativeAssetId = asset.id;
+            await tx.contentRequest.update({ where: { id: currentJob.contentRequestId }, data: { status: "APPROVED_INTERNAL" } });
+            await tx.automationJobEvent.create({ data: {
+              jobId: currentJob.id,
+              eventType: "creative_result_materialized",
+              message: "Creative output saved for human review",
+              externalReference: asset.id
+            } });
+          }
+        } else if (input.status === "failed") {
+          await tx.contentRequest.update({ where: { id: currentJob.contentRequestId }, data: { status: "FAILED" } });
+        }
+      }
+
+      return { duplicate: false, contentItemId, creativeAssetId };
     });
 
     if (result.duplicate) return { ok: true, duplicate: true };
-    return { ok: true, content_item_id: result.contentItemId };
+    return { ok: true, content_item_id: result.contentItemId, creative_asset_id: result.creativeAssetId };
   });
 }

@@ -10,11 +10,14 @@ import { contentRequestSchema } from "../../shared/contracts.js";
 export async function contentRoutes(app: FastifyInstance) {
   app.get("/api/content/requests", { preHandler: requirePermission("content.read") }, async () => {
     const requests = await prisma.contentRequest.findMany({
-      include: { items: { orderBy: { version: "desc" }, take: 1 }, assets: true },
+      include: { items: { orderBy: { version: "desc" }, take: 1, include: { publishingRecords: true } }, assets: true },
       orderBy: { createdAt: "desc" },
       take: 100
     });
-    return { requests };
+    const jobs = requests.length ? await prisma.automationJob.findMany({
+      where: { contentRequestId: { in: requests.map((item) => item.id) } }, orderBy: { createdAt: "desc" }
+    }) : [];
+    return { requests: requests.map((item) => ({ ...item, jobs: jobs.filter((job) => job.contentRequestId === item.id) })) };
   });
 
   app.post("/api/content/requests", { preHandler: requirePermission("content.write") }, async (request) => {
@@ -117,7 +120,13 @@ export async function contentRoutes(app: FastifyInstance) {
       revision_requested: "REVISION_REQUESTED",
       archived: "ARCHIVED"
     };
-    const updated = await prisma.contentRequest.update({ where: { id: params.id }, data: { status: statusMap[input.decision] } });
+    const content = await prisma.contentRequest.findUniqueOrThrow({ where: { id: params.id }, include: { items: true } });
+    if (["approved_internal", "approved_publication", "revision_requested"].includes(input.decision) && content.items.length === 0) {
+      throw new Error("Generate copy before reviewing this request");
+    }
+    const requiresCreative = input.decision === "approved_publication" && getCreativeWorkflowType(content.format) !== null;
+    const nextStatus = requiresCreative ? "APPROVED_INTERNAL" : statusMap[input.decision];
+    const updated = await prisma.contentRequest.update({ where: { id: params.id }, data: { status: nextStatus } });
     await prisma.approval.create({
       data: {
         entityType: "content_request",
@@ -130,19 +139,48 @@ export async function contentRoutes(app: FastifyInstance) {
       }
     });
     let creativeJob = null;
-    if (input.decision === "approved_publication") {
+    if (requiresCreative) {
       creativeJob = await requestCreativeProduction(updated.id, current.user.id);
     }
     await audit({ actorUserId: current.user.id, action: `content.${input.decision}`, entityType: "content_request", entityId: params.id, summary: `Content review: ${input.decision}` });
     return { request: updated, creativeJob };
   });
 
+  app.post("/api/content/assets/:id/review", { preHandler: requirePermission("content.review") }, async (request) => {
+    const current = request.currentUser!;
+    const params = z.object({ id: z.string() }).parse(request.params);
+    const input = z.object({ decision: z.enum(["approved", "regenerate", "rejected"]), notes: z.string().optional() }).parse(request.body);
+    const asset = await prisma.creativeAsset.findUniqueOrThrow({ where: { id: params.id } });
+    if (!asset.contentRequestId) throw new Error("Creative asset is not linked to a content request");
+    if (input.decision === "approved") {
+      await prisma.$transaction([
+        prisma.creativeAsset.update({ where: { id: asset.id }, data: { approvalStatus: "approved", status: "approved" } }),
+        prisma.contentRequest.update({ where: { id: asset.contentRequestId }, data: { status: "APPROVED_PUBLICATION" } }),
+        prisma.approval.create({ data: { entityType: "creative_asset", entityId: asset.id, approvalType: "creative", status: "approved", decidedByUserId: current.user.id, decisionNotes: input.notes, decidedAt: new Date() } })
+      ]);
+    } else {
+      await prisma.creativeAsset.update({ where: { id: asset.id }, data: { approvalStatus: input.decision, status: input.decision } });
+      await prisma.contentRequest.update({ where: { id: asset.contentRequestId }, data: { status: input.decision === "rejected" ? "REJECTED" : "APPROVED_INTERNAL" } });
+      if (input.decision === "regenerate") await requestCreativeProduction(asset.contentRequestId, current.user.id);
+    }
+    await audit({ actorUserId: current.user.id, action: `creative.${input.decision}`, entityType: "creative_asset", entityId: asset.id, summary: `Creative review: ${input.decision}` });
+    return { ok: true };
+  });
+
   app.post("/api/content/items/:id/publish", { preHandler: requirePermission("publishing.request") }, async (request) => {
     const current = request.currentUser!;
     const params = z.object({ id: z.string() }).parse(request.params);
     const input = z.object({ platforms: z.array(z.enum(["facebook", "instagram"])).min(1), dryRun: z.boolean().default(true) }).parse(request.body);
-    const item = await prisma.contentItem.findUniqueOrThrow({ where: { id: params.id }, include: { request: true } });
+    const item = await prisma.contentItem.findUniqueOrThrow({ where: { id: params.id }, include: { request: { include: { assets: true } }, publishingRecords: true } });
     if (item.request.status !== "APPROVED_PUBLICATION") throw new Error("Content is not approved for publication");
+    const approvedAsset = item.request.assets.find((asset) => asset.approvalStatus === "approved");
+    if (getCreativeWorkflowType(item.request.format) && !approvedAsset) throw new Error("Approve the required media before publishing");
+    if (item.request.format === "text" && input.platforms.includes("instagram")) throw new Error("Instagram publishing requires an approved image or video");
+    if (!input.dryRun) {
+      const checked = new Set(item.publishingRecords.filter((record) => record.mode === "DRY_RUN").map((record) => record.platform.toLowerCase()));
+      const unchecked = input.platforms.filter((platform) => !checked.has(platform));
+      if (unchecked.length) throw new Error(`Run the publishing check for ${unchecked.join(", ")} first`);
+    }
     const records = [];
     for (const platform of input.platforms) {
       const job = await createAutomationJob({
@@ -158,7 +196,9 @@ export async function contentRoutes(app: FastifyInstance) {
           dryRun: input.dryRun,
           caption: item.caption,
           headline: item.headline,
-          cta: item.cta
+          cta: item.cta,
+          creative_asset_id: approvedAsset?.id ?? null,
+          creative_asset: approvedAsset?.metadata ?? null
         }
       });
       await dispatchJob(job.id);
@@ -202,7 +242,7 @@ async function requestCreativeProduction(contentRequestId: string, requestedByUs
     relatedEntityId: content.id,
     contentRequestId: content.id,
     requestedByUserId,
-    idempotencyKey: `creative:${creativeType}:${content.id}`,
+    idempotencyKey: `creative:${creativeType}:${content.id}:${Date.now()}`,
     inputPayload: {
       content_request_id: content.id,
       content_item_id: latestItem?.id ?? null,
@@ -235,7 +275,21 @@ async function requestCreativeProduction(contentRequestId: string, requestedByUs
       summary: error instanceof Error ? error.message : "Creative workflow dispatch failed"
     });
   }
-  return prisma.automationJob.findUnique({ where: { id: job.id } });
+  const refreshed = await prisma.automationJob.findUnique({ where: { id: job.id } });
+  if (refreshed?.currentStatus === "COMPLETED") {
+    const output = refreshed.outputPayload as Record<string, unknown> | null;
+    const files = Array.isArray(output?.files) ? output.files as Record<string, unknown>[] : [];
+    const existing = await prisma.creativeAsset.findFirst({ where: { contentRequestId: content.id, metadata: { path: ["automationJobId"], equals: job.id } } });
+    if (!existing) await prisma.creativeAsset.create({ data: {
+      contentRequestId: content.id,
+      assetType: creativeType === "creative_video_generation" ? "video" : "image",
+      status: "ready_for_review",
+      approvalStatus: "not_approved",
+      sourceTool: "n8n",
+      metadata: { automationJobId: job.id, file: files[0] ?? null, output } as any
+    } });
+  }
+  return refreshed;
 }
 
 function getCreativeWorkflowType(format: string) {

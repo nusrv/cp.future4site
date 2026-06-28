@@ -67,7 +67,7 @@ function Shell({ user }: { user: NonNullable<MeResponse["user"]> }) {
         </div>
         <nav>
           <NavLink className="nav-link" to="/">Dashboard</NavLink>
-          <NavLink className="nav-link" to="/marketing">Marketing Studio</NavLink>
+          <NavLink className="nav-link" to="/marketing">Content</NavLink>
           <NavLink className="nav-link" to="/publishing">Publishing</NavLink>
           <NavLink className="nav-link" to="/automation">Automation Jobs</NavLink>
           <NavLink className="nav-link" to="/operations">Operations</NavLink>

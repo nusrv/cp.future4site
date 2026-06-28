@@ -1,125 +1,190 @@
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, post } from "../api";
 import { Header } from "./Dashboard";
+import { assetUrl, deriveStage, formatLabel, isProcessing, needsMedia, stageLabel, type ContentRequest, type WorkflowStage } from "../contentWorkflow";
+
+type ContentResponse = { requests: ContentRequest[] };
+type ReviewDecision = "approved_publication" | "revision_requested" | "rejected" | "archived";
+type FilterKey = "all" | "review" | "media" | "ready" | "rejected";
 
 export function MarketingStudio() {
   const qc = useQueryClient();
-  const { data } = useQuery({ queryKey: ["content"], queryFn: () => api<any>("/api/content/requests") });
-  const create = useMutation({ mutationFn: (body: any) => post<any>("/api/content/requests", body), onSuccess: () => qc.invalidateQueries({ queryKey: ["content"] }) });
-  const generate = useMutation({ mutationFn: (id: string) => post(`/api/content/requests/${id}/generate`, {}), onSuccess: () => qc.invalidateQueries({ queryKey: ["content"] }) });
-  const review = useMutation({ mutationFn: ({ id, decision }: any) => post(`/api/content/requests/${id}/review`, { decision }), onSuccess: () => qc.invalidateQueries({ queryKey: ["content"] }) });
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<FilterKey>("all");
+  const [showCreate, setShowCreate] = useState(false);
+  const query = useQuery<ContentResponse>({
+    queryKey: ["content"],
+    queryFn: () => api<ContentResponse>("/api/content/requests"),
+    refetchInterval: (current) => current.state.data?.requests.some(isProcessing) ? 2500 : false,
+    refetchOnWindowFocus: true
+  });
+  const refresh = () => qc.invalidateQueries({ queryKey: ["content"] });
+  const create = useMutation({
+    mutationFn: (body: Record<string, unknown>) => post<{ request: ContentRequest }>("/api/content/requests", body),
+    onSuccess: async (result) => { setShowCreate(false); setSelectedId(result.request.id); await refresh(); }
+  });
+  const generate = useMutation({ mutationFn: (id: string) => post(`/api/content/requests/${id}/generate`, {}), onSuccess: refresh });
+  const review = useMutation({ mutationFn: ({ id, decision }: { id: string; decision: ReviewDecision }) => post(`/api/content/requests/${id}/review`, { decision }), onSuccess: refresh });
+  const creativeReview = useMutation({ mutationFn: ({ id, decision }: { id: string; decision: "approved" | "regenerate" | "rejected" }) => post(`/api/content/assets/${id}/review`, { decision }), onSuccess: refresh });
 
-  const requests = data?.requests ?? [];
-  const activeRequests = requests.filter((req: any) => req.status !== "REJECTED" && req.status !== "ARCHIVED");
-  const rejectedRequests = requests.filter((req: any) => req.status === "REJECTED");
+  const requests = query.data?.requests ?? [];
+  useEffect(() => {
+    if (!selectedId && requests[0]) setSelectedId(requests[0].id);
+    if (selectedId && requests.length && !requests.some((item) => item.id === selectedId)) setSelectedId(requests[0].id);
+  }, [requests, selectedId]);
+
+  const filtered = useMemo(() => requests.filter((request) => {
+    const stage = deriveStage(request);
+    if (filter === "review") return stage === "review_copy" || stage === "review_media";
+    if (filter === "media") return stage === "generating_media" || stage === "media_failed";
+    if (filter === "ready") return stage === "ready";
+    if (filter === "rejected") return stage === "rejected" || stage === "archived";
+    return stage !== "archived";
+  }), [filter, requests]);
+  const selected = filtered.find((request) => request.id === selectedId) ?? filtered[0];
+  const mutationError = create.error ?? generate.error ?? review.error ?? creativeReview.error;
 
   return (
     <section>
-      <Header title="Marketing Studio" subtitle="Create content requests, run generation, review outputs, and keep approval separate from publishing." />
-      <div className="grid gap-5 xl:grid-cols-[430px_1fr]">
-        <form className="panel p-5 space-y-3" onSubmit={(event) => {
-          event.preventDefault();
-          const form = new FormData(event.currentTarget);
-          create.mutate({
-            topic: String(form.get("topic")),
-            brand: String(form.get("brand")),
-            businessLine: String(form.get("businessLine")),
-            product: String(form.get("product")),
-            market: String(form.get("market")),
-            audience: String(form.get("audience")),
-            objective: String(form.get("objective")),
-            channel: String(form.get("channel")),
-            format: String(form.get("format")),
-            cta: String(form.get("cta")),
-            internalNotes: String(form.get("internalNotes")),
-            requestedPublishingChannels: ["facebook", "instagram"]
-          });
-          event.currentTarget.reset();
-        }}>
-          <h2 className="font-black text-xl">New content request</h2>
-          <Area name="topic" label="Topic or instruction" />
-          <div className="grid grid-cols-2 gap-3">
-            <Input name="brand" label="Brand" defaultValue="Future Oils" />
-            <Input name="businessLine" label="Business line" defaultValue="Edible Oils" />
-          </div>
-          <Input name="product" label="Product" defaultValue="Refined Sunflower Oil" />
-          <Input name="market" label="Market" defaultValue="Gulf/MENA" />
-          <Input name="audience" label="Audience" defaultValue="Importers and distributors" />
-          <Area name="objective" label="Objective" />
-          <Input name="channel" label="Channel" defaultValue="Facebook, Instagram" />
-          <label><span className="label">Format</span><select className="input" name="format" defaultValue="text_image"><option value="text">Text only</option><option value="text_image">Text and image</option><option value="text_video">Text and video</option><option value="carousel">Carousel</option></select></label>
-          <Input name="cta" label="CTA" defaultValue="Request a Quote" />
-          <Area name="internalNotes" label="Internal notes" />
-          <button className="btn btn-primary">Save request</button>
-        </form>
-
-        <div className="space-y-4">
-          {activeRequests.map((req: any) => <ContentRequestCard key={req.id} req={req} generate={generate} review={review} />)}
-          {activeRequests.length === 0 ? <div className="panel p-5 text-[var(--text-muted)]">No active content requests.</div> : null}
-        </div>
+      <div className="page-heading-row">
+        <Header title="Content" subtitle="Move each request from copy to media review and publishing." />
+        <button className="btn btn-primary" onClick={() => setShowCreate((value) => !value)}>{showCreate ? "Close request form" : "New content request"}</button>
       </div>
 
-      <section className="panel p-5 mt-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="font-black text-xl">Rejected posts</h2>
-            <p className="text-sm text-[var(--text-muted)]">Rejected items are blocked from publishing. Restore moves them back to review; delete archives them.</p>
-          </div>
-          <span className="badge">{rejectedRequests.length} rejected</span>
+      {showCreate ? <RequestForm pending={create.isPending} error={create.error?.message} onSubmit={(body) => create.mutate(body)} /> : null}
+
+      <nav className="workflow-tabs" aria-label="Content filters">
+        <FilterButton value="all" current={filter} onChange={setFilter} count={requests.filter((item) => deriveStage(item) !== "archived").length}>All</FilterButton>
+        <FilterButton value="review" current={filter} onChange={setFilter} count={requests.filter((item) => ["review_copy", "review_media"].includes(deriveStage(item))).length}>Needs review</FilterButton>
+        <FilterButton value="media" current={filter} onChange={setFilter} count={requests.filter((item) => ["generating_media", "media_failed"].includes(deriveStage(item))).length}>Creating media</FilterButton>
+        <FilterButton value="ready" current={filter} onChange={setFilter} count={requests.filter((item) => deriveStage(item) === "ready").length}>Ready to publish</FilterButton>
+        <FilterButton value="rejected" current={filter} onChange={setFilter} count={requests.filter((item) => deriveStage(item) === "rejected").length}>Rejected</FilterButton>
+      </nav>
+
+      {query.isLoading ? <ContentSkeleton /> : (
+        <div className="content-workspace">
+          <section className="content-queue" aria-label="Content requests">
+            {filtered.map((request) => {
+              const stage = deriveStage(request);
+              return <button className={`queue-row ${selected?.id === request.id ? "selected" : ""}`} key={request.id} onClick={() => setSelectedId(request.id)}>
+                <span className="queue-copy"><strong>{request.topic}</strong><small>{formatLabel(request.format)} · {request.product || request.businessLine}</small></span>
+                <StatusBadge stage={stage} />
+              </button>;
+            })}
+            {filtered.length === 0 ? <div className="empty-state"><strong>No requests in this stage</strong><p>Create a request or choose another filter.</p></div> : null}
+          </section>
+
+          <section className="content-detail" aria-live="polite">
+            {selected ? <RequestDetail request={selected} busy={generate.isPending || review.isPending || creativeReview.isPending} onGenerate={() => generate.mutate(selected.id)} onReview={(decision) => review.mutate({ id: selected.id, decision })} onCreativeReview={(assetId, decision) => creativeReview.mutate({ id: assetId, decision })} /> : <div className="empty-state"><strong>Select a content request</strong><p>Its current stage and next action will appear here.</p></div>}
+          </section>
         </div>
-        <div className="mt-4 grid gap-3">
-          {rejectedRequests.map((req: any) => (
-            <article className="card" key={req.id}>
-              <div className="flex flex-wrap justify-between gap-3">
-                <div><h3 className="font-black">{req.topic}</h3><p className="text-sm text-[var(--text-muted)]">{req.brand} · {req.businessLine} · {req.format}</p></div>
-                <span className="badge badge-fail">REJECTED</span>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button className="btn btn-secondary" onClick={() => review.mutate({ id: req.id, decision: "revision_requested" })}>Restore to review</button>
-                <button className="btn btn-danger" onClick={() => {
-                  if (confirm("Archive this rejected post? It will be removed from the rejected list.")) review.mutate({ id: req.id, decision: "archived" });
-                }}>Delete</button>
-              </div>
-            </article>
-          ))}
-          {rejectedRequests.length === 0 ? <div className="card text-[var(--text-muted)]">No rejected posts.</div> : null}
-        </div>
-      </section>
+      )}
+      {mutationError ? <div className="notice notice-error" role="alert">{mutationError.message}</div> : null}
     </section>
   );
 }
 
-function ContentRequestCard({ req, generate, review }: { req: any; generate: any; review: any }) {
-  const latestItem = req.items?.[0];
-  return (
-    <article className="panel p-5">
-      <div className="flex flex-wrap justify-between gap-3">
-        <div><h2 className="text-xl font-black">{req.topic}</h2><p className="text-sm text-[var(--text-muted)]">{req.brand} · {req.businessLine} · {req.format}</p></div>
-        <span className="badge">{req.status}</span>
+function RequestDetail({ request, busy, onGenerate, onReview, onCreativeReview }: { request: ContentRequest; busy: boolean; onGenerate: () => void; onReview: (decision: ReviewDecision) => void; onCreativeReview: (assetId: string, decision: "approved" | "regenerate" | "rejected") => void }) {
+  const stage = deriveStage(request);
+  const item = request.items[0];
+  const asset = request.assets.find((entry) => entry.approvalStatus !== "rejected") ?? request.assets[0];
+  const latestJob = request.jobs[0];
+  const mediaUrl = assetUrl(asset);
+  const mediaName = request.format === "text_video" ? "video" : request.format === "carousel" ? "carousel" : "image";
+  const approvalLabel = request.format === "text" ? "Approve and send to Publishing" : `Approve copy and create ${mediaName}`;
+
+  return <>
+    <header className="detail-header">
+      <div><span className="detail-type">{formatLabel(request.format)}</span><h2>{request.topic}</h2><p>{request.brand} · {request.product || request.businessLine} · {request.market || "All markets"}</p></div>
+      <StatusBadge stage={stage} />
+    </header>
+    <WorkflowProgress request={request} stage={stage} />
+
+    <div className={`preview-grid ${needsMedia(request.format) ? "has-media" : ""}`}>
+      <section className="preview-section">
+        <h3>Copy</h3>
+        {item ? <div className="copy-preview"><strong>{item.headline}</strong><p>{item.caption}</p>{item.hashtags ? <p className="hashtags">{item.hashtags}</p> : null}{item.cta ? <small>CTA: {item.cta}</small> : null}</div> : <div className="empty-preview">Copy has not been generated yet.</div>}
+      </section>
+      {needsMedia(request.format) ? <section className="preview-section">
+        <h3>Media</h3>
+        {stage === "generating_media" ? <ProcessingPanel title={`Creating ${mediaName}`} detail="This usually takes a few minutes. This page updates automatically." /> : null}
+        {stage === "media_failed" ? <div className="media-placeholder error"><strong>Media generation failed</strong><p>{latestJob?.errorMessage || "The automation did not return a usable asset."}</p></div> : null}
+        {asset && ["review_media", "ready"].includes(stage) ? <div className="media-preview">{mediaUrl ? (asset.assetType === "video" ? <video src={mediaUrl} controls /> : <img src={mediaUrl} alt={`Generated ${mediaName} for ${request.topic}`} />) : <div className="asset-file"><strong>{mediaName[0].toUpperCase() + mediaName.slice(1)} received</strong><p>The asset is stored internally. Public preview is not available for this file reference.</p></div>}</div> : null}
+        {["draft", "review_copy", "generating_copy", "copy_failed"].includes(stage) ? <div className="empty-preview">Media starts after the copy is approved.</div> : null}
+      </section> : null}
+    </div>
+
+    {latestJob && isProcessing(request) ? <p className="automation-note" role="status"><span className="status-pulse" />{latestJob.currentStep || "Automation is working"}</p> : null}
+
+    <footer className="detail-actions">
+      <div className="secondary-actions">
+        {stage === "review_copy" ? <button className="btn btn-secondary" disabled={busy} onClick={() => onReview("revision_requested")}>Request copy changes</button> : null}
+        {stage === "review_copy" ? <button className="btn btn-quiet-danger" disabled={busy} onClick={() => onReview("rejected")}>Reject request</button> : null}
+        {stage === "review_media" && asset ? <button className="btn btn-secondary" disabled={busy} onClick={() => onCreativeReview(asset.id, "regenerate")}>Create another {mediaName}</button> : null}
+        {stage === "rejected" ? <button className="btn btn-secondary" disabled={busy} onClick={() => onReview("revision_requested")}>Restore to review</button> : null}
+        {isProcessing(request) ? <Link className="btn btn-secondary" to="/automation">View automation details</Link> : null}
       </div>
-      {latestItem ? <div className="card mt-4">
-        <div className="badge badge-mock">Generated content preview</div>
-        <h3 className="font-black mt-3">{latestItem.headline}</h3>
-        <p className="mt-2 whitespace-pre-line text-sm leading-6">{latestItem.caption}</p>
-        {latestItem.hashtags ? <p className="mt-3 text-xs font-bold text-[var(--olive)]">{latestItem.hashtags}</p> : null}
-        <div className="mt-3 text-sm text-[var(--text-muted)]">CTA: {latestItem.cta}</div>
-      </div> : <div className="card mt-4 text-[var(--text-muted)]">No generated output yet.</div>}
-      <div className="mt-4 flex flex-wrap gap-2">
-        <button className="btn btn-secondary" onClick={() => generate.mutate(req.id)}>Generate</button>
-        <button className="btn btn-secondary" onClick={() => review.mutate({ id: req.id, decision: "revision_requested" })}>Request revision</button>
-        <button className="btn btn-secondary" onClick={() => review.mutate({ id: req.id, decision: "approved_internal" })}>Approve internal</button>
-        <button className="btn btn-primary" onClick={() => review.mutate({ id: req.id, decision: "approved_publication" })}>Approve publication + request creative</button>
-        <button className="btn btn-danger" onClick={() => review.mutate({ id: req.id, decision: "rejected" })}>Reject</button>
+      <div>
+        {["draft", "copy_failed"].includes(stage) ? <button className="btn btn-primary" disabled={busy} onClick={onGenerate}>{stage === "copy_failed" ? "Retry copy generation" : "Generate copy"}</button> : null}
+        {stage === "review_copy" ? <button className="btn btn-primary" disabled={busy} onClick={() => onReview("approved_publication")}>{approvalLabel}</button> : null}
+        {stage === "media_failed" ? <button className="btn btn-primary" disabled={busy} onClick={() => onReview("approved_publication")}>Retry {mediaName} generation</button> : null}
+        {stage === "review_media" && asset ? <button className="btn btn-primary" disabled={busy} onClick={() => onCreativeReview(asset.id, "approved")}>Approve {mediaName} and send to Publishing</button> : null}
+        {stage === "ready" ? <Link className="btn btn-primary" to="/publishing">Open Publishing</Link> : null}
       </div>
-      {review.error ? <p className="mt-3 text-sm text-red-700">{review.error.message}</p> : null}
-    </article>
-  );
+    </footer>
+  </>;
 }
 
-function Input(props: { name: string; label: string; defaultValue?: string }) {
-  return <label><span className="label">{props.label}</span><input className="input" name={props.name} defaultValue={props.defaultValue} /></label>;
+function WorkflowProgress({ request, stage }: { request: ContentRequest; stage: WorkflowStage }) {
+  const steps = needsMedia(request.format) ? ["Brief", "Review copy", request.format === "text_video" ? "Create video" : request.format === "carousel" ? "Create carousel" : "Create image", "Review media", "Ready to publish"] : ["Brief", "Review copy", "Ready to publish"];
+  const index = stage === "ready" ? steps.length - 1 : stage === "review_media" ? steps.length - 2 : ["generating_media", "media_failed"].includes(stage) ? 2 : stage === "review_copy" ? 1 : 0;
+  return <ol className="workflow-progress" aria-label="Content progress">{steps.map((step, stepIndex) => <li className={stepIndex < index ? "complete" : stepIndex === index ? "current" : ""} key={step}><span>{stepIndex < index ? "✓" : stepIndex + 1}</span>{step}</li>)}</ol>;
 }
 
-function Area(props: { name: string; label: string }) {
-  return <label><span className="label">{props.label}</span><textarea className="input min-h-24" name={props.name} /></label>;
+function StatusBadge({ stage }: { stage: WorkflowStage }) {
+  const tone = stage.includes("failed") || stage === "rejected" ? "fail" : stage === "ready" ? "ok" : stage.includes("generating") ? "waiting" : stage.includes("review") ? "info" : "neutral";
+  return <span className={`status-badge status-${tone}`}><span aria-hidden="true" />{stageLabel(stage)}</span>;
+}
+
+function FilterButton({ value, current, onChange, count, children }: { value: FilterKey; current: FilterKey; onChange: (value: FilterKey) => void; count: number; children: ReactNode }) {
+  return <button className={current === value ? "active" : ""} aria-current={current === value ? "page" : undefined} onClick={() => onChange(value)}>{children}<span>{count}</span></button>;
+}
+
+function ProcessingPanel({ title, detail }: { title: string; detail: string }) {
+  return <div className="media-placeholder"><span className="processing-mark" aria-hidden="true" /><strong>{title}</strong><p>{detail}</p></div>;
+}
+
+function ContentSkeleton() {
+  return <div className="content-workspace" aria-label="Loading content"><div className="content-queue skeleton-block" /><div className="content-detail skeleton-block" /></div>;
+}
+
+function RequestForm({ pending, error, onSubmit }: { pending: boolean; error?: string; onSubmit: (body: Record<string, unknown>) => void }) {
+  return <form className="request-form" onSubmit={(event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const format = String(form.get("format"));
+    onSubmit({
+      topic: String(form.get("topic")), brand: String(form.get("brand")), businessLine: String(form.get("businessLine")), product: String(form.get("product")), market: String(form.get("market")), audience: String(form.get("audience")), objective: String(form.get("objective")), channel: format === "text" ? "Facebook" : "Facebook, Instagram", format, cta: String(form.get("cta")), internalNotes: String(form.get("internalNotes")), requestedPublishingChannels: format === "text" ? ["facebook"] : ["facebook", "instagram"]
+    });
+  }}>
+    <div className="form-heading"><div><h2>New content request</h2><p>Start with the copy. Media is created only after copy approval.</p></div></div>
+    <label className="form-span-2"><span className="label">Topic or instruction</span><textarea className="input min-h-24" name="topic" required /></label>
+    <Input name="brand" label="Brand" defaultValue="Future Oils" />
+    <Input name="businessLine" label="Business line" defaultValue="Edible Oils" />
+    <Input name="product" label="Product" defaultValue="Refined Sunflower Oil" />
+    <Input name="market" label="Market" defaultValue="Gulf/MENA" />
+    <Input name="audience" label="Audience" defaultValue="Importers and distributors" />
+    <label><span className="label">Format</span><select className="input" name="format" defaultValue="text_image"><option value="text">Text only</option><option value="text_image">Text and image</option><option value="text_video">Text and video</option><option value="carousel">Carousel</option></select></label>
+    <label className="form-span-2"><span className="label">Objective</span><textarea className="input" name="objective" /></label>
+    <Input name="cta" label="Call to action" defaultValue="Request a Quote" />
+    <Input name="internalNotes" label="Internal notes" />
+    {error ? <p className="notice notice-error form-span-2" role="alert">{error}</p> : null}
+    <div className="form-actions form-span-2"><button className="btn btn-primary" disabled={pending}>{pending ? "Saving request" : "Save content request"}</button></div>
+  </form>;
+}
+
+function Input({ name, label, defaultValue }: { name: string; label: string; defaultValue?: string }) {
+  return <label><span className="label">{label}</span><input className="input" name={name} defaultValue={defaultValue} /></label>;
 }
