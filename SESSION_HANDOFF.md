@@ -3,6 +3,26 @@
 Canonical restart point after any interrupted or completed session. Read this file first before changing the CP or its n8n workflows.
 
 Last verified: **2026-06-29 (Asia/Amman)**
+## Latest CP manual-control update
+
+Implemented in `6c75d66` (`Add manual content and failure controls`) on 2026-06-29:
+
+- Generated copy can be edited inline (headline, caption, hashtags, and CTA), regenerated, rejected, or approved from the copy-review stage.
+- Image and carousel requests can use a generated asset or an operator-uploaded PNG, JPEG, or WebP image. Uploaded files use private authenticated storage and follow the same creative review and Publishing gate.
+- A dedicated Failed filter restores retry, archive, and guarded permanent-delete controls. Permanent deletion is limited to failed requests with no publishing history and removes related jobs, events, approvals, assets, file records, items, and the request.
+- Creative approval supersedes other candidate assets so Publishing receives only the selected approved creative.
+- Plesk must keep `FILE_STORAGE_DRIVER=local` and `FILE_STORAGE_PATH` on writable persistent storage for uploaded-image previews.
+
+Verification used a clean local temporary copy because the synced-drive `node_modules` installation is corrupted:
+
+- `npm run typecheck` passed.
+- `npm test` passed: 5 files, 15 tests.
+- `npm run build` passed for the Vite client and TypeScript server.
+- ESLint passed for all seven changed files.
+- `node scripts/secret-scan.mjs` passed.
+- Full-repository lint still reports pre-existing `no-useless-escape` errors in `scripts/build-creative-image-workflows.mjs` plus existing console warnings; none are introduced by this CP update.
+
+Live n8n clarification: `FF Admin - Creative Image Generation` (`rWQZP7saIkXUXDUD`) is active and uses the MCP/OAuth-only design from GitHub commit `a881e2b`. The separate result-callback workflow was removed. The older creative workflow notes below are historical and should not be used as the restart state.
 ## Latest creative image workflow update
 
 Built, statically validated, cryptographically contract-tested, and deployed **inactive** to live n8n on 2026-06-29:
