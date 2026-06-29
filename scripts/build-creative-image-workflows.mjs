@@ -168,18 +168,18 @@ const generationResult = $json;
 const candidates = collectCandidates(generationResult);
 let creationId;
 for (const candidate of candidates) {
-  creationId = findByKeys(candidate, ["id", "creation_id", "creationId", "task_id", "taskId", "job_id", "jobId"]);
+  creationId = findByKeys(candidate, ["identifier", "id", "creation_id", "creationId", "task_id", "taskId", "job_id", "jobId"]);
   if (creationId) break;
 }
 if (!creationId) {
-  throw new Error("Magnific MCP images_generate did not return a creation id. Open this execution, inspect the MCP output, and adjust Prepare Magnific Wait Input to the live tools/list schema.");
+  throw new Error("Magnific MCP images_generate did not return a creation identifier. Open this execution, inspect the MCP output, and adjust Prepare Magnific Wait Input to the live tools/list schema.");
 }
 return [{ json: {
   cp: built.cp,
   mcp_endpoint: built.mcp_endpoint,
   generation_result: generationResult,
   creation_id: creationId,
-  mcp_wait_args: { id: creationId }
+  mcp_wait_args: { identifier: creationId }
 } }];`;
 
 const prepareCompletedCallback = `const crypto = require("crypto");
@@ -268,7 +268,7 @@ writeWorkflow(
     codeNode("build-magnific-mcp-request", "Build Magnific MCP Request", buildMagnificMcpRequest, [750, 0]),
     mcpClientNode("generate-image-with-magnific-mcp", "Generate Image With Magnific MCP", "images_generate", { prompt: "={{ $json.mcp_generate_args.prompt }}" }, [1000, 0]),
     codeNode("prepare-magnific-wait-input", "Prepare Magnific Wait Input", prepareMagnificWaitInput, [1250, 0]),
-    mcpClientNode("wait-for-magnific-creation", "Wait For Magnific Creation", "creations_wait", { id: "={{ $json.mcp_wait_args.id }}" }, [1500, 0]),
+    mcpClientNode("wait-for-magnific-creation", "Wait For Magnific Creation", "creations_wait", { identifier: "={{ $json.mcp_wait_args.identifier }}" }, [1500, 0]),
     codeNode("prepare-completed-callback", "Prepare Completed CP Callback", prepareCompletedCallback, [1750, 0]),
     callbackNode("send-completed-callback", [2000, 0])
   ],
