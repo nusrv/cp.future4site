@@ -2,10 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 const generatedDir = path.join(process.cwd(), "workflows", "n8n", "generated");
-const referencePath = path.join(process.cwd(), "..", "Website", "public", "lovable-uploads", "sunflower-oil-1l.jpg");
-if (!fs.existsSync(referencePath)) throw new Error(`Missing approved product reference: ${referencePath}`);
 fs.mkdirSync(generatedDir, { recursive: true });
-const productReference = fs.readFileSync(referencePath).toString("base64");
+
+const MAGNIFIC_MCP_ENDPOINT = "https://mcp.magnific.com";
 
 function codeNode(id, name, jsCode, position) {
   return { id, name, type: "n8n-nodes-base.code", typeVersion: 2, position, parameters: { jsCode } };
@@ -17,6 +16,25 @@ function webhookNode(id, name, webhookPath, position) {
 
 function respondNode(id, name, position, responseBody) {
   return { id, name, type: "n8n-nodes-base.respondToWebhook", typeVersion: 1, position, parameters: { respondWith: "json", responseBody, options: {} } };
+}
+
+function mcpClientNode(id, name, tool, jsonInput, position, timeout = 900000) {
+  return {
+    id,
+    name,
+    type: "@n8n/n8n-nodes-langchain.mcpClient",
+    typeVersion: 1.1,
+    position,
+    parameters: {
+      serverTransport: "httpStreamable",
+      endpointUrl: MAGNIFIC_MCP_ENDPOINT,
+      authentication: "mcpOAuth2Api",
+      tool: { mode: "id", value: tool },
+      inputMode: "json",
+      jsonInput,
+      options: { convertToBinary: false, timeout }
+    }
+  };
 }
 
 function callbackNode(id, position) {
@@ -51,7 +69,7 @@ function writeWorkflow(file, name, nodes, connections) {
     nodes,
     connections,
     settings: { executionOrder: "v1", saveManualExecutions: true, saveDataErrorExecution: "all", saveDataSuccessExecution: "all" },
-    tags: ["future-foresight", "creative-image", "production-ready"]
+    tags: ["future-foresight", "creative-image", "magnific-mcp"]
   };
   fs.writeFileSync(path.join(generatedDir, file), `${JSON.stringify(workflow, null, 2)}\n`);
 }
@@ -77,86 +95,163 @@ const calculated = Buffer.from(expected, "hex");
 if (supplied.length !== calculated.length || !crypto.timingSafeEqual(supplied, calculated)) throw new Error("Invalid CP request signature");
 return [{ json: { cp: body, accepted: true, received_at: new Date().toISOString() } }];`;
 
-const buildMagnificRequest = `const cp = $json.cp;
+const buildMagnificMcpRequest = `const cp = $json.cp;
 const payload = cp.payload ?? {};
-const base = "https://wap.nusrv.com/webhook/future-foresight/creative-image-result";
-const query = new URLSearchParams({
-  job_id: cp.job_id,
-  correlation_id: cp.correlation_id,
-  idempotency_key: cp.idempotency_key ?? "",
-  workflow_type: cp.workflow_type ?? "creative_image_generation",
-  workflow_version: cp.workflow_version ?? "creative-image-v1",
-  callback_url: cp.callback_url
-});
 const headline = String(payload.headline ?? "").trim();
 const caption = String(payload.caption ?? "").trim();
 const product = String(payload.product ?? "Refined Sunflower Oil").trim();
 const market = String(payload.market ?? "Gulf and MENA importers and distributors").trim();
 const prompt = [
-  "Premium commercial B2B social advertising photograph for Future Oils.",
-  "Feature the exact Future Oils 1 L refined sunflower oil bottle from the structure reference as the clear hero product.",
-  "Preserve the bottle shape, cap, label layout, Future Oils logo, brand colors, and packaging identity. Do not redesign or invent packaging text.",
-  "Product: " + product + ". Audience and market: " + market + ".",
-  headline ? "Campaign idea: " + headline + "." : "",
-  caption ? "Message context: " + caption.slice(0, 600) + "." : "",
-  "Bright premium studio product photography, clean white to very light neutral backdrop, warm natural sunflower-gold light, restrained deep olive accents, realistic golden oil cues, confident export-trade presentation.",
-  "Portrait 4:5 composition for Facebook and Instagram with generous safe space. One hero bottle only unless the brief explicitly requires more.",
-  "No added typography, no floating text, no badges, no price, no certification seals, no health claims, no people, no hands, no watermark, no distorted logo, no duplicate bottle, no clutter."
+  "Create one premium photorealistic B2B social advertising image for Future Oils.",
+  "The visual must promote " + product + " for " + market + ".",
+  headline ? "Campaign headline context: " + headline + "." : "",
+  caption ? "Post caption context: " + caption.slice(0, 700) + "." : "",
+  "Use a portrait 4:5 social composition suitable for Facebook and Instagram.",
+  "Use bright premium studio product photography, clean white to very light neutral background, warm sunflower-gold light, restrained deep olive accents, realistic golden oil cues, and a confident export-trade look.",
+  "Show a single clear hero sunflower oil bottle/package with strong shelf appeal and realistic proportions.",
+  "Do not add typography, floating text, badges, prices, certification seals, health claims, people, hands, watermarks, duplicate bottles, clutter, or distorted brand marks.",
+  "Leave safe space around the product for platform cropping. The final image should be ready for human creative review before publishing."
 ].filter(Boolean).join(" ");
 return [{ json: {
   cp,
-  magnific_request: {
-    prompt,
-    webhook_url: base + "?" + query.toString(),
-    structure_reference: "${productReference}",
-    structure_strength: 92,
-    adherence: 68,
-    hdr: 22,
-    resolution: "2k",
-    aspect_ratio: "social_post_4_5",
-    model: "realism",
-    creative_detailing: 20,
-    engine: "magnific_sharpy",
-    fixed_generation: false,
-    filter_nsfw: true,
-    styling: { colors: [
-      { color: "#E0A51B", weight: 0.35 },
-      { color: "#2E4A2E", weight: 0.2 },
-      { color: "#F8F4EA", weight: 0.45 }
-    ] }
-  }
+  mcp_endpoint: "https://mcp.magnific.com",
+  mcp_generate_args: { prompt },
+  requested_output: { type: "image", aspect_ratio: "4:5", review_required: true }
 } }];`;
 
-const prepareSubmissionCallback = `const crypto = require("crypto");
-const built = $("Build Magnific Request").item.json;
-const cp = built.cp;
-const response = $json;
-const data = response.data ?? response;
-const accepted = Boolean(data.task_id);
-const secret = $env.PLATFORM_CALLBACK_SECRET;
-if (!secret) throw new Error("Missing PLATFORM_CALLBACK_SECRET in n8n environment");
+const prepareMagnificWaitInput = `function parseMaybeJson(value) {
+  if (typeof value !== "string") return value;
+  try { return JSON.parse(value); } catch { return value; }
+}
+function collectCandidates(value, output = []) {
+  const parsed = parseMaybeJson(value);
+  if (parsed && typeof parsed === "object") {
+    output.push(parsed);
+    if (Array.isArray(parsed.content)) {
+      for (const item of parsed.content) {
+        if (item?.type === "text") collectCandidates(item.text, output);
+        else collectCandidates(item, output);
+      }
+    }
+    if (parsed.structuredContent) collectCandidates(parsed.structuredContent, output);
+  }
+  return output;
+}
+function findByKeys(value, keys, seen = new Set()) {
+  if (!value || typeof value !== "object" || seen.has(value)) return undefined;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findByKeys(item, keys, seen);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  for (const key of keys) {
+    const candidate = value[key];
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+    if (typeof candidate === "number" && Number.isFinite(candidate)) return String(candidate);
+  }
+  for (const nested of Object.values(value)) {
+    const found = findByKeys(nested, keys, seen);
+    if (found) return found;
+  }
+  return undefined;
+}
+const built = $("Build Magnific MCP Request").item.json;
+const generationResult = $json;
+const candidates = collectCandidates(generationResult);
+let creationId;
+for (const candidate of candidates) {
+  creationId = findByKeys(candidate, ["id", "creation_id", "creationId", "task_id", "taskId", "job_id", "jobId"]);
+  if (creationId) break;
+}
+if (!creationId) {
+  throw new Error("Magnific MCP images_generate did not return a creation id. Open this execution, inspect the MCP output, and adjust Prepare Magnific Wait Input to the live tools/list schema.");
+}
+return [{ json: {
+  cp: built.cp,
+  mcp_endpoint: built.mcp_endpoint,
+  generation_result: generationResult,
+  creation_id: creationId,
+  mcp_wait_args: { id: creationId }
+} }];`;
+
+const prepareCompletedCallback = `const crypto = require("crypto");
+function parseMaybeJson(value) {
+  if (typeof value !== "string") return value;
+  try { return JSON.parse(value); } catch { return value; }
+}
+function walk(value, visitor, seen = new Set()) {
+  const parsed = parseMaybeJson(value);
+  if (!parsed || typeof parsed !== "object" || seen.has(parsed)) return;
+  seen.add(parsed);
+  visitor(parsed);
+  if (Array.isArray(parsed)) {
+    for (const item of parsed) walk(item, visitor, seen);
+    return;
+  }
+  for (const item of Object.values(parsed)) walk(item, visitor, seen);
+}
+function collectUrls(value) {
+  const urls = new Set();
+  const urlKeys = new Set(["url", "image_url", "imageUrl", "output_url", "outputUrl", "download_url", "downloadUrl", "public_url", "publicUrl"]);
+  walk(value, (item) => {
+    if (Array.isArray(item)) return;
+    for (const [key, raw] of Object.entries(item)) {
+      if (typeof raw === "string" && /^https?:\/\//.test(raw) && (urlKeys.has(key) || /image|generated|download|url/i.test(key))) urls.add(raw);
+      if (Array.isArray(raw)) {
+        for (const entry of raw) if (typeof entry === "string" && /^https?:\/\//.test(entry)) urls.add(entry);
+      }
+    }
+    if (item.type === "image" && typeof item.data === "string") urls.add("data:" + String(item.mimeType ?? "image/png") + ";base64," + item.data);
+  });
+  return [...urls];
+}
+const built = $("Build Magnific MCP Request").item.json;
+const waitInput = $("Prepare Magnific Wait Input").item.json;
+const waitResult = $json;
+const urls = [...new Set([...collectUrls(waitResult), ...collectUrls(waitInput.generation_result)])];
+const complete = urls.length > 0;
+const status = complete ? "completed" : "failed";
+const callbackSecret = $env.PLATFORM_CALLBACK_SECRET;
+if (!callbackSecret) throw new Error("Missing PLATFORM_CALLBACK_SECRET in n8n environment");
 const timestamp = new Date().toISOString();
-const nonce = "n8n_image_submit_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+const nonce = "n8n_mcp_image_result_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+const files = complete ? urls.map((url, index) => ({
+  file_id: String(waitInput.creation_id) + "_" + index,
+  type: "image",
+  url,
+  source: "magnific-mcp",
+  provider_creation_id: waitInput.creation_id
+})) : [];
 const callbackBody = {
-  job_id: cp.job_id,
-  correlation_id: cp.correlation_id,
-  idempotency_key: cp.idempotency_key,
+  job_id: built.cp.job_id,
+  correlation_id: built.cp.correlation_id,
+  idempotency_key: built.cp.idempotency_key,
   workflow_type: "creative_image_generation",
-  workflow_version: cp.workflow_version ?? "creative-image-v1",
-  status: accepted ? "waiting_for_external_service" : "failed",
-  current_step: accepted ? "Magnific accepted the image generation task" : "Magnific rejected the image generation task",
+  workflow_version: built.cp.workflow_version ?? "creative-image-mcp-v1",
+  status,
+  current_step: complete ? "Magnific MCP image is ready for review" : "Magnific MCP completed without a usable image URL",
   nonce,
   signature_timestamp: timestamp,
   signature: "",
-  outputs: accepted ? { provider: "magnific", task_id: data.task_id, provider_status: data.status ?? "IN_PROGRESS" } : {},
-  files: [],
+  outputs: {
+    provider: "magnific-mcp",
+    mcp_endpoint: built.mcp_endpoint,
+    creation_id: waitInput.creation_id,
+    files,
+    generation_result: waitInput.generation_result,
+    wait_result: waitResult
+  },
+  files,
   warnings: [],
-  error: accepted ? undefined : { code: "MAGNIFIC_SUBMIT_FAILED", message: String(response.message ?? response.error ?? "Magnific submission failed"), retryable: true }
+  error: complete ? undefined : { code: "MAGNIFIC_MCP_NO_IMAGE_URL", message: "Magnific MCP result did not include a usable image URL or image payload", retryable: true }
 };
 if (!callbackBody.error) delete callbackBody.error;
 const raw = JSON.stringify(callbackBody);
-const signature = crypto.createHmac("sha256", secret).update(timestamp + "." + nonce + "." + raw).digest("hex");
-return [{ json: { callback_url: cp.callback_url, callback_headers: { signature, timestamp, nonce }, callback_body: callbackBody } }];`;
+const signature = crypto.createHmac("sha256", callbackSecret).update(timestamp + "." + nonce + "." + raw).digest("hex");
+return [{ json: { callback_url: built.cp.callback_url, callback_headers: { signature, timestamp, nonce }, callback_body: callbackBody } }];`;
 
 writeWorkflow(
   "10-creative-image-generation.json",
@@ -165,113 +260,23 @@ writeWorkflow(
     webhookNode("creative-image-webhook", "CP Creative Image Request Webhook", "future-foresight/creative-image-generation", [0, 0]),
     codeNode("validate-cp-request", "Validate Signed CP Request", validateCpRequest, [250, 0]),
     respondNode("respond-cp", "Acknowledge CP Request", [500, 0], '={{ { accepted: true, job_id: $json.cp.job_id, workflow_type: "creative_image_generation" } }}'),
-    codeNode("build-magnific-request", "Build Magnific Request", buildMagnificRequest, [750, 0]),
-    {
-      id: "submit-magnific",
-      name: "Submit Mystic Image Generation",
-      type: "n8n-nodes-base.httpRequest",
-      typeVersion: 4,
-      position: [1000, 0],
-      onError: "continueRegularOutput",
-      parameters: {
-        method: "POST",
-        url: "https://api.magnific.com/v1/ai/mystic",
-        sendHeaders: true,
-        headerParameters: { parameters: [
-          { name: "content-type", value: "application/json" },
-          { name: "accept", value: "application/json" },
-          { name: "x-magnific-api-key", value: "={{ $env.MAGNIFIC_TOKEN }}" }
-        ] },
-        sendBody: true,
-        specifyBody: "json",
-        jsonBody: "={{ $json.magnific_request }}",
-        options: {}
-      }
-    },
-    codeNode("prepare-submission-callback", "Prepare Submission Status Callback", prepareSubmissionCallback, [1250, 0]),
-    callbackNode("send-submission-callback", [1500, 0])
+    codeNode("build-magnific-mcp-request", "Build Magnific MCP Request", buildMagnificMcpRequest, [750, 0]),
+    mcpClientNode("generate-image-with-magnific-mcp", "Generate Image With Magnific MCP", "images_generate", "={{ $json.mcp_generate_args }}", [1000, 0], 900000),
+    codeNode("prepare-magnific-wait-input", "Prepare Magnific Wait Input", prepareMagnificWaitInput, [1250, 0]),
+    mcpClientNode("wait-for-magnific-creation", "Wait For Magnific Creation", "creations_wait", "={{ $json.mcp_wait_args }}", [1500, 0], 900000),
+    codeNode("prepare-completed-callback", "Prepare Completed CP Callback", prepareCompletedCallback, [1750, 0]),
+    callbackNode("send-completed-callback", [2000, 0])
   ],
   {
     "CP Creative Image Request Webhook": { main: [[{ node: "Validate Signed CP Request", type: "main", index: 0 }]] },
     "Validate Signed CP Request": { main: [[{ node: "Acknowledge CP Request", type: "main", index: 0 }]] },
-    "Acknowledge CP Request": { main: [[{ node: "Build Magnific Request", type: "main", index: 0 }]] },
-    "Build Magnific Request": { main: [[{ node: "Submit Mystic Image Generation", type: "main", index: 0 }]] },
-    "Submit Mystic Image Generation": { main: [[{ node: "Prepare Submission Status Callback", type: "main", index: 0 }]] },
-    "Prepare Submission Status Callback": { main: [[{ node: "Send Signed Callback To CP", type: "main", index: 0 }]] }
+    "Acknowledge CP Request": { main: [[{ node: "Build Magnific MCP Request", type: "main", index: 0 }]] },
+    "Build Magnific MCP Request": { main: [[{ node: "Generate Image With Magnific MCP", type: "main", index: 0 }]] },
+    "Generate Image With Magnific MCP": { main: [[{ node: "Prepare Magnific Wait Input", type: "main", index: 0 }]] },
+    "Prepare Magnific Wait Input": { main: [[{ node: "Wait For Magnific Creation", type: "main", index: 0 }]] },
+    "Wait For Magnific Creation": { main: [[{ node: "Prepare Completed CP Callback", type: "main", index: 0 }]] },
+    "Prepare Completed CP Callback": { main: [[{ node: "Send Signed Callback To CP", type: "main", index: 0 }]] }
   }
 );
 
-const prepareResultCallback = `const crypto = require("crypto");
-const envelope = $json;
-const body = envelope.body?.data ?? envelope.body ?? envelope;
-const headers = envelope.headers ?? {};
-const query = envelope.query ?? {};
-const webhookId = String(headers["webhook-id"] ?? "");
-const webhookTimestamp = String(headers["webhook-timestamp"] ?? "");
-const webhookSignatures = String(headers["webhook-signature"] ?? "");
-const webhookSecret = $env.MAGNIFIC_WEBHOOK_SECRET;
-if (!webhookSecret) throw new Error("Missing MAGNIFIC_WEBHOOK_SECRET in n8n environment");
-if (!webhookId || !webhookTimestamp || !webhookSignatures) throw new Error("Missing Magnific webhook signature headers");
-const timestampValue = /^\\d+$/.test(webhookTimestamp) ? Number(webhookTimestamp) * (webhookTimestamp.length <= 10 ? 1000 : 1) : Date.parse(webhookTimestamp);
-const drift = Math.abs(Date.now() - timestampValue);
-if (!Number.isFinite(drift) || drift > 5 * 60 * 1000) throw new Error("Magnific webhook timestamp rejected");
-const raw = JSON.stringify(envelope.body ?? {});
-const generated = crypto.createHmac("sha256", webhookSecret).update(webhookId + "." + webhookTimestamp + "." + raw).digest("base64");
-const valid = webhookSignatures.split(/\\s+/).some((entry) => {
-  const parts = entry.split(",");
-  if (parts.length !== 2) return false;
-  const supplied = Buffer.from(parts[1]);
-  const expected = Buffer.from(generated);
-  return supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
-});
-if (!valid) throw new Error("Invalid Magnific webhook signature");
-if (!query.job_id || !query.correlation_id || !query.callback_url) throw new Error("Missing CP callback context");
-const providerStatus = String(body.status ?? "IN_PROGRESS").toUpperCase();
-const urls = Array.isArray(body.generated) ? body.generated.filter((url) => typeof url === "string") : [];
-const nsfw = Array.isArray(body.has_nsfw) && body.has_nsfw.some(Boolean);
-const complete = providerStatus === "COMPLETED" && urls.length > 0 && !nsfw;
-const failed = nsfw || ["FAILED", "ERROR", "CANCELLED"].includes(providerStatus) || (providerStatus === "COMPLETED" && urls.length === 0);
-const status = complete ? "completed" : failed ? "failed" : "waiting_for_external_service";
-const callbackSecret = $env.PLATFORM_CALLBACK_SECRET;
-if (!callbackSecret) throw new Error("Missing PLATFORM_CALLBACK_SECRET in n8n environment");
-const timestamp = new Date().toISOString();
-const nonce = "n8n_image_result_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-const files = complete ? urls.map((url, index) => ({ file_id: String(body.task_id ?? query.job_id) + "_" + index, type: "image", url, source: "magnific", provider_task_id: body.task_id ?? null })) : [];
-const callbackBody = {
-  job_id: String(query.job_id),
-  correlation_id: String(query.correlation_id),
-  idempotency_key: String(query.idempotency_key ?? ""),
-  workflow_type: "creative_image_generation",
-  workflow_version: String(query.workflow_version ?? "creative-image-v1"),
-  status,
-  current_step: complete ? "Magnific image is ready for review" : failed ? "Magnific image generation failed" : "Magnific image generation is in progress",
-  nonce,
-  signature_timestamp: timestamp,
-  signature: "",
-  outputs: { provider: "magnific", task_id: body.task_id ?? null, provider_status: providerStatus, generated_count: urls.length, has_nsfw: nsfw },
-  files,
-  warnings: nsfw ? ["Magnific flagged the generated image as unsafe; no asset was stored."] : [],
-  error: failed ? { code: nsfw ? "MAGNIFIC_NSFW_REJECTED" : "MAGNIFIC_GENERATION_FAILED", message: nsfw ? "Magnific rejected the image through its safety filter" : String(body.message ?? body.error ?? "Magnific generation failed"), retryable: !nsfw } : undefined
-};
-if (!callbackBody.error) delete callbackBody.error;
-const callbackRaw = JSON.stringify(callbackBody);
-const signature = crypto.createHmac("sha256", callbackSecret).update(timestamp + "." + nonce + "." + callbackRaw).digest("hex");
-return [{ json: { callback_url: String(query.callback_url), callback_headers: { signature, timestamp, nonce }, callback_body: callbackBody } }];`;
-
-writeWorkflow(
-  "13-creative-image-result-callback.json",
-  "FF Admin - Creative Image Result Callback",
-  [
-    webhookNode("magnific-result-webhook", "Magnific Result Webhook", "future-foresight/creative-image-result", [0, 0]),
-    codeNode("verify-and-map-result", "Verify Magnific And Prepare CP Callback", prepareResultCallback, [260, 0]),
-    respondNode("respond-magnific", "Acknowledge Magnific Result", [520, 0], '={{ { received: true, task_id: $json.callback_body.outputs.task_id } }}'),
-    callbackNode("send-result-callback", [780, 0])
-  ],
-  {
-    "Magnific Result Webhook": { main: [[{ node: "Verify Magnific And Prepare CP Callback", type: "main", index: 0 }]] },
-    "Verify Magnific And Prepare CP Callback": { main: [[{ node: "Acknowledge Magnific Result", type: "main", index: 0 }]] },
-    "Acknowledge Magnific Result": { main: [[{ node: "Send Signed Callback To CP", type: "main", index: 0 }]] }
-  }
-);
-
-console.log("Built production-ready creative image intake and result workflows.");
+console.log("Built MCP-only creative image workflow.");
