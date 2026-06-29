@@ -18,21 +18,26 @@ function respondNode(id, name, position, responseBody) {
   return { id, name, type: "n8n-nodes-base.respondToWebhook", typeVersion: 1, position, parameters: { respondWith: "json", responseBody, options: {} } };
 }
 
-function mcpClientNode(id, name, tool, jsonInput, position, timeout = 900000) {
+function mcpClientNode(id, name, tool, value, position) {
   return {
     id,
     name,
     type: "@n8n/n8n-nodes-langchain.mcpClient",
-    typeVersion: 1.1,
+    typeVersion: 1,
     position,
     parameters: {
-      serverTransport: "httpStreamable",
       endpointUrl: MAGNIFIC_MCP_ENDPOINT,
       authentication: "mcpOAuth2Api",
-      tool: { mode: "id", value: tool },
-      inputMode: "json",
-      jsonInput,
-      options: { convertToBinary: false, timeout }
+      tool: { __rl: true, mode: "list", value },
+      parameters: {
+        mappingMode: "defineBelow",
+        value,
+        matchingColumns: [],
+        schema: [],
+        attemptToConvertTypes: false,
+        convertFieldsToString: false
+      },
+      options: {}
     }
   };
 }
@@ -261,9 +266,9 @@ writeWorkflow(
     codeNode("validate-cp-request", "Validate Signed CP Request", validateCpRequest, [250, 0]),
     respondNode("respond-cp", "Acknowledge CP Request", [500, 0], '={{ { accepted: true, job_id: $json.cp.job_id, workflow_type: "creative_image_generation" } }}'),
     codeNode("build-magnific-mcp-request", "Build Magnific MCP Request", buildMagnificMcpRequest, [750, 0]),
-    mcpClientNode("generate-image-with-magnific-mcp", "Generate Image With Magnific MCP", "images_generate", "={{ $json.mcp_generate_args }}", [1000, 0], 900000),
+    mcpClientNode("generate-image-with-magnific-mcp", "Generate Image With Magnific MCP", "images_generate", { prompt: "={{ $json.mcp_generate_args.prompt }}" }, [1000, 0]),
     codeNode("prepare-magnific-wait-input", "Prepare Magnific Wait Input", prepareMagnificWaitInput, [1250, 0]),
-    mcpClientNode("wait-for-magnific-creation", "Wait For Magnific Creation", "creations_wait", "={{ $json.mcp_wait_args }}", [1500, 0], 900000),
+    mcpClientNode("wait-for-magnific-creation", "Wait For Magnific Creation", "creations_wait", { id: "={{ $json.mcp_wait_args.id }}" }, [1500, 0]),
     codeNode("prepare-completed-callback", "Prepare Completed CP Callback", prepareCompletedCallback, [1750, 0]),
     callbackNode("send-completed-callback", [2000, 0])
   ],
