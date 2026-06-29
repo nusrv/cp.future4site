@@ -3,6 +3,27 @@
 Canonical restart point after any interrupted or completed session. Read this file first before changing the CP or its n8n workflows.
 
 Last verified: **2026-06-29 (Asia/Amman)**
+## Latest media library update
+
+Implemented in `786f45f` (`Add reusable media library`) on 2026-06-29:
+
+- Added a dedicated Media library page with upload, authenticated preview, search, usage counts, content links, and safe deletion of unused stored images.
+- Added an inline library selector to image and carousel review so operators can reuse stored uploads or generated images across posts.
+- Images uploaded during post review automatically appear in the shared library.
+- Generated images are indexed from active creative assets and reused by URL. They are not copied into local storage automatically.
+- In-use stored files cannot be deleted. Failed-request deletion preserves files reused by other requests and removes only unshared binaries.
+- Added tracked `storage/images/.gitkeep`; real uploaded binaries remain ignored by Git and are organized under `FILE_STORAGE_PATH/images/YYYY-MM-DD/`.
+- No Prisma schema change or database migration is required.
+
+Verification:
+
+- `npm run build` passed, including client and server typecheck.
+- `npm test` passed: 6 files, 20 tests.
+- ESLint passed for all changed code files.
+- `node scripts/secret-scan.mjs` passed.
+- `git diff --check` passed.
+
+Plesk must configure a writable persistent `FILE_STORAGE_PATH`; see `docs/DEPLOYMENT_PLESK.md` and `docs/FILE_STORAGE.md`.
 ## Latest CP manual-control update
 
 Implemented in `6c75d66` (`Add manual content and failure controls`) on 2026-06-29:
