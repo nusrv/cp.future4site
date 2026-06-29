@@ -25,8 +25,7 @@ const apiKey = process.env.N8N_API_KEY;
 if (!baseUrl || !apiKey) throw new Error("Missing N8N_BASE_URL or N8N_API_KEY");
 
 const definitions = [
-  ["10-creative-image-generation.json", "FF Admin - Creative Image Generation"],
-  ["13-creative-image-result-callback.json", "FF Admin - Creative Image Result Callback"]
+  ["10-creative-image-generation.json", "FF Admin - Creative Image Generation"]
 ];
 const dir = path.join(process.cwd(), "workflows", "n8n", "generated");
 
