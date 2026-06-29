@@ -19,12 +19,14 @@
     "db:purge-synthetic": "tsx scripts/purge-synthetic.ts",
     "admin:bootstrap": "tsx scripts/bootstrap-admin.ts",
     "secret:scan": "node scripts/secret-scan.mjs",
-    "n8n:build-workflows": "node scripts/n8n-workflow-program.mjs",
+    "n8n:build-workflows": "node scripts/n8n-workflow-program.mjs && node scripts/build-creative-image-workflows.mjs",
     "n8n:check-workflows": "node scripts/check-n8n-workflows.mjs",
     "n8n:push-workflows": "node scripts/push-n8n-workflows.mjs",
     "n8n:verify-workflows": "node scripts/verify-n8n-workflows.mjs",
     "n8n:export-workflow": "node scripts/export-n8n-workflow.mjs",
-    "audit:deps": "npm audit --audit-level=high"
+    "audit:deps": "npm audit --audit-level=high",
+    "n8n:check-creative-image": "node scripts/check-creative-image-workflows.mjs",
+    "n8n:deploy-creative-image": "node scripts/deploy-creative-image-workflows.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "^9.4.0",

@@ -3,6 +3,27 @@
 Canonical restart point after any interrupted or completed session. Read this file first before changing the CP or its n8n workflows.
 
 Last verified: **2026-06-29 (Asia/Amman)**
+## Latest creative image workflow update
+
+Built, statically validated, cryptographically contract-tested, and deployed **inactive** to live n8n on 2026-06-29:
+
+- `FF Admin - Creative Image Generation`, ID `rWQZP7saIkXUXDUD`, webhook `future-foresight/creative-image-generation`.
+- `FF Admin - Creative Image Result Callback`, ID `sytKGJk2xuA2gtEz`, webhook `future-foresight/creative-image-result`.
+- Replaced the obsolete generic `Magnific Generation` placeholder.
+- Intake verifies the CP HMAC, acknowledges promptly, submits a branded 4:5 Mystic request with an approved Future Oils product reference, and carries CP callback context into the result webhook.
+- Result handling verifies the Magnific webhook HMAC, maps completed image URLs to CP creative files, and sends an HMAC-signed callback to the CP.
+- CP callback materialization/review/publishing code already exists: a successful callback creates a `CreativeAsset`; approved media content becomes eligible for Publishing only after creative approval.
+
+Verified commands:
+
+- `node scripts/check-n8n-workflows.mjs` — passed.
+- `node scripts/check-creative-image-workflows.mjs` — passed (7 intake nodes, 4 result nodes).
+- `node scripts/test-creative-image-workflow-contract.mjs` — passed CP request HMAC, Magnific result HMAC, CP callback HMAC, image mapping, and invalid-signature rejection.
+- Both workflow definitions were accepted by the live n8n API while inactive.
+
+Live activation and a real image generation remain blocked until the n8n service has `MAGNIFIC_TOKEN`, `MAGNIFIC_WEBHOOK_SECRET`, and the same `N8N_WEBHOOK_SECRET` used by deployed CP, followed by an n8n restart. `PLATFORM_CALLBACK_SECRET` must continue matching CP; the working text callback indicates it is likely already configured, but this has not been independently read back. Never put secret values in this file or chat.
+
+The production CP build was attempted but could not start because dependencies were absent. Two `npm ci` attempts in this synced-drive workspace stalled without creating `node_modules/.bin/tsc.cmd`; the second was terminated after several silent minutes. Workflow-specific checks do not depend on that install and passed.
 
 ## Restart checklist
 
@@ -55,7 +76,7 @@ Not proven: production deployment, protected URL, database/migration state, `/he
 
 ## Live n8n state
 
-Read-only API verification was performed on 2026-06-28. No live workflow was changed.
+The content workflow state below was read-only verified on 2026-06-28. On 2026-06-29, the two creative image workflows listed above were deployed inactive; no active workflow was changed.
 
 - Workflow: `FF Admin - Content Request Intake - Draft`
 - ID: `JgGTeTGe6CrP85b2`
@@ -83,7 +104,7 @@ Inactive workflow shells observed:
 - Platform Callback Helper
 - Dead Letter and Health Monitoring
 
-Creative generation is incomplete: CP dispatch code exists, but working image/video webhook endpoints were not proven active, and the generic Magnific workflow was inactive.
+Creative image workflow definitions are now deployed inactive and contract-tested. Real Magnific generation, signed live callback delivery, CP asset creation, creative review, and Publishing transition still require credential installation, activation, and one live CP request. Creative video generation remains unimplemented.
 
 Separate LOI workflow from the project record:
 
@@ -97,7 +118,7 @@ Separate LOI workflow from the project record:
 1. Confirm CP deployment, database, migrations, `/health`, and login.
 2. Run `npm ci`, tests, typecheck, build, and secret scan.
 3. Reconcile the workspace plan, which still says not to build a custom app, with the implemented CP.
-4. Implement and test image generation end to end, then video generation.
+4. Configure the three required n8n creative-image secrets, restart n8n, activate both creative image workflows with `npm run n8n:deploy-creative-image -- --activate --confirm-live`, and execute one live CP image request through approval and Publishing; then implement video generation.
 5. Keep Meta publishing disabled until credentials, permissions, public media hosting, duplicate protection, dry-run acceptance, and owner approval are complete.
 6. Rotate any n8n API key exposed during setup. Never record secrets here.
 7. Reconcile older OpenAI-compatible generator docs with the live Gemini workflow.

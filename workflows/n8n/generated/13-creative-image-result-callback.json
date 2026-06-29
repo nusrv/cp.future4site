@@ -1,0 +1,135 @@
+{
+  "name": "FF Admin - Creative Image Result Callback",
+  "active": false,
+  "nodes": [
+    {
+      "id": "magnific-result-webhook",
+      "name": "Magnific Result Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "path": "future-foresight/creative-image-result",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "verify-and-map-result",
+      "name": "Verify Magnific And Prepare CP Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const crypto = require(\"crypto\");\nconst envelope = $json;\nconst body = envelope.body?.data ?? envelope.body ?? envelope;\nconst headers = envelope.headers ?? {};\nconst query = envelope.query ?? {};\nconst webhookId = String(headers[\"webhook-id\"] ?? \"\");\nconst webhookTimestamp = String(headers[\"webhook-timestamp\"] ?? \"\");\nconst webhookSignatures = String(headers[\"webhook-signature\"] ?? \"\");\nconst webhookSecret = $env.MAGNIFIC_WEBHOOK_SECRET;\nif (!webhookSecret) throw new Error(\"Missing MAGNIFIC_WEBHOOK_SECRET in n8n environment\");\nif (!webhookId || !webhookTimestamp || !webhookSignatures) throw new Error(\"Missing Magnific webhook signature headers\");\nconst timestampValue = /^\\d+$/.test(webhookTimestamp) ? Number(webhookTimestamp) * (webhookTimestamp.length <= 10 ? 1000 : 1) : Date.parse(webhookTimestamp);\nconst drift = Math.abs(Date.now() - timestampValue);\nif (!Number.isFinite(drift) || drift > 5 * 60 * 1000) throw new Error(\"Magnific webhook timestamp rejected\");\nconst raw = JSON.stringify(envelope.body ?? {});\nconst generated = crypto.createHmac(\"sha256\", webhookSecret).update(webhookId + \".\" + webhookTimestamp + \".\" + raw).digest(\"base64\");\nconst valid = webhookSignatures.split(/\\s+/).some((entry) => {\n  const parts = entry.split(\",\");\n  if (parts.length !== 2) return false;\n  const supplied = Buffer.from(parts[1]);\n  const expected = Buffer.from(generated);\n  return supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);\n});\nif (!valid) throw new Error(\"Invalid Magnific webhook signature\");\nif (!query.job_id || !query.correlation_id || !query.callback_url) throw new Error(\"Missing CP callback context\");\nconst providerStatus = String(body.status ?? \"IN_PROGRESS\").toUpperCase();\nconst urls = Array.isArray(body.generated) ? body.generated.filter((url) => typeof url === \"string\") : [];\nconst nsfw = Array.isArray(body.has_nsfw) && body.has_nsfw.some(Boolean);\nconst complete = providerStatus === \"COMPLETED\" && urls.length > 0 && !nsfw;\nconst failed = nsfw || [\"FAILED\", \"ERROR\", \"CANCELLED\"].includes(providerStatus) || (providerStatus === \"COMPLETED\" && urls.length === 0);\nconst status = complete ? \"completed\" : failed ? \"failed\" : \"waiting_for_external_service\";\nconst callbackSecret = $env.PLATFORM_CALLBACK_SECRET;\nif (!callbackSecret) throw new Error(\"Missing PLATFORM_CALLBACK_SECRET in n8n environment\");\nconst timestamp = new Date().toISOString();\nconst nonce = \"n8n_image_result_\" + Date.now() + \"_\" + Math.random().toString(36).slice(2);\nconst files = complete ? urls.map((url, index) => ({ file_id: String(body.task_id ?? query.job_id) + \"_\" + index, type: \"image\", url, source: \"magnific\", provider_task_id: body.task_id ?? null })) : [];\nconst callbackBody = {\n  job_id: String(query.job_id),\n  correlation_id: String(query.correlation_id),\n  idempotency_key: String(query.idempotency_key ?? \"\"),\n  workflow_type: \"creative_image_generation\",\n  workflow_version: String(query.workflow_version ?? \"creative-image-v1\"),\n  status,\n  current_step: complete ? \"Magnific image is ready for review\" : failed ? \"Magnific image generation failed\" : \"Magnific image generation is in progress\",\n  nonce,\n  signature_timestamp: timestamp,\n  signature: \"\",\n  outputs: { provider: \"magnific\", task_id: body.task_id ?? null, provider_status: providerStatus, generated_count: urls.length, has_nsfw: nsfw },\n  files,\n  warnings: nsfw ? [\"Magnific flagged the generated image as unsafe; no asset was stored.\"] : [],\n  error: failed ? { code: nsfw ? \"MAGNIFIC_NSFW_REJECTED\" : \"MAGNIFIC_GENERATION_FAILED\", message: nsfw ? \"Magnific rejected the image through its safety filter\" : String(body.message ?? body.error ?? \"Magnific generation failed\"), retryable: !nsfw } : undefined\n};\nif (!callbackBody.error) delete callbackBody.error;\nconst callbackRaw = JSON.stringify(callbackBody);\nconst signature = crypto.createHmac(\"sha256\", callbackSecret).update(timestamp + \".\" + nonce + \".\" + callbackRaw).digest(\"hex\");\nreturn [{ json: { callback_url: String(query.callback_url), callback_headers: { signature, timestamp, nonce }, callback_body: callbackBody } }];"
+      }
+    },
+    {
+      "id": "respond-magnific",
+      "name": "Acknowledge Magnific Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { received: true, task_id: $json.callback_body.outputs.task_id } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "send-result-callback",
+      "name": "Send Signed Callback To CP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        780,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-ff-signature",
+              "value": "={{ $json.callback_headers.signature }}"
+            },
+            {
+              "name": "x-ff-timestamp",
+              "value": "={{ $json.callback_headers.timestamp }}"
+            },
+            {
+              "name": "x-ff-nonce",
+              "value": "={{ $json.callback_headers.nonce }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.callback_body }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Magnific Result Webhook": {
+      "main": [
+        [
+          {
+            "node": "Verify Magnific And Prepare CP Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Magnific And Prepare CP Callback": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge Magnific Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acknowledge Magnific Result": {
+      "main": [
+        [
+          {
+            "node": "Send Signed Callback To CP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "tags": [
+    "future-foresight",
+    "creative-image",
+    "production-ready"
+  ]
+}
