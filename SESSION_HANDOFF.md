@@ -2,7 +2,7 @@
 
 Canonical restart point after any interrupted or completed session. Read this file first before changing the CP or its n8n workflows.
 
-Last verified: **2026-06-28 (Asia/Amman)**
+Last verified: **2026-06-29 (Asia/Amman)**
 
 ## Restart checklist
 
@@ -14,7 +14,10 @@ Last verified: **2026-06-28 (Asia/Amman)**
 
 ## Current implementation update
 
-Applied on 2026-06-28, pending commit:
+Applied and pushed on 2026-06-28/29:
+
+- `2e8421d` - `Polish CP content and publishing workflow`.
+- `ee83f67` - `Fix creative asset metadata lookup typecheck`.
 
 - Replaced Marketing Studio with a state-driven Content queue and focused request detail.
 - Added automatic 2.5-second refresh only while visible automation jobs are active.
@@ -26,12 +29,12 @@ Applied on 2026-06-28, pending commit:
 - Applied the approved neutral white/gray UI direction with restrained olive/gold accents and WCAG AA-oriented states.
 - Added focused workflow-stage tests.
 
-Verification limitation: `npm ci` succeeded in a local temporary copy, but Node stalled indefinitely reading installed TypeScript and Vitest package files, including `tsc --version`. Typecheck, tests, build, and browser verification could not complete in this environment and must be rerun after the package-file access issue is resolved.
+The Prisma metadata lookup now uses MySQL JSONPath syntax: `path: "$.automationJobId"`. The previous array syntax was incompatible with this repository's MySQL connector and blocked the build/typecheck path. The fix is committed and synchronized with `origin/develop`. A complete build/test/browser result after that fix has not been independently verified in this session.
 ## CP state
 
 - Branch: `develop`, synchronized with `origin/develop` at last check.
 - Working tree before this handoff: clean.
-- Latest implementation commit: `26d49ae`, 2026-06-25 13:19:16 +03:00 - `Add rejected posts, creative workflow handoff, and user controls`.
+- Latest implementation commit: `ee83f67` - `Fix creative asset metadata lookup typecheck`.
 - Version `0.1.0`; Fastify, React/Vite, TypeScript, Prisma, MariaDB/MySQL.
 
 Implemented:
@@ -48,7 +51,7 @@ Latest CP update:
 - Publication approval now requests image generation for `text_image`/`carousel` or video generation for `text_video`.
 - Added creative image/video webhook configuration.
 
-Not proven: production deployment, protected URL, database/migration state, `/health`, or login. Local dependencies are absent, so tests and build could not run (`vitest` and `tsc` unavailable).
+Not proven: production deployment, protected URL, database/migration state, `/health`, login, and the complete post-fix test/build/browser verification result.
 
 ## Live n8n state
 
