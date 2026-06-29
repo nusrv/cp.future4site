@@ -4,6 +4,7 @@ import { api, post } from "../api";
 import { Dashboard } from "./Dashboard";
 import { Users } from "./Users";
 import { MarketingStudio } from "./MarketingStudio";
+import { MediaLibrary } from "./MediaLibrary";
 import { AutomationJobs } from "./AutomationJobs";
 import { Operations } from "./Operations";
 import { Publishing } from "./Publishing";
@@ -68,6 +69,7 @@ function Shell({ user }: { user: NonNullable<MeResponse["user"]> }) {
         <nav>
           <NavLink className="nav-link" to="/">Dashboard</NavLink>
           <NavLink className="nav-link" to="/marketing">Content</NavLink>
+          <NavLink className="nav-link" to="/media-library">Media library</NavLink>
           <NavLink className="nav-link" to="/publishing">Publishing</NavLink>
           <NavLink className="nav-link" to="/automation">Automation Jobs</NavLink>
           <NavLink className="nav-link" to="/operations">Operations</NavLink>
@@ -85,6 +87,7 @@ function Shell({ user }: { user: NonNullable<MeResponse["user"]> }) {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/marketing" element={<MarketingStudio />} />
+          <Route path="/media-library" element={<MediaLibrary />} />
           <Route path="/publishing" element={<Publishing />} />
           <Route path="/automation" element={<AutomationJobs />} />
           <Route path="/operations" element={<Operations />} />

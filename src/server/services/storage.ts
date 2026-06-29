@@ -26,7 +26,8 @@ export async function saveFile(buffer: Buffer, originalName: string, mimeType: s
   if (!allowedMime.has(mimeType)) throw new Error("Unsupported file type");
   if (buffer.length > config.MAX_UPLOAD_MB * 1024 * 1024) throw new Error("File too large");
   const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
-  const storageKey = `${new Date().toISOString().slice(0, 10)}/${nanoid(16)}-${safeName}`;
+  const category = mimeType.startsWith("image/") ? "images" : mimeType.startsWith("video/") ? "videos" : "files";
+  const storageKey = `${category}/${new Date().toISOString().slice(0, 10)}/${nanoid(16)}-${safeName}`;
   if (config.FILE_STORAGE_DRIVER === "mock") {
     return { storageKey: `mock://${storageKey}`, originalName, mimeType, sizeBytes: buffer.length, sha256Hash: sha256(buffer) };
   }
@@ -44,4 +45,17 @@ export async function readFile(storageKey: string): Promise<Buffer> {
   const target = path.resolve(root, storageKey);
   if (!target.startsWith(root + path.sep)) throw new Error("Invalid storage path");
   return fs.readFile(target);
+}
+
+export async function deleteFile(storageKey: string): Promise<void> {
+  if (config.FILE_STORAGE_DRIVER === "mock") return;
+  if (config.FILE_STORAGE_DRIVER !== "local") throw new Error("Stored file deletion is unavailable for this storage driver");
+  const root = path.resolve(config.FILE_STORAGE_PATH);
+  const target = path.resolve(root, storageKey);
+  if (!target.startsWith(root + path.sep)) throw new Error("Invalid storage path");
+  try {
+    await fs.unlink(target);
+  } catch (error) {
+    if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") throw error;
+  }
 }

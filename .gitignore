@@ -11,6 +11,9 @@ test-results/
 !.env.example
 storage/*
 !storage/.gitkeep
+!storage/images/
+storage/images/*
+!storage/images/.gitkeep
 workflows/n8n/exports/
 *.log
 future4site_CP_Prompt.txt

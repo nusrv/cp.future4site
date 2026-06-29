@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, patch, post, remove, upload } from "../api";
 import { Header } from "./Dashboard";
+import { MediaLibraryPicker, type LibraryImage } from "./MediaLibrary";
 import { assetUrl, deriveStage, formatLabel, isProcessing, needsMedia, stageLabel, type ContentRequest, type WorkflowStage } from "../contentWorkflow";
 
 type ContentResponse = { requests: ContentRequest[] };
@@ -11,6 +12,7 @@ type FilterKey = "all" | "review" | "media" | "failed" | "ready" | "rejected";
 
 export function MarketingStudio() {
   const qc = useQueryClient();
+  const [searchParams] = useSearchParams();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [showCreate, setShowCreate] = useState(false);
@@ -44,12 +46,21 @@ export function MarketingStudio() {
     mutationFn: (id: string) => remove(`/api/content/requests/${id}`),
     onSuccess: async () => { setSelectedId(null); await refresh(); }
   });
+  const selectImage = useMutation({
+    mutationFn: ({ id, selection }: { id: string; selection: LibraryImage["selection"] }) => post(`/api/content/requests/${id}/assets/select`, selection),
+    onSuccess: async () => { await refresh(); await qc.invalidateQueries({ queryKey: ["media-library"] }); }
+  });
 
   const requests = query.data?.requests ?? [];
+  const requestedId = searchParams.get("request");
   useEffect(() => {
+    if (requestedId && requests.some((item) => item.id === requestedId)) {
+      if (selectedId !== requestedId) setSelectedId(requestedId);
+      return;
+    }
     if (!selectedId && requests[0]) setSelectedId(requests[0].id);
     if (selectedId && requests.length && !requests.some((item) => item.id === selectedId)) setSelectedId(requests[0].id);
-  }, [requests, selectedId]);
+  }, [requests, requestedId, selectedId]);
 
   const filtered = useMemo(() => requests.filter((request) => {
     const stage = deriveStage(request);
@@ -61,8 +72,8 @@ export function MarketingStudio() {
     return stage !== "archived";
   }), [filter, requests]);
   const selected = filtered.find((request) => request.id === selectedId) ?? filtered[0];
-  const mutationError = create.error ?? generate.error ?? review.error ?? creativeReview.error ?? editCopy.error ?? uploadImage.error ?? deleteRequest.error;
-  const busy = generate.isPending || review.isPending || creativeReview.isPending || editCopy.isPending || uploadImage.isPending || deleteRequest.isPending;
+  const mutationError = create.error ?? generate.error ?? review.error ?? creativeReview.error ?? editCopy.error ?? uploadImage.error ?? deleteRequest.error ?? selectImage.error;
+  const busy = generate.isPending || review.isPending || creativeReview.isPending || editCopy.isPending || uploadImage.isPending || deleteRequest.isPending || selectImage.isPending;
 
   return (
     <section>
@@ -96,7 +107,7 @@ export function MarketingStudio() {
           </section>
 
           <section className="content-detail" aria-live="polite">
-            {selected ? <RequestDetail request={selected} busy={busy} onGenerate={() => generate.mutate(selected.id)} onReview={(decision) => review.mutate({ id: selected.id, decision })} onCreativeReview={(assetId, decision) => creativeReview.mutate({ id: assetId, decision })} onEditCopy={(itemId, body) => editCopy.mutateAsync({ id: itemId, body }).then(() => undefined)} onUploadImage={(file) => uploadImage.mutate({ id: selected.id, file })} onDelete={() => { if (window.confirm("Permanently delete this failed request and its automation history? This cannot be undone.")) deleteRequest.mutate(selected.id); }} /> : <div className="empty-state"><strong>Select a content request</strong><p>Its current stage and next action will appear here.</p></div>}
+            {selected ? <RequestDetail request={selected} busy={busy} onGenerate={() => generate.mutate(selected.id)} onReview={(decision) => review.mutate({ id: selected.id, decision })} onCreativeReview={(assetId, decision) => creativeReview.mutate({ id: assetId, decision })} onEditCopy={(itemId, body) => editCopy.mutateAsync({ id: itemId, body }).then(() => undefined)} onUploadImage={(file) => uploadImage.mutate({ id: selected.id, file })} onSelectImage={(selection) => selectImage.mutateAsync({ id: selected.id, selection }).then(() => undefined)} onDelete={() => { if (window.confirm("Permanently delete this failed request and its automation history? This cannot be undone.")) deleteRequest.mutate(selected.id); }} /> : <div className="empty-state"><strong>Select a content request</strong><p>Its current stage and next action will appear here.</p></div>}
           </section>
         </div>
       )}
@@ -107,7 +118,7 @@ export function MarketingStudio() {
 
 type CopyUpdate = { headline: string; caption: string; hashtags: string; cta: string };
 
-function RequestDetail({ request, busy, onGenerate, onReview, onCreativeReview, onEditCopy, onUploadImage, onDelete }: {
+function RequestDetail({ request, busy, onGenerate, onReview, onCreativeReview, onEditCopy, onUploadImage, onSelectImage, onDelete }: {
   request: ContentRequest;
   busy: boolean;
   onGenerate: () => void;
@@ -115,10 +126,12 @@ function RequestDetail({ request, busy, onGenerate, onReview, onCreativeReview, 
   onCreativeReview: (assetId: string, decision: "approved" | "regenerate" | "rejected") => void;
   onEditCopy: (itemId: string, body: CopyUpdate) => Promise<void>;
   onUploadImage: (file: File) => void;
+  onSelectImage: (selection: LibraryImage["selection"]) => Promise<void>;
   onDelete: () => void;
 }) {
   const [editingCopy, setEditingCopy] = useState(false);
-  useEffect(() => setEditingCopy(false), [request.id]);
+  const [showLibrary, setShowLibrary] = useState(false);
+  useEffect(() => { setEditingCopy(false); setShowLibrary(false); }, [request.id]);
   const stage = deriveStage(request);
   const item = request.items[0];
   const asset = request.assets.find((entry) => entry.approvalStatus !== "rejected") ?? request.assets[0];
@@ -155,6 +168,8 @@ function RequestDetail({ request, busy, onGenerate, onReview, onCreativeReview, 
       </section> : null}
     </div>
 
+    {showLibrary ? <MediaLibraryPicker busy={busy} onSelect={onSelectImage} onClose={() => setShowLibrary(false)} /> : null}
+
     {latestJob && isProcessing(request) ? <p className="automation-note" role="status"><span className="status-pulse" />{latestJob.currentStep || "Automation is working"}</p> : null}
 
     <footer className="detail-actions">
@@ -162,6 +177,7 @@ function RequestDetail({ request, busy, onGenerate, onReview, onCreativeReview, 
         {stage === "review_copy" ? <button className="btn btn-secondary" disabled={busy} onClick={onGenerate}>Regenerate copy</button> : null}
         {stage === "review_copy" ? <button className="btn btn-quiet-danger" disabled={busy} onClick={() => onReview("rejected")}>Reject request</button> : null}
         {stage === "review_media" && asset ? <button className="btn btn-secondary" disabled={busy} onClick={() => onCreativeReview(asset.id, "regenerate")}>Create another {mediaName}</button> : null}
+        {supportsImageUpload && ["review_media", "media_failed"].includes(stage) ? <button className="btn btn-secondary" disabled={busy} onClick={() => setShowLibrary((value) => !value)}>{showLibrary ? "Hide media library" : "Choose from library"}</button> : null}
         {supportsImageUpload && ["review_media", "media_failed"].includes(stage) ? <label className={`btn btn-secondary file-button ${busy ? "disabled" : ""}`}>Upload my image<input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) onUploadImage(file); event.currentTarget.value = ""; }} /></label> : null}
         {stage === "rejected" ? <button className="btn btn-secondary" disabled={busy} onClick={() => onReview("revision_requested")}>Restore to review</button> : null}
         {stage === "rejected" ? <button className="btn btn-secondary" disabled={busy} onClick={() => onReview("archived")}>Archive request</button> : null}

@@ -5,7 +5,7 @@ import { config } from "../config.js";
 import { requirePermission } from "../security/auth.js";
 import { audit } from "../services/audit.js";
 import { createAutomationJob, dispatchJob } from "../services/automation.js";
-import { readFile, saveFile } from "../services/storage.js";
+import { deleteFile, readFile, saveFile } from "../services/storage.js";
 import { contentRequestSchema } from "../../shared/contracts.js";
 
 export async function contentRoutes(app: FastifyInstance) {
@@ -199,13 +199,21 @@ export async function contentRoutes(app: FastifyInstance) {
     if (content.items.some((item) => item.publishingRecords.length)) throw new Error("Requests with publishing history cannot be deleted; archive this request instead");
     const assetIds = content.assets.map((asset) => asset.id);
     const fileIds = content.assets.flatMap((asset) => asset.fileId ? [asset.fileId] : []);
+    const sharedFileRefs = fileIds.length ? await prisma.creativeAsset.findMany({
+      where: { fileId: { in: fileIds }, contentRequestId: { not: content.id } },
+      select: { fileId: true }
+    }) : [];
+    const sharedFileIds = new Set(sharedFileRefs.flatMap((asset) => asset.fileId ? [asset.fileId] : []));
+    const deletableFileIds = fileIds.filter((fileId) => !sharedFileIds.has(fileId));
+    const storedFiles = deletableFileIds.length ? await prisma.fileObject.findMany({ where: { id: { in: deletableFileIds } }, select: { storageKey: true } }) : [];
     await prisma.$transaction([
       prisma.approval.deleteMany({ where: { entityId: { in: [content.id, ...assetIds] } } }),
       prisma.creativeAsset.deleteMany({ where: { contentRequestId: content.id } }),
-      prisma.fileObject.deleteMany({ where: { id: { in: fileIds } } }),
+      prisma.fileObject.deleteMany({ where: { id: { in: deletableFileIds } } }),
       prisma.automationJob.deleteMany({ where: { contentRequestId: content.id } }),
       prisma.contentRequest.delete({ where: { id: content.id } })
     ]);
+    await Promise.all(storedFiles.map((file) => deleteFile(file.storageKey).catch(() => undefined)));
     await audit({ actorUserId: current.user.id, action: "content.failed_request_deleted", entityType: "content_request", entityId: content.id, summary: "Failed content request permanently deleted" });
     return { ok: true };
   });
