@@ -28,15 +28,20 @@ for (const required of ["https://mcp.magnific.com", "mcp_generate_args", "prompt
 
 const generate = node(intake, "Generate Image With Magnific MCP");
 if (generate.type !== "@n8n/n8n-nodes-langchain.mcpClient") throw new Error("Magnific generation must use the n8n MCP Client node");
+if (generate.typeVersion !== 1) throw new Error("Magnific MCP node must use the schema exported by the live n8n instance");
 if (generate.parameters.endpointUrl !== "https://mcp.magnific.com") throw new Error("Incorrect Magnific MCP endpoint");
-if (generate.parameters.serverTransport !== "httpStreamable") throw new Error("Magnific MCP must use streamable HTTP transport");
 if (generate.parameters.authentication !== "mcpOAuth2Api") throw new Error("Magnific MCP must use OAuth2 credentials");
 if (generate.parameters.tool?.value !== "images_generate") throw new Error("Magnific MCP generation must call images_generate");
+if (generate.parameters.parameters?.value?.prompt !== "={{ $json.mcp_generate_args.prompt }}") throw new Error("Magnific MCP generation prompt mapping is missing");
 if (JSON.stringify(generate).includes("MAGNIFIC_TOKEN")) throw new Error("MCP workflow must not require MAGNIFIC_TOKEN");
 
 const wait = node(intake, "Wait For Magnific Creation");
 if (wait.type !== "@n8n/n8n-nodes-langchain.mcpClient") throw new Error("Magnific wait must use the n8n MCP Client node");
+if (wait.typeVersion !== 1) throw new Error("Magnific MCP wait node must use the schema exported by the live n8n instance");
+if (wait.parameters.endpointUrl !== "https://mcp.magnific.com") throw new Error("Incorrect Magnific MCP wait endpoint");
+if (wait.parameters.authentication !== "mcpOAuth2Api") throw new Error("Magnific MCP wait must use OAuth2 credentials");
 if (wait.parameters.tool?.value !== "creations_wait") throw new Error("Magnific MCP wait must call creations_wait");
+if (wait.parameters.parameters?.value?.id !== "={{ $json.mcp_wait_args.id }}") throw new Error("Magnific MCP wait id mapping is missing");
 
 const waitCode = node(intake, "Prepare Magnific Wait Input").parameters.jsCode;
 for (const required of ["creation_id", "task_id", "mcp_wait_args"]) {
