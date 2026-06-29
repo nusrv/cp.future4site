@@ -41,7 +41,16 @@ if (wait.typeVersion !== 1) throw new Error("Magnific MCP wait node must use the
 if (wait.parameters.endpointUrl !== "https://mcp.magnific.com") throw new Error("Incorrect Magnific MCP wait endpoint");
 if (wait.parameters.authentication !== "mcpOAuth2Api") throw new Error("Magnific MCP wait must use OAuth2 credentials");
 if (wait.parameters.tool?.value !== "creations_wait") throw new Error("Magnific MCP wait must call creations_wait");
-if (wait.parameters.parameters?.value?.identifier !== "={{ $json.mcp_wait_args.identifier }}") throw new Error("Magnific MCP wait identifier mapping is missing");
+const waitIdentifiers = wait.parameters.parameters?.value?.identifiers;
+const hasWaitIdentifiersMapping =
+  waitIdentifiers === "={{ $json.mcp_wait_args.identifiers }}" ||
+  JSON.stringify(waitIdentifiers) === JSON.stringify(["={{ $json.mcp_wait_args.identifiers }}"]) ||
+  JSON.stringify(waitIdentifiers) === JSON.stringify(["{{ $json.mcp_wait_args.identifiers }}"]) ||
+  JSON.stringify(waitIdentifiers) === JSON.stringify(["{{ $json.creation_id }}"]);
+
+if (!hasWaitIdentifiersMapping) {
+  throw new Error("Magnific MCP wait identifiers mapping is missing");
+}
 
 const waitCode = node(intake, "Prepare Magnific Wait Input").parameters.jsCode;
 for (const required of ["identifier", "creation_id", "task_id", "mcp_wait_args"]) {

@@ -28,7 +28,7 @@ function mcpClientNode(id, name, tool, value, position) {
     parameters: {
       endpointUrl: MAGNIFIC_MCP_ENDPOINT,
       authentication: "mcpOAuth2Api",
-      tool: { __rl: true, mode: "list", value },
+      tool: { __rl: true, mode: "list", value: tool, cachedResultName: tool },
       parameters: {
         mappingMode: "defineBelow",
         value,
@@ -179,7 +179,7 @@ return [{ json: {
   mcp_endpoint: built.mcp_endpoint,
   generation_result: generationResult,
   creation_id: creationId,
-  mcp_wait_args: { identifier: creationId }
+  mcp_wait_args: { identifiers: [creationId] }
 } }];`;
 
 const prepareCompletedCallback = `const crypto = require("crypto");
@@ -268,7 +268,7 @@ writeWorkflow(
     codeNode("build-magnific-mcp-request", "Build Magnific MCP Request", buildMagnificMcpRequest, [750, 0]),
     mcpClientNode("generate-image-with-magnific-mcp", "Generate Image With Magnific MCP", "images_generate", { prompt: "={{ $json.mcp_generate_args.prompt }}" }, [1000, 0]),
     codeNode("prepare-magnific-wait-input", "Prepare Magnific Wait Input", prepareMagnificWaitInput, [1250, 0]),
-    mcpClientNode("wait-for-magnific-creation", "Wait For Magnific Creation", "creations_wait", { identifier: "={{ $json.mcp_wait_args.identifier }}" }, [1500, 0]),
+    mcpClientNode("wait-for-magnific-creation", "Wait For Magnific Creation", "creations_wait", { identifiers: "={{ $json.mcp_wait_args.identifiers }}" }, [1500, 0]),
     codeNode("prepare-completed-callback", "Prepare Completed CP Callback", prepareCompletedCallback, [1750, 0]),
     callbackNode("send-completed-callback", [2000, 0])
   ],
