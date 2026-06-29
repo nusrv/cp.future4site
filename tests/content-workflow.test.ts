@@ -39,6 +39,14 @@ describe("content workflow stages", () => {
     }))).toBe("review_media");
   });
 
+  it("moves a failed media request back to review when an image is uploaded", () => {
+    expect(deriveStage(request({
+      status: "APPROVED_INTERNAL",
+      items: [{ id: "item_1", caption: "Approved copy" }],
+      assets: [{ id: "asset_upload", fileId: "file_1", sourceTool: "manual_upload", assetType: "image", status: "ready_for_review", approvalStatus: "not_approved" }],
+      jobs: [{ id: "job_1", jobType: "creative_image_generation", currentStatus: "FAILED", errorMessage: "Provider timeout", createdAt: "2026-06-28T00:00:00.000Z" }]
+    }))).toBe("review_media");
+  });
   it("surfaces failed media generation without losing the copy", () => {
     expect(deriveStage(request({
       status: "FAILED",

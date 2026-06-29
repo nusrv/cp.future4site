@@ -38,3 +38,10 @@ export async function saveFile(buffer: Buffer, originalName: string, mimeType: s
   return { storageKey, originalName, mimeType, sizeBytes: buffer.length, sha256Hash: sha256(buffer) };
 }
 
+export async function readFile(storageKey: string): Promise<Buffer> {
+  if (config.FILE_STORAGE_DRIVER !== "local") throw new Error("Stored file preview is unavailable for this storage driver");
+  const root = path.resolve(config.FILE_STORAGE_PATH);
+  const target = path.resolve(root, storageKey);
+  if (!target.startsWith(root + path.sep)) throw new Error("Invalid storage path");
+  return fs.readFile(target);
+}

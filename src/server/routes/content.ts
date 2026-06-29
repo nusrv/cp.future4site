@@ -5,12 +5,13 @@ import { config } from "../config.js";
 import { requirePermission } from "../security/auth.js";
 import { audit } from "../services/audit.js";
 import { createAutomationJob, dispatchJob } from "../services/automation.js";
+import { readFile, saveFile } from "../services/storage.js";
 import { contentRequestSchema } from "../../shared/contracts.js";
 
 export async function contentRoutes(app: FastifyInstance) {
   app.get("/api/content/requests", { preHandler: requirePermission("content.read") }, async () => {
     const requests = await prisma.contentRequest.findMany({
-      include: { items: { orderBy: { version: "desc" }, take: 1, include: { publishingRecords: true } }, assets: true },
+      include: { items: { orderBy: { version: "desc" }, take: 1, include: { publishingRecords: true } }, assets: { orderBy: { createdAt: "desc" } } },
       orderBy: { createdAt: "desc" },
       take: 100
     });
@@ -50,7 +51,7 @@ export async function contentRoutes(app: FastifyInstance) {
       where: { id: params.id },
       include: {
         items: { orderBy: { version: "desc" } },
-        assets: true
+        assets: { orderBy: { createdAt: "desc" } }
       }
     });
     const jobs = await prisma.automationJob.findMany({ where: { contentRequestId: params.id }, include: { events: { orderBy: { createdAt: "asc" } } }, orderBy: { createdAt: "desc" } });
@@ -106,6 +107,108 @@ export async function contentRoutes(app: FastifyInstance) {
     return { job: refreshed };
   });
 
+  app.patch("/api/content/items/:id", { preHandler: requirePermission("content.write") }, async (request) => {
+    const current = request.currentUser!;
+    const params = z.object({ id: z.string() }).parse(request.params);
+    const input = z.object({
+      headline: z.string().trim().max(300).nullable().optional(),
+      caption: z.string().trim().min(1).max(10000),
+      cta: z.string().trim().max(300).nullable().optional(),
+      hashtags: z.string().trim().max(2000).nullable().optional()
+    }).parse(request.body);
+    const item = await prisma.contentItem.findUniqueOrThrow({
+      where: { id: params.id },
+      include: { request: true, publishingRecords: true }
+    });
+    if (item.publishingRecords.length) throw new Error("Published or queued copy cannot be edited");
+    if (["APPROVED_PUBLICATION", "ARCHIVED"].includes(item.request.status)) throw new Error("This request is no longer editable");
+    const existingMetadata = item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata) ? item.metadata : {};
+    const updated = await prisma.contentItem.update({
+      where: { id: item.id },
+      data: {
+        headline: input.headline || null,
+        caption: input.caption,
+        cta: input.cta || null,
+        hashtags: input.hashtags || null,
+        status: "AWAITING_REVIEW",
+        metadata: { ...existingMetadata, manuallyEdited: true, manuallyEditedAt: new Date().toISOString(), manuallyEditedByUserId: current.user.id }
+      }
+    });
+    await prisma.contentRequest.update({ where: { id: item.contentRequestId }, data: { status: "AWAITING_REVIEW" } });
+    await audit({ actorUserId: current.user.id, action: "content.copy_edited", entityType: "content_item", entityId: item.id, summary: "Generated copy edited manually" });
+    return { item: updated };
+  });
+
+  app.post("/api/content/requests/:id/assets/upload", { preHandler: requirePermission("content.write") }, async (request) => {
+    const current = request.currentUser!;
+    const params = z.object({ id: z.string() }).parse(request.params);
+    const content = await prisma.contentRequest.findUniqueOrThrow({ where: { id: params.id } });
+    if (!["text_image", "carousel"].includes(content.format)) throw new Error("Manual image upload is available only for image and carousel requests");
+    if (["APPROVED_PUBLICATION", "ARCHIVED"].includes(content.status)) throw new Error("This request no longer accepts replacement images");
+    const part = await request.file();
+    if (!part) throw new Error("Choose an image to upload");
+    if (!new Set(["image/png", "image/jpeg", "image/webp"]).has(part.mimetype)) throw new Error("Upload a PNG, JPEG, or WebP image");
+    const stored = await saveFile(await part.toBuffer(), part.filename, part.mimetype);
+    const file = await prisma.fileObject.create({ data: {
+      storageKey: stored.storageKey,
+      originalName: stored.originalName,
+      mimeType: stored.mimeType,
+      sizeBytes: stored.sizeBytes,
+      sha256Hash: stored.sha256Hash,
+      assetType: "image",
+      visibilityScope: "INTERNAL",
+      approvalStatus: "not_approved",
+      createdByUserId: current.user.id
+    } });
+    const [, asset] = await prisma.$transaction([
+      prisma.creativeAsset.updateMany({ where: { contentRequestId: content.id, approvalStatus: { not: "approved" } }, data: { status: "superseded", approvalStatus: "rejected" } }),
+      prisma.creativeAsset.create({ data: {
+        contentRequestId: content.id,
+        fileId: file.id,
+        assetType: "image",
+        status: "ready_for_review",
+        approvalStatus: "not_approved",
+        sourceTool: "manual_upload",
+        visibilityScope: "INTERNAL",
+        metadata: { originalName: stored.originalName, mimeType: stored.mimeType, sizeBytes: stored.sizeBytes, source: "manual_upload" }
+      } }),
+      prisma.contentRequest.update({ where: { id: content.id }, data: { status: "APPROVED_INTERNAL" } })
+    ]);
+    await audit({ actorUserId: current.user.id, action: "creative.uploaded", entityType: "creative_asset", entityId: asset.id, summary: "Creative image uploaded manually" });
+    return { asset };
+  });
+
+  app.get("/api/content/assets/:id/file", { preHandler: requirePermission("content.read") }, async (request, reply) => {
+    const params = z.object({ id: z.string() }).parse(request.params);
+    const asset = await prisma.creativeAsset.findUniqueOrThrow({ where: { id: params.id } });
+    if (!asset.fileId) throw new Error("This creative asset has no uploaded file");
+    const file = await prisma.fileObject.findUniqueOrThrow({ where: { id: asset.fileId } });
+    const buffer = await readFile(file.storageKey);
+    return reply.type(file.mimeType).header("Cache-Control", "private, max-age=300").send(buffer);
+  });
+
+  app.delete("/api/content/requests/:id", { preHandler: requirePermission("content.write") }, async (request) => {
+    const current = request.currentUser!;
+    const params = z.object({ id: z.string() }).parse(request.params);
+    const content = await prisma.contentRequest.findUniqueOrThrow({
+      where: { id: params.id },
+      include: { items: { include: { publishingRecords: true } }, assets: true }
+    });
+    const failedJobs = await prisma.automationJob.count({ where: { contentRequestId: content.id, currentStatus: "FAILED" } });
+    if (!failedJobs && content.status !== "FAILED") throw new Error("Only failed requests can be permanently deleted");
+    if (content.items.some((item) => item.publishingRecords.length)) throw new Error("Requests with publishing history cannot be deleted; archive this request instead");
+    const assetIds = content.assets.map((asset) => asset.id);
+    const fileIds = content.assets.flatMap((asset) => asset.fileId ? [asset.fileId] : []);
+    await prisma.$transaction([
+      prisma.approval.deleteMany({ where: { entityId: { in: [content.id, ...assetIds] } } }),
+      prisma.creativeAsset.deleteMany({ where: { contentRequestId: content.id } }),
+      prisma.fileObject.deleteMany({ where: { id: { in: fileIds } } }),
+      prisma.automationJob.deleteMany({ where: { contentRequestId: content.id } }),
+      prisma.contentRequest.delete({ where: { id: content.id } })
+    ]);
+    await audit({ actorUserId: current.user.id, action: "content.failed_request_deleted", entityType: "content_request", entityId: content.id, summary: "Failed content request permanently deleted" });
+    return { ok: true };
+  });
   app.post("/api/content/requests/:id/review", { preHandler: requirePermission("content.review") }, async (request) => {
     const current = request.currentUser!;
     const params = z.object({ id: z.string() }).parse(request.params);
@@ -154,12 +257,15 @@ export async function contentRoutes(app: FastifyInstance) {
     if (!asset.contentRequestId) throw new Error("Creative asset is not linked to a content request");
     if (input.decision === "approved") {
       await prisma.$transaction([
+        prisma.creativeAsset.updateMany({ where: { contentRequestId: asset.contentRequestId, id: { not: asset.id } }, data: { approvalStatus: "rejected", status: "superseded" } }),
         prisma.creativeAsset.update({ where: { id: asset.id }, data: { approvalStatus: "approved", status: "approved" } }),
+        prisma.fileObject.updateMany({ where: { id: asset.fileId ?? "__no_uploaded_file__" }, data: { approvalStatus: "approved" } }),
         prisma.contentRequest.update({ where: { id: asset.contentRequestId }, data: { status: "APPROVED_PUBLICATION" } }),
         prisma.approval.create({ data: { entityType: "creative_asset", entityId: asset.id, approvalType: "creative", status: "approved", decidedByUserId: current.user.id, decisionNotes: input.notes, decidedAt: new Date() } })
       ]);
     } else {
       await prisma.creativeAsset.update({ where: { id: asset.id }, data: { approvalStatus: input.decision, status: input.decision } });
+      if (asset.fileId) await prisma.fileObject.update({ where: { id: asset.fileId }, data: { approvalStatus: input.decision } });
       await prisma.contentRequest.update({ where: { id: asset.contentRequestId }, data: { status: input.decision === "rejected" ? "REJECTED" : "APPROVED_INTERNAL" } });
       if (input.decision === "regenerate") await requestCreativeProduction(asset.contentRequestId, current.user.id);
     }
