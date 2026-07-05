@@ -104,17 +104,19 @@ const buildMagnificMcpRequest = `const cp = $json.cp;
 const payload = cp.payload ?? {};
 const headline = String(payload.headline ?? "").trim();
 const caption = String(payload.caption ?? "").trim();
-const product = String(payload.product ?? "Refined Sunflower Oil").trim();
+const product = String(payload.product ?? "").trim() || "the selected product";
+const brand = String(payload.brand ?? "Future Foresight").trim() || "Future Foresight";
 const market = String(payload.market ?? "Gulf and MENA importers and distributors").trim();
 const prompt = [
-  "Create one premium photorealistic B2B social advertising image for Future Oils.",
+  "Create one premium photorealistic B2B social advertising image for " + brand + ".",
   "The visual must promote " + product + " for " + market + ".",
+  "Treat " + product + " as authoritative: every visible product, package, raw material, and contextual cue must match it. Do not depict edible oil unless the selected product itself is an edible oil.",
   headline ? "Campaign headline context: " + headline + "." : "",
   caption ? "Post caption context: " + caption.slice(0, 700) + "." : "",
   "Use a portrait 4:5 social composition suitable for Facebook and Instagram.",
-  "Use bright premium studio product photography, clean white to very light neutral background, warm sunflower-gold light, restrained deep olive accents, realistic golden oil cues, and a confident export-trade look.",
-  "Show a single clear hero sunflower oil bottle/package with strong shelf appeal and realistic proportions.",
-  "Do not add typography, floating text, badges, prices, certification seals, health claims, people, hands, watermarks, duplicate bottles, clutter, or distorted brand marks.",
+  "Use bright premium commercial photography, a clean white to light neutral background, restrained olive and gold brand accents, and a confident international-trade look.",
+  "Show one clear hero representation appropriate to the selected product, using realistic proportions, material, packaging, and industrial or commodity context.",
+  "Do not add typography, floating text, badges, prices, certification seals, unsupported technical claims, people, hands, watermarks, duplicate products, clutter, oil bottles for non-oil products, or distorted brand marks.",
   "Leave safe space around the product for platform cropping. The final image should be ready for human creative review before publishing."
 ].filter(Boolean).join(" ");
 return [{ json: {

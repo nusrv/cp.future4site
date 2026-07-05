@@ -1,13 +1,8 @@
 {
   "name": "FF Admin - Creative Image Generation",
+  "active": false,
   "nodes": [
     {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "future-foresight/creative-image-generation",
-        "responseMode": "responseNode",
-        "options": {}
-      },
       "id": "creative-image-webhook",
       "name": "CP Creative Image Request Webhook",
       "type": "n8n-nodes-base.webhook",
@@ -16,50 +11,63 @@
         0,
         0
       ],
-      "webhookId": "da0502a1-e160-4086-9a3b-3225fd3383cc"
+      "parameters": {
+        "path": "future-foresight/creative-image-generation",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      }
     },
     {
-      "parameters": {
-        "jsCode": "const crypto = require(\"crypto\");\nconst envelope = $json;\nconst body = envelope.body ?? envelope;\nconst headers = envelope.headers ?? {};\nconst signature = String(headers[\"x-ff-signature\"] ?? \"\");\nconst timestamp = String(headers[\"x-ff-timestamp\"] ?? \"\");\nconst nonce = String(headers[\"x-ff-nonce\"] ?? \"\");\nconst secret = $env.N8N_WEBHOOK_SECRET;\nif (!secret) throw new Error(\"Missing N8N_WEBHOOK_SECRET in n8n environment\");\nif (!signature || !timestamp || !nonce) throw new Error(\"Missing CP request signature headers\");\nif (!body.job_id || !body.correlation_id || !body.callback_url) throw new Error(\"Missing job_id, correlation_id, or callback_url\");\nif (body.workflow_type !== \"creative_image_generation\") throw new Error(\"Unexpected workflow_type\");\nconst drift = Math.abs(Date.now() - Date.parse(timestamp));\nif (!Number.isFinite(drift) || drift > 5 * 60 * 1000) throw new Error(\"CP request timestamp rejected\");\nconst raw = JSON.stringify(body);\nconst expected = crypto.createHmac(\"sha256\", secret).update(timestamp + \".\" + nonce + \".\" + raw).digest(\"hex\");\nconst supplied = Buffer.from(signature, \"hex\");\nconst calculated = Buffer.from(expected, \"hex\");\nif (supplied.length !== calculated.length || !crypto.timingSafeEqual(supplied, calculated)) throw new Error(\"Invalid CP request signature\");\nreturn [{ json: { cp: body, accepted: true, received_at: new Date().toISOString() } }];"
-      },
       "id": "validate-cp-request",
       "name": "Validate Signed CP Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        256,
+        250,
         0
-      ]
+      ],
+      "parameters": {
+        "jsCode": "const crypto = require(\"crypto\");\nconst envelope = $json;\nconst body = envelope.body ?? envelope;\nconst headers = envelope.headers ?? {};\nconst signature = String(headers[\"x-ff-signature\"] ?? \"\");\nconst timestamp = String(headers[\"x-ff-timestamp\"] ?? \"\");\nconst nonce = String(headers[\"x-ff-nonce\"] ?? \"\");\nconst secret = $env.N8N_WEBHOOK_SECRET;\nif (!secret) throw new Error(\"Missing N8N_WEBHOOK_SECRET in n8n environment\");\nif (!signature || !timestamp || !nonce) throw new Error(\"Missing CP request signature headers\");\nif (!body.job_id || !body.correlation_id || !body.callback_url) throw new Error(\"Missing job_id, correlation_id, or callback_url\");\nif (body.workflow_type !== \"creative_image_generation\") throw new Error(\"Unexpected workflow_type\");\nconst drift = Math.abs(Date.now() - Date.parse(timestamp));\nif (!Number.isFinite(drift) || drift > 5 * 60 * 1000) throw new Error(\"CP request timestamp rejected\");\nconst raw = JSON.stringify(body);\nconst expected = crypto.createHmac(\"sha256\", secret).update(timestamp + \".\" + nonce + \".\" + raw).digest(\"hex\");\nconst supplied = Buffer.from(signature, \"hex\");\nconst calculated = Buffer.from(expected, \"hex\");\nif (supplied.length !== calculated.length || !crypto.timingSafeEqual(supplied, calculated)) throw new Error(\"Invalid CP request signature\");\nreturn [{ json: { cp: body, accepted: true, received_at: new Date().toISOString() } }];"
+      }
     },
     {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ { accepted: true, job_id: $json.cp.job_id, workflow_type: \"creative_image_generation\" } }}",
-        "options": {}
-      },
       "id": "respond-cp",
       "name": "Acknowledge CP Request",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
-        512,
+        500,
         0
-      ]
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: true, job_id: $json.cp.job_id, workflow_type: \"creative_image_generation\" } }}",
+        "options": {}
+      }
     },
     {
-      "parameters": {
-        "jsCode": "const cp = $json.cp;\nconst payload = cp.payload ?? {};\nconst headline = String(payload.headline ?? \"\").trim();\nconst caption = String(payload.caption ?? \"\").trim();\nconst product = String(payload.product ?? \"Refined Sunflower Oil\").trim();\nconst market = String(payload.market ?? \"Gulf and MENA importers and distributors\").trim();\nconst prompt = [\n  \"Create one premium photorealistic B2B social advertising image for Future Oils.\",\n  \"The visual must promote \" + product + \" for \" + market + \".\",\n  headline ? \"Campaign headline context: \" + headline + \".\" : \"\",\n  caption ? \"Post caption context: \" + caption.slice(0, 700) + \".\" : \"\",\n  \"Use a portrait 4:5 social composition suitable for Facebook and Instagram.\",\n  \"Use bright premium studio product photography, clean white to very light neutral background, warm sunflower-gold light, restrained deep olive accents, realistic golden oil cues, and a confident export-trade look.\",\n  \"Show a single clear hero sunflower oil bottle/package with strong shelf appeal and realistic proportions.\",\n  \"Do not add typography, floating text, badges, prices, certification seals, health claims, people, hands, watermarks, duplicate bottles, clutter, or distorted brand marks.\",\n  \"Leave safe space around the product for platform cropping. The final image should be ready for human creative review before publishing.\"\n].filter(Boolean).join(\" \");\nreturn [{ json: {\n  cp,\n  mcp_endpoint: \"https://mcp.magnific.com\",\n  mcp_generate_args: { prompt },\n  requested_output: { type: \"image\", aspect_ratio: \"4:5\", review_required: true }\n} }];"
-      },
       "id": "build-magnific-mcp-request",
       "name": "Build Magnific MCP Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        752,
+        750,
         0
-      ]
+      ],
+      "parameters": {
+        "jsCode": "const cp = $json.cp;\nconst payload = cp.payload ?? {};\nconst headline = String(payload.headline ?? \"\").trim();\nconst caption = String(payload.caption ?? \"\").trim();\nconst product = String(payload.product ?? \"\").trim() || \"the selected product\";\nconst brand = String(payload.brand ?? \"Future Foresight\").trim() || \"Future Foresight\";\nconst market = String(payload.market ?? \"Gulf and MENA importers and distributors\").trim();\nconst prompt = [\n  \"Create one premium photorealistic B2B social advertising image for \" + brand + \".\",\n  \"The visual must promote \" + product + \" for \" + market + \".\",\n  \"Treat \" + product + \" as authoritative: every visible product, package, raw material, and contextual cue must match it. Do not depict edible oil unless the selected product itself is an edible oil.\",\n  headline ? \"Campaign headline context: \" + headline + \".\" : \"\",\n  caption ? \"Post caption context: \" + caption.slice(0, 700) + \".\" : \"\",\n  \"Use a portrait 4:5 social composition suitable for Facebook and Instagram.\",\n  \"Use bright premium commercial photography, a clean white to light neutral background, restrained olive and gold brand accents, and a confident international-trade look.\",\n  \"Show one clear hero representation appropriate to the selected product, using realistic proportions, material, packaging, and industrial or commodity context.\",\n  \"Do not add typography, floating text, badges, prices, certification seals, unsupported technical claims, people, hands, watermarks, duplicate products, clutter, oil bottles for non-oil products, or distorted brand marks.\",\n  \"Leave safe space around the product for platform cropping. The final image should be ready for human creative review before publishing.\"\n].filter(Boolean).join(\" \");\nreturn [{ json: {\n  cp,\n  mcp_endpoint: \"https://mcp.magnific.com\",\n  mcp_generate_args: { prompt },\n  requested_output: { type: \"image\", aspect_ratio: \"4:5\", review_required: true }\n} }];"
+      }
     },
     {
+      "id": "generate-image-with-magnific-mcp",
+      "name": "Generate Image With Magnific MCP",
+      "type": "@n8n/n8n-nodes-langchain.mcpClient",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        0
+      ],
       "parameters": {
         "endpointUrl": "https://mcp.magnific.com",
         "authentication": "mcpOAuth2Api",
@@ -80,30 +88,30 @@
           "convertFieldsToString": false
         },
         "options": {}
-      },
-      "id": "generate-image-with-magnific-mcp",
-      "name": "Generate Image With Magnific MCP",
-      "type": "@n8n/n8n-nodes-langchain.mcpClient",
-      "typeVersion": 1,
-      "position": [
-        1008,
-        0
-      ]
+      }
     },
     {
-      "parameters": {
-        "jsCode": "function parseMaybeJson(value) {\n  if (typeof value !== \"string\") return value;\n  try { return JSON.parse(value); } catch { return value; }\n}\nfunction collectCandidates(value, output = []) {\n  const parsed = parseMaybeJson(value);\n  if (parsed && typeof parsed === \"object\") {\n    output.push(parsed);\n    if (Array.isArray(parsed.content)) {\n      for (const item of parsed.content) {\n        if (item?.type === \"text\") collectCandidates(item.text, output);\n        else collectCandidates(item, output);\n      }\n    }\n    if (parsed.structuredContent) collectCandidates(parsed.structuredContent, output);\n  }\n  return output;\n}\nfunction findByKeys(value, keys, seen = new Set()) {\n  if (!value || typeof value !== \"object\" || seen.has(value)) return undefined;\n  seen.add(value);\n  if (Array.isArray(value)) {\n    for (const item of value) {\n      const found = findByKeys(item, keys, seen);\n      if (found) return found;\n    }\n    return undefined;\n  }\n  for (const key of keys) {\n    const candidate = value[key];\n    if (typeof candidate === \"string\" && candidate.trim()) return candidate.trim();\n    if (typeof candidate === \"number\" && Number.isFinite(candidate)) return String(candidate);\n  }\n  for (const nested of Object.values(value)) {\n    const found = findByKeys(nested, keys, seen);\n    if (found) return found;\n  }\n  return undefined;\n}\nconst built = $(\"Build Magnific MCP Request\").item.json;\nconst generationResult = $json;\nconst candidates = collectCandidates(generationResult);\nlet creationId;\nfor (const candidate of candidates) {\n  creationId = findByKeys(candidate, [\"identifier\", \"id\", \"creation_id\", \"creationId\", \"task_id\", \"taskId\", \"job_id\", \"jobId\"]);\n  if (creationId) break;\n}\nif (!creationId) {\n  throw new Error(\"Magnific MCP images_generate did not return a creation identifier. Open this execution, inspect the MCP output, and adjust Prepare Magnific Wait Input to the live tools/list schema.\");\n}\nreturn [{ json: {\n  cp: built.cp,\n  mcp_endpoint: built.mcp_endpoint,\n  generation_result: generationResult,\n  creation_id: creationId,\n  mcp_wait_args: { identifiers: [creationId] }\n} }];"
-      },
       "id": "prepare-magnific-wait-input",
       "name": "Prepare Magnific Wait Input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1264,
+        1250,
         0
-      ]
+      ],
+      "parameters": {
+        "jsCode": "function parseMaybeJson(value) {\n  if (typeof value !== \"string\") return value;\n  try { return JSON.parse(value); } catch { return value; }\n}\nfunction collectCandidates(value, output = []) {\n  const parsed = parseMaybeJson(value);\n  if (parsed && typeof parsed === \"object\") {\n    output.push(parsed);\n    if (Array.isArray(parsed.content)) {\n      for (const item of parsed.content) {\n        if (item?.type === \"text\") collectCandidates(item.text, output);\n        else collectCandidates(item, output);\n      }\n    }\n    if (parsed.structuredContent) collectCandidates(parsed.structuredContent, output);\n  }\n  return output;\n}\nfunction findByKeys(value, keys, seen = new Set()) {\n  if (!value || typeof value !== \"object\" || seen.has(value)) return undefined;\n  seen.add(value);\n  if (Array.isArray(value)) {\n    for (const item of value) {\n      const found = findByKeys(item, keys, seen);\n      if (found) return found;\n    }\n    return undefined;\n  }\n  for (const key of keys) {\n    const candidate = value[key];\n    if (typeof candidate === \"string\" && candidate.trim()) return candidate.trim();\n    if (typeof candidate === \"number\" && Number.isFinite(candidate)) return String(candidate);\n  }\n  for (const nested of Object.values(value)) {\n    const found = findByKeys(nested, keys, seen);\n    if (found) return found;\n  }\n  return undefined;\n}\nconst built = $(\"Build Magnific MCP Request\").item.json;\nconst generationResult = $json;\nconst candidates = collectCandidates(generationResult);\nlet creationId;\nfor (const candidate of candidates) {\n  creationId = findByKeys(candidate, [\"identifier\", \"id\", \"creation_id\", \"creationId\", \"task_id\", \"taskId\", \"job_id\", \"jobId\"]);\n  if (creationId) break;\n}\nif (!creationId) {\n  throw new Error(\"Magnific MCP images_generate did not return a creation identifier. Open this execution, inspect the MCP output, and adjust Prepare Magnific Wait Input to the live tools/list schema.\");\n}\nreturn [{ json: {\n  cp: built.cp,\n  mcp_endpoint: built.mcp_endpoint,\n  generation_result: generationResult,\n  creation_id: creationId,\n  mcp_wait_args: { identifiers: [creationId] }\n} }];"
+      }
     },
     {
+      "id": "wait-for-magnific-creation",
+      "name": "Wait For Magnific Creation",
+      "type": "@n8n/n8n-nodes-langchain.mcpClient",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        0
+      ],
       "parameters": {
         "endpointUrl": "https://mcp.magnific.com",
         "authentication": "mcpOAuth2Api",
@@ -119,55 +127,35 @@
             "identifiers": "={{ $json.mcp_wait_args.identifiers }}"
           },
           "matchingColumns": [],
-          "schema": [
-            {
-              "id": "identifiers",
-              "displayName": "identifiers",
-              "defaultMatch": false,
-              "required": true,
-              "display": true,
-              "type": "array",
-              "defaultValue": "[\n  \"string\"\n]",
-              "removed": false
-            },
-            {
-              "id": "timeoutSeconds",
-              "displayName": "timeoutSeconds",
-              "defaultMatch": false,
-              "required": false,
-              "display": true,
-              "type": "number",
-              "removed": true
-            }
-          ],
+          "schema": [],
           "attemptToConvertTypes": false,
           "convertFieldsToString": false
         },
         "options": {}
-      },
-      "id": "wait-for-magnific-creation",
-      "name": "Wait For Magnific Creation",
-      "type": "@n8n/n8n-nodes-langchain.mcpClient",
-      "typeVersion": 1,
-      "position": [
-        1504,
-        0
-      ]
+      }
     },
     {
-      "parameters": {
-        "jsCode": "const crypto = require(\"crypto\");\n\nfunction parseMaybeJson(value) {\n  if (typeof value !== \"string\") return value;\n  try { return JSON.parse(value); } catch { return value; }\n}\n\nfunction walk(value, visitor, seen = new Set()) {\n  const parsed = parseMaybeJson(value);\n  if (!parsed || typeof parsed !== \"object\" || seen.has(parsed)) return;\n\n  seen.add(parsed);\n  visitor(parsed);\n\n  if (Array.isArray(parsed)) {\n    for (const item of parsed) walk(item, visitor, seen);\n    return;\n  }\n\n  for (const item of Object.values(parsed)) walk(item, visitor, seen);\n}\n\nfunction isHttpUrl(value) {\n  return typeof value === \"string\" && (\n    value.startsWith(\"http://\") ||\n    value.startsWith(\"https://\")\n  );\n}\n\nfunction collectUrls(value) {\n  const urls = new Set();\n\n  const urlKeys = new Set([\n    \"url\",\n    \"webUrl\",\n    \"image_url\",\n    \"imageUrl\",\n    \"output_url\",\n    \"outputUrl\",\n    \"download_url\",\n    \"downloadUrl\",\n    \"public_url\",\n    \"publicUrl\"\n  ]);\n\n  walk(value, (item) => {\n    if (Array.isArray(item)) return;\n\n    for (const [key, raw] of Object.entries(item)) {\n      if (\n        isHttpUrl(raw) &&\n        (urlKeys.has(key) || /image|generated|download|url|webUrl/i.test(key))\n      ) {\n        urls.add(raw);\n      }\n\n      if (Array.isArray(raw)) {\n        for (const entry of raw) {\n          if (isHttpUrl(entry)) urls.add(entry);\n        }\n      }\n    }\n\n    if (item.type === \"image\" && typeof item.data === \"string\") {\n      urls.add(\"data:\" + String(item.mimeType ?? \"image/png\") + \";base64,\" + item.data);\n    }\n  });\n\n  return [...urls];\n}\n\nconst built = $(\"Build Magnific MCP Request\").item.json;\nconst waitInput = $(\"Prepare Magnific Wait Input\").item.json;\nconst waitResult = $json;\n\nconst urls = [\n  ...new Set([\n    ...collectUrls(waitResult),\n    ...collectUrls(waitInput.generation_result)\n  ])\n];\n\nconst complete = urls.length > 0;\nconst status = complete ? \"completed\" : \"failed\";\n\nconst callbackSecret = $env.PLATFORM_CALLBACK_SECRET;\nif (!callbackSecret) {\n  throw new Error(\"Missing PLATFORM_CALLBACK_SECRET in n8n environment\");\n}\n\nconst timestamp = new Date().toISOString();\nconst nonce = \"n8n_mcp_image_result_\" + Date.now() + \"_\" + Math.random().toString(36).slice(2);\n\nconst files = complete ? urls.map((url, index) => ({\n  file_id: String(waitInput.creation_id) + \"_\" + index,\n  type: \"image\",\n  url,\n  source: \"magnific-mcp\",\n  provider_creation_id: waitInput.creation_id\n})) : [];\n\nconst callbackBody = {\n  job_id: built.cp.job_id,\n  correlation_id: built.cp.correlation_id,\n  idempotency_key: built.cp.idempotency_key,\n  workflow_type: \"creative_image_generation\",\n  workflow_version: built.cp.workflow_version ?? \"creative-image-mcp-v1\",\n  status,\n  current_step: complete\n    ? \"Magnific MCP image is ready for review\"\n    : \"Magnific MCP completed without a usable image URL\",\n  nonce,\n  signature_timestamp: timestamp,\n  signature: \"\",\n  outputs: {\n    provider: \"magnific-mcp\",\n    mcp_endpoint: built.mcp_endpoint,\n    creation_id: waitInput.creation_id,\n    files,\n    generation_result: waitInput.generation_result,\n    wait_result: waitResult\n  },\n  files,\n  warnings: [],\n  error: complete ? undefined : {\n    code: \"MAGNIFIC_MCP_NO_IMAGE_URL\",\n    message: \"Magnific MCP result did not include a usable image URL or image payload\",\n    retryable: true\n  }\n};\n\nif (!callbackBody.error) delete callbackBody.error;\n\nconst raw = JSON.stringify(callbackBody);\nconst signature = crypto\n  .createHmac(\"sha256\", callbackSecret)\n  .update(timestamp + \".\" + nonce + \".\" + raw)\n  .digest(\"hex\");\n\nreturn [{\n  json: {\n    callback_url: built.cp.callback_url,\n    callback_headers: {\n      signature,\n      timestamp,\n      nonce\n    },\n    callback_body: callbackBody\n  }\n}];"
-      },
       "id": "prepare-completed-callback",
       "name": "Prepare Completed CP Callback",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1760,
+        1750,
         0
-      ]
+      ],
+      "parameters": {
+        "jsCode": "const crypto = require(\"crypto\");\nfunction parseMaybeJson(value) {\n  if (typeof value !== \"string\") return value;\n  try { return JSON.parse(value); } catch { return value; }\n}\nfunction walk(value, visitor, seen = new Set()) {\n  const parsed = parseMaybeJson(value);\n  if (!parsed || typeof parsed !== \"object\" || seen.has(parsed)) return;\n  seen.add(parsed);\n  visitor(parsed);\n  if (Array.isArray(parsed)) {\n    for (const item of parsed) walk(item, visitor, seen);\n    return;\n  }\n  for (const item of Object.values(parsed)) walk(item, visitor, seen);\n}\nfunction collectUrls(value) {\n  const urls = new Set();\n  const urlKeys = new Set([\"url\", \"image_url\", \"imageUrl\", \"output_url\", \"outputUrl\", \"download_url\", \"downloadUrl\", \"public_url\", \"publicUrl\"]);\n  walk(value, (item) => {\n    if (Array.isArray(item)) return;\n    for (const [key, raw] of Object.entries(item)) {\n      if (typeof raw === \"string\" && /^https?:///.test(raw) && (urlKeys.has(key) || /image|generated|download|url/i.test(key))) urls.add(raw);\n      if (Array.isArray(raw)) {\n        for (const entry of raw) if (typeof entry === \"string\" && /^https?:///.test(entry)) urls.add(entry);\n      }\n    }\n    if (item.type === \"image\" && typeof item.data === \"string\") urls.add(\"data:\" + String(item.mimeType ?? \"image/png\") + \";base64,\" + item.data);\n  });\n  return [...urls];\n}\nconst built = $(\"Build Magnific MCP Request\").item.json;\nconst waitInput = $(\"Prepare Magnific Wait Input\").item.json;\nconst waitResult = $json;\nconst urls = [...new Set([...collectUrls(waitResult), ...collectUrls(waitInput.generation_result)])];\nconst complete = urls.length > 0;\nconst status = complete ? \"completed\" : \"failed\";\nconst callbackSecret = $env.PLATFORM_CALLBACK_SECRET;\nif (!callbackSecret) throw new Error(\"Missing PLATFORM_CALLBACK_SECRET in n8n environment\");\nconst timestamp = new Date().toISOString();\nconst nonce = \"n8n_mcp_image_result_\" + Date.now() + \"_\" + Math.random().toString(36).slice(2);\nconst files = complete ? urls.map((url, index) => ({\n  file_id: String(waitInput.creation_id) + \"_\" + index,\n  type: \"image\",\n  url,\n  source: \"magnific-mcp\",\n  provider_creation_id: waitInput.creation_id\n})) : [];\nconst callbackBody = {\n  job_id: built.cp.job_id,\n  correlation_id: built.cp.correlation_id,\n  idempotency_key: built.cp.idempotency_key,\n  workflow_type: \"creative_image_generation\",\n  workflow_version: built.cp.workflow_version ?? \"creative-image-mcp-v1\",\n  status,\n  current_step: complete ? \"Magnific MCP image is ready for review\" : \"Magnific MCP completed without a usable image URL\",\n  nonce,\n  signature_timestamp: timestamp,\n  signature: \"\",\n  outputs: {\n    provider: \"magnific-mcp\",\n    mcp_endpoint: built.mcp_endpoint,\n    creation_id: waitInput.creation_id,\n    files,\n    generation_result: waitInput.generation_result,\n    wait_result: waitResult\n  },\n  files,\n  warnings: [],\n  error: complete ? undefined : { code: \"MAGNIFIC_MCP_NO_IMAGE_URL\", message: \"Magnific MCP result did not include a usable image URL or image payload\", retryable: true }\n};\nif (!callbackBody.error) delete callbackBody.error;\nconst raw = JSON.stringify(callbackBody);\nconst signature = crypto.createHmac(\"sha256\", callbackSecret).update(timestamp + \".\" + nonce + \".\" + raw).digest(\"hex\");\nreturn [{ json: { callback_url: built.cp.callback_url, callback_headers: { signature, timestamp, nonce }, callback_body: callbackBody } }];"
+      }
     },
     {
+      "id": "send-completed-callback",
+      "name": "Send Signed Callback To CP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2000,
+        0
+      ],
       "parameters": {
         "method": "POST",
         "url": "={{ $json.callback_url }}",
@@ -196,18 +184,9 @@
         "specifyBody": "json",
         "jsonBody": "={{ $json.callback_body }}",
         "options": {}
-      },
-      "id": "send-completed-callback",
-      "name": "Send Signed Callback To CP",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [
-        2000,
-        0
-      ]
+      }
     }
   ],
-  "pinData": {},
   "connections": {
     "CP Creative Image Request Webhook": {
       "main": [
@@ -298,19 +277,15 @@
       ]
     }
   },
-  "active": false,
   "settings": {
     "executionOrder": "v1",
-    "binaryMode": "separate",
     "saveManualExecutions": true,
     "saveDataErrorExecution": "all",
     "saveDataSuccessExecution": "all"
   },
-  "versionId": "08c2fb3e-c101-4fd2-87b0-7d5ba3078488",
-  "meta": {
-    "templateCredsSetupCompleted": true,
-    "instanceId": "1665f556393a6b23e2c2d8c43bc5f659554295a63f6af252d6d1dbe936596a3e"
-  },
-  "id": "rWQZP7saIkXUXDUD",
-  "tags": []
+  "tags": [
+    "future-foresight",
+    "creative-image",
+    "magnific-mcp"
+  ]
 }

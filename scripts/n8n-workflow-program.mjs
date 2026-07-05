@@ -155,24 +155,20 @@ return [{
     codeNode("evidence", "Build Approved Evidence And Prompt", `
 const cp = $json.cp ?? $json.body ?? $json;
 const payload = cp.payload ?? {};
+const product = String(payload.product ?? "").trim() || "the selected product";
+const brand = String(payload.brand ?? "Future Foresight").trim() || "Future Foresight";
 
 const evidence = [
   {
-    claim: "Future Oils is the edible-oils brand used for this content stream.",
-    source_file: "Projects/Marketing/content/evidence-ledger.md",
-    source_section: "Week 1 approved claims",
+    claim: "The operator selected " + product + " as the product for this content request.",
+    source_file: "Control Panel content request",
+    source_section: "Selected product",
     public_use: true
   },
   {
-    claim: "Approved public packaging range: 1L, 2L, 4L, 5L, 10L, 18L, 20L, and Flexitank.",
-    source_file: "Projects/Marketing/content/evidence-ledger.md",
-    source_section: "Packaging range",
-    public_use: true
-  },
-  {
-    claim: "Future Oils public social content must stay focused on edible oils only.",
-    source_file: "Projects/Marketing/content/phase-1-content-system.md",
-    source_section: "Content governance",
+    claim: "The operator selected " + brand + " as the brand for this content request.",
+    source_file: "Control Panel content request",
+    source_section: "Selected brand",
     public_use: true
   },
   {
@@ -192,16 +188,18 @@ const prohibited = [
   "availability or stock guarantees",
   "certification badges or unsupported certification claims",
   "supplier names or supplier details",
-  "sugar or metals",
-  "3L or 17L packaging"
+  "product specifications, grades, packaging, or standards not supplied in the request"
 ];
 
 const prompt = [
-  "Create English-only B2B social media copy for Future Oils.",
+  "Create English-only B2B social media copy for the selected brand and product.",
+  "The selected product is authoritative. Write specifically about: " + product + ".",
+  "The selected brand is: " + brand + ".",
   "Return JSON only with fields: headline, caption, cta, hashtags, evidence_references, warnings.",
   "Use only the approved evidence provided.",
   "Do not invent prices, availability, guarantees, origins, shipping terms, certifications, nutrition, or health claims.",
-  "Do not mention sugar, metals, suppliers, 3L, or 17L.",
+  "Do not substitute edible oil or any other product for the selected product.",
+  "Do not invent product specifications, grades, packaging, standards, or certifications that are not supplied in the request.",
   "Keep the tone premium, direct, and suitable for importers/distributors.",
   "",
   "CONTENT REQUEST:",
@@ -222,18 +220,18 @@ const payload = item.payload ?? {};
 const evidence = item.evidence ?? [];
 
 function fallbackOutput(reason) {
-  const topic = String(payload.topic || "Future Oils B2B inquiry").slice(0, 120);
-  const product = payload.product ? String(payload.product) : "edible oils";
+  const product = String(payload.product || "the selected product");
+  const brand = String(payload.brand || "Future Foresight");
+  const topic = String(payload.topic || product + " B2B inquiry").slice(0, 120);
   return {
-    headline: topic.length > 4 ? topic : "Future Oils for B2B Buyers",
+    headline: topic.length > 4 ? topic : product + " for B2B Buyers",
     caption: [
-      "Future Oils supports B2B enquiries for " + product + ".",
-      "Share your request through the official inquiry process so the team can review product, format, market, and contact details.",
-      "Approved formats: 1L, 2L, 4L, 5L, 10L, 18L, 20L, and Flexitank.",
+      brand + " supports B2B enquiries for " + product + ".",
+      "Share your requirements through the official inquiry process so the team can review the product, target market, and requested terms.",
       "Request a Quote"
     ].join("\\n\\n"),
     cta: payload.cta || "Request a Quote",
-    hashtags: ["#FutureOils", "#EdibleOils", "#B2BTrade"],
+    hashtags: ["#FutureForesight", "#B2BTrade"],
     evidence_references: evidence.map((entry) => ({
       source_file: entry.source_file,
       source_section: entry.source_section
@@ -307,16 +305,17 @@ const warnings = Array.isArray(output.warnings) ? [...output.warnings] : [];
 
 function fallbackOutput(reason) {
   warnings.push(reason);
+  const product = String(payload.product || "the selected product");
+  const brand = String(payload.brand || "Future Foresight");
   return {
-    headline: String(payload.topic || "Future Oils for B2B Buyers").slice(0, 120),
+    headline: String(payload.topic || product + " for B2B Buyers").slice(0, 120),
     caption: [
-      "Future Oils supports B2B enquiries for edible oils.",
-      "Share your request through the official inquiry process so the team can review product, format, market, and contact details.",
-      "Approved formats: 1L, 2L, 4L, 5L, 10L, 18L, 20L, and Flexitank.",
+      brand + " supports B2B enquiries for " + product + ".",
+      "Share your requirements through the official inquiry process so the team can review the product, target market, and requested terms.",
       "Request a Quote"
     ].join("\\n\\n"),
     cta: payload.cta || "Request a Quote",
-    hashtags: ["#FutureOils", "#EdibleOils", "#B2BTrade"],
+    hashtags: ["#FutureForesight", "#B2BTrade"],
     evidence_references: evidence.map((entry) => ({
       source_file: entry.source_file,
       source_section: entry.source_section
@@ -335,8 +334,6 @@ const blockedPatterns = [
   { pattern: /guaranteed|guarantee|always available|in stock|immediate delivery|fast shipping|delivery within/i, reason: "Unsupported availability/shipping/commercial guarantee detected." },
   { pattern: /certified|certificate|iso|haccp|halal/i, reason: "Unsupported certification wording detected." },
   { pattern: /supplier|factory|origin country|manufacturer/i, reason: "Potential supplier/internal information wording detected." },
-  { pattern: /\\b3l\\b|\\b17l\\b/i, reason: "Unavailable packaging size detected." },
-  { pattern: /sugar|metal|metals|aluminium|copper|steel/i, reason: "Non-edible-oil category detected." },
   { pattern: /\\$|usd|eur|price|payment terms/i, reason: "Unsupported price or payment wording detected." }
 ];
 
@@ -345,10 +342,10 @@ if (violations.length) {
   output = fallbackOutput("Unsafe generated output replaced. " + violations.join(" "));
 } else {
   output = {
-    headline: typeof output.headline === "string" ? output.headline.slice(0, 160) : "Future Oils for B2B Buyers",
+    headline: typeof output.headline === "string" ? output.headline.slice(0, 160) : String(payload.product || "B2B Product") + " for B2B Buyers",
     caption: typeof output.caption === "string" ? output.caption : fallbackOutput("Missing caption; safe fallback used.").caption,
     cta: typeof output.cta === "string" ? output.cta.slice(0, 80) : "Request a Quote",
-    hashtags: Array.isArray(output.hashtags) ? output.hashtags.filter((tag) => typeof tag === "string").slice(0, 8) : ["#FutureOils", "#EdibleOils", "#B2BTrade"],
+    hashtags: Array.isArray(output.hashtags) ? output.hashtags.filter((tag) => typeof tag === "string").slice(0, 8) : ["#FutureForesight", "#B2BTrade"],
     evidence_references: Array.isArray(output.evidence_references) ? output.evidence_references : evidence.map((entry) => ({ source_file: entry.source_file, source_section: entry.source_section })),
     warnings
   };

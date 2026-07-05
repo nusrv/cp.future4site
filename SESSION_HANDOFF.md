@@ -2,7 +2,26 @@
 
 Canonical restart point after any interrupted or completed session. Read this file first before changing the CP or its n8n workflows.
 
-Last verified: **2026-06-29 (Asia/Amman)**
+Last verified: **2026-07-05 (Asia/Amman)**
+## Latest multi-product workflow fix
+
+Applied to source and the active live n8n workflows on **2026-07-05**:
+
+- Fixed text generation so the Control Panel's selected product is authoritative. Sugar, steel, metals, edible oils, and other legitimate products are no longer rejected merely because of their category.
+- Removed edible-oil-only evidence, packaging fallbacks, hashtags, and output validation rules from the general content workflow. Safety rules against unsupported prices, guarantees, certifications, supplier details, specifications, grades, packaging, and standards remain.
+- Fixed image generation so the selected product and brand determine the subject. The prompt no longer forces sunflower-oil bottles, golden-oil cues, or oil packaging for non-oil products.
+- Added repeatable live patch scripts that preserve the active content workflow's Gemini configuration and restore/preserve the Magnific MCP OAuth credential reference during image-workflow updates.
+- Added regression coverage for `Refined Sugar` and `Steel Rebar` across prompt construction, text validation, and image prompt construction.
+
+Live verification:
+
+- `FF Admin - Content Request Intake - Draft` (`JgGTeTGe6CrP85b2`) is active with the multi-product text fix.
+- `FF Admin - Creative Image Generation` (`rWQZP7saIkXUXDUD`) is active with the multi-product image fix and its MCP OAuth credential binding intact.
+- `node scripts/test-multi-product-workflows.mjs` passed for sugar and steel.
+- `node scripts/check-n8n-workflows.mjs` passed.
+- `node scripts/check-creative-image-workflows.mjs` passed (9 nodes).
+- Read-only live inventory confirmed both workflows active. The inventory script exits non-zero because it also reports an older inactive `FF Admin - Magnific Generation - Draft`; this did not affect either active workflow.
+- No real paid image generation was triggered during verification. The next operator check is one sugar image request and one steel image request from the Control Panel.
 ## Latest media library update
 
 Implemented in `786f45f` (`Add reusable media library`) on 2026-06-29:
