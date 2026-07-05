@@ -302,6 +302,10 @@ select:focus-visible {
 .automation-note { display: flex; align-items: center; gap: 9px; margin: 18px 0 0; color: #7a5800; font-size: 13px; }
 .automation-note .status-pulse { width: 12px; height: 12px; border-width: 2px; }
 .detail-actions { position: sticky; bottom: -24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: auto -24px -24px; padding: 16px 24px; background: #fff; border-top: 1px solid var(--border-soft); }
+.delete-confirmation { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin: 36px 0 0; padding: 16px; border: 1px solid #fecaca; border-radius: var(--radius-sm); background: #fff7f7; }
+.delete-confirmation strong { color: #991b1b; }
+.delete-confirmation p { max-width: 68ch; margin: 4px 0 0; color: #5f1d1d; font-size: 13px; line-height: 1.5; }
+.delete-confirmation-actions { display: flex; flex: 0 0 auto; gap: 10px; }
 .secondary-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .empty-state { display: grid; place-content: center; min-height: 180px; padding: 32px; text-align: center; color: var(--text-muted); }
@@ -384,6 +388,7 @@ select:focus-visible {
   .content-queue { border-right: 0; border-bottom: 1px solid var(--border-soft); max-height: 300px; overflow-y: auto; }
   .content-detail { padding: 18px; }
   .detail-actions { position: static; margin: 24px -18px -18px; padding: 14px 18px; }
+  .delete-confirmation, .delete-confirmation-actions { align-items: stretch; flex-direction: column; }
   .workflow-progress { overflow-x: auto; }
   .copy-editor-actions { align-items: stretch; flex-direction: column-reverse; }
   .workflow-progress li { min-width: 92px; }

@@ -194,9 +194,7 @@ export async function contentRoutes(app: FastifyInstance) {
       where: { id: params.id },
       include: { items: { include: { publishingRecords: true } }, assets: true }
     });
-    const failedJobs = await prisma.automationJob.count({ where: { contentRequestId: content.id, currentStatus: "FAILED" } });
-    if (!failedJobs && content.status !== "FAILED") throw new Error("Only failed requests can be permanently deleted");
-    if (content.items.some((item) => item.publishingRecords.length)) throw new Error("Requests with publishing history cannot be deleted; archive this request instead");
+    const itemIds = content.items.map((item) => item.id);
     const assetIds = content.assets.map((asset) => asset.id);
     const fileIds = content.assets.flatMap((asset) => asset.fileId ? [asset.fileId] : []);
     const sharedFileRefs = fileIds.length ? await prisma.creativeAsset.findMany({
@@ -210,11 +208,15 @@ export async function contentRoutes(app: FastifyInstance) {
       prisma.approval.deleteMany({ where: { entityId: { in: [content.id, ...assetIds] } } }),
       prisma.creativeAsset.deleteMany({ where: { contentRequestId: content.id } }),
       prisma.fileObject.deleteMany({ where: { id: { in: deletableFileIds } } }),
-      prisma.automationJob.deleteMany({ where: { contentRequestId: content.id } }),
+      prisma.automationJob.deleteMany({ where: { OR: [
+        { contentRequestId: content.id },
+        { relatedEntityType: "content_request", relatedEntityId: content.id },
+        { relatedEntityType: "content_item", relatedEntityId: { in: itemIds } }
+      ] } }),
       prisma.contentRequest.delete({ where: { id: content.id } })
     ]);
     await Promise.all(storedFiles.map((file) => deleteFile(file.storageKey).catch(() => undefined)));
-    await audit({ actorUserId: current.user.id, action: "content.failed_request_deleted", entityType: "content_request", entityId: content.id, summary: "Failed content request permanently deleted" });
+    await audit({ actorUserId: current.user.id, action: "content.request_deleted", entityType: "content_request", entityId: content.id, summary: `Content request permanently deleted from ${content.status}` });
     return { ok: true };
   });
   app.post("/api/content/requests/:id/review", { preHandler: requirePermission("content.review") }, async (request) => {

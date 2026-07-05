@@ -3,6 +3,26 @@
 Canonical restart point after any interrupted or completed session. Read this file first before changing the CP or its n8n workflows.
 
 Last verified: **2026-07-05 (Asia/Amman)**
+## Latest unrestricted content cleanup update
+
+Implemented in source on **2026-07-05**:
+
+- Content requests can now be permanently deleted from the CP in every state, including draft, processing, failed, rejected, archived, approved, queued, and published.
+- Deletion removes the request's copy versions, creative assets, approvals, publishing records, associated content and publishing automation jobs/events, and unshared stored files.
+- Shared media-library files remain protected when another request still uses them.
+- The Content detail view now always exposes `Delete request`, followed by an inline irreversible-action confirmation. The warning states that external Facebook or Instagram posts are not removed by deleting the CP record.
+- Added deletion regression coverage for unrestricted statuses, relationship cleanup, and UI availability.
+- No database migration is required.
+
+Verification used a clean local temporary copy because the synced-drive `node_modules` remains unusable:
+
+- Typecheck passed for client and server.
+- `npm test` passed: 7 files, 23 tests.
+- `npm run build` passed for the Vite client and TypeScript server.
+- ESLint passed for all changed TypeScript/test files.
+- Secret scan and `git diff --check` passed.
+
+Deployment status: source is ready, but the CP production application must pull this commit, run `npm ci && npm run build`, and restart. No n8n workflow deployment or database migration is needed for this update.
 ## Latest multi-product workflow fix
 
 Applied to source and the active live n8n workflows on **2026-07-05**:

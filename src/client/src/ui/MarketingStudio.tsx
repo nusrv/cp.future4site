@@ -107,7 +107,7 @@ export function MarketingStudio() {
           </section>
 
           <section className="content-detail" aria-live="polite">
-            {selected ? <RequestDetail request={selected} busy={busy} onGenerate={() => generate.mutate(selected.id)} onReview={(decision) => review.mutate({ id: selected.id, decision })} onCreativeReview={(assetId, decision) => creativeReview.mutate({ id: assetId, decision })} onEditCopy={(itemId, body) => editCopy.mutateAsync({ id: itemId, body }).then(() => undefined)} onUploadImage={(file) => uploadImage.mutate({ id: selected.id, file })} onSelectImage={(selection) => selectImage.mutateAsync({ id: selected.id, selection }).then(() => undefined)} onDelete={() => { if (window.confirm("Permanently delete this failed request and its automation history? This cannot be undone.")) deleteRequest.mutate(selected.id); }} /> : <div className="empty-state"><strong>Select a content request</strong><p>Its current stage and next action will appear here.</p></div>}
+            {selected ? <RequestDetail request={selected} busy={busy} onGenerate={() => generate.mutate(selected.id)} onReview={(decision) => review.mutate({ id: selected.id, decision })} onCreativeReview={(assetId, decision) => creativeReview.mutate({ id: assetId, decision })} onEditCopy={(itemId, body) => editCopy.mutateAsync({ id: itemId, body }).then(() => undefined)} onUploadImage={(file) => uploadImage.mutate({ id: selected.id, file })} onSelectImage={(selection) => selectImage.mutateAsync({ id: selected.id, selection }).then(() => undefined)} onDelete={() => deleteRequest.mutate(selected.id)} /> : <div className="empty-state"><strong>Select a content request</strong><p>Its current stage and next action will appear here.</p></div>}
           </section>
         </div>
       )}
@@ -131,7 +131,8 @@ function RequestDetail({ request, busy, onGenerate, onReview, onCreativeReview, 
 }) {
   const [editingCopy, setEditingCopy] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
-  useEffect(() => { setEditingCopy(false); setShowLibrary(false); }, [request.id]);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  useEffect(() => { setEditingCopy(false); setShowLibrary(false); setConfirmingDelete(false); }, [request.id]);
   const stage = deriveStage(request);
   const item = request.items[0];
   const asset = request.assets.find((entry) => entry.approvalStatus !== "rejected") ?? request.assets[0];
@@ -172,6 +173,11 @@ function RequestDetail({ request, busy, onGenerate, onReview, onCreativeReview, 
 
     {latestJob && isProcessing(request) ? <p className="automation-note" role="status"><span className="status-pulse" />{latestJob.currentStep || "Automation is working"}</p> : null}
 
+    {confirmingDelete ? <section className="delete-confirmation" role="alert" aria-labelledby="delete-request-title">
+      <div><strong id="delete-request-title">Permanently delete this request?</strong><p>This removes its copy, media links, approvals, publishing history, and automation jobs from the CP. Posts already published on Facebook or Instagram are not removed.</p></div>
+      <div className="delete-confirmation-actions"><button className="btn btn-secondary" disabled={busy} onClick={() => setConfirmingDelete(false)}>Keep request</button><button className="btn btn-danger" disabled={busy} onClick={onDelete}>{busy ? "Deleting request" : "Delete request permanently"}</button></div>
+    </section> : null}
+
     <footer className="detail-actions">
       <div className="secondary-actions">
         {stage === "review_copy" ? <button className="btn btn-secondary" disabled={busy} onClick={onGenerate}>Regenerate copy</button> : null}
@@ -182,7 +188,7 @@ function RequestDetail({ request, busy, onGenerate, onReview, onCreativeReview, 
         {stage === "rejected" ? <button className="btn btn-secondary" disabled={busy} onClick={() => onReview("revision_requested")}>Restore to review</button> : null}
         {stage === "rejected" ? <button className="btn btn-secondary" disabled={busy} onClick={() => onReview("archived")}>Archive request</button> : null}
         {failed ? <button className="btn btn-secondary" disabled={busy} onClick={() => onReview("archived")}>Archive failed request</button> : null}
-        {failed ? <button className="btn btn-danger" disabled={busy} onClick={onDelete}>Delete failed request</button> : null}
+        {!confirmingDelete ? <button className="btn btn-quiet-danger" disabled={busy} onClick={() => setConfirmingDelete(true)}>Delete request</button> : null}
         {isProcessing(request) ? <Link className="btn btn-secondary" to="/automation">View automation details</Link> : null}
       </div>
       <div>
@@ -193,6 +199,7 @@ function RequestDetail({ request, busy, onGenerate, onReview, onCreativeReview, 
         {stage === "ready" ? <Link className="btn btn-primary" to="/publishing">Open Publishing</Link> : null}
       </div>
     </footer>
+
   </>;
 }
 
