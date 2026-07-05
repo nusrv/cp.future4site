@@ -331,6 +331,8 @@ select:focus-visible {
 .media-use-list { display: grid; gap: 4px; margin: 2px 0 0; padding: 0; list-style: none; }
 .media-use-list a { display: block; overflow: hidden; color: #2e4a2e; font-size: 12px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .media-library-actions { display: flex; justify-content: flex-end; padding: 10px 14px; background: #f8fafc; border-top: 1px solid var(--border-soft); }
+.media-delete-confirmation { width: 100%; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.media-delete-confirmation span { width: 100%; color: #5f1d1d; font-size: 12px; line-height: 1.4; }
 .media-generated-label { color: var(--text-muted); font-size: 12px; font-weight: 700; }
 .media-library-empty { min-height: 360px; background: #fff; border: 1px dashed #b7c0ca; border-radius: var(--radius-md); }
 .media-picker { margin: 20px 0 4px; padding: 18px; background: #f8fafc; border: 1px solid var(--border-soft); border-radius: var(--radius-md); }

@@ -32,9 +32,10 @@ function uploadImage(file: File) {
 export function MediaLibrary() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const query = useQuery<MediaResponse>({ queryKey: ["media-library"], queryFn: () => api<MediaResponse>("/api/media/images") });
   const addImage = useMutation({ mutationFn: uploadImage, onSuccess: () => qc.invalidateQueries({ queryKey: ["media-library"] }) });
-  const deleteImage = useMutation({ mutationFn: (id: string) => remove(`/api/media/images/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ["media-library"] }) });
+  const deleteImage = useMutation({ mutationFn: (id: string) => remove(`/api/media/images/${encodeURIComponent(id)}`), onSuccess: async () => { setConfirmingDeleteId(null); await qc.invalidateQueries({ queryKey: ["media-library"] }); await qc.invalidateQueries({ queryKey: ["content"] }); } });
   const images = query.data?.images ?? [];
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -68,7 +69,7 @@ export function MediaLibrary() {
           {image.uses.length ? <ul className="media-use-list">{image.uses.slice(0, 3).map((usage) => <li key={usage.assetId}><Link to={`/marketing?request=${encodeURIComponent(usage.requestId)}`}>{usage.topic}</Link></li>)}</ul> : null}
         </div>
         <footer className="media-library-actions">
-          {image.storageType === "stored" ? <button className="btn btn-quiet-danger btn-compact" disabled={deleteImage.isPending || !image.canDelete} title={image.canDelete ? "Permanently delete this unused image" : "Replace this image on every linked post before deleting it"} onClick={() => { if (window.confirm(`Permanently delete ${image.originalName}? This cannot be undone.`)) deleteImage.mutate(image.id); }}>Delete image</button> : <span className="media-generated-label">Generated image</span>}
+          {confirmingDeleteId === image.id ? <div className="media-delete-confirmation"><span>Remove from {image.usageCount ? `${image.usageCount} linked ${image.usageCount === 1 ? "request" : "requests"} and ` : ""}the library?</span><button className="btn btn-secondary btn-compact" disabled={deleteImage.isPending} onClick={() => setConfirmingDeleteId(null)}>Keep image</button><button className="btn btn-danger btn-compact" disabled={deleteImage.isPending} onClick={() => deleteImage.mutate(image.id)}>{deleteImage.isPending ? "Deleting image" : "Delete permanently"}</button></div> : <button className="btn btn-quiet-danger btn-compact" disabled={deleteImage.isPending} onClick={() => setConfirmingDeleteId(image.id)}>Delete image</button>}
         </footer>
       </article>)}
     </div> : null}

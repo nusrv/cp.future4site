@@ -23,7 +23,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     const [files, generatedAssets] = await Promise.all([
       prisma.fileObject.findMany({ where: { assetType: "image" }, orderBy: { createdAt: "desc" }, take: 250 }),
       prisma.creativeAsset.findMany({
-        where: { assetType: "image", fileId: null, status: { notIn: inactiveAssetStatuses } },
+        where: { assetType: "image", fileId: null },
         orderBy: { createdAt: "desc" },
         take: 250,
         select: { id: true, fileId: true, approvalStatus: true, createdAt: true, metadata: true, request: { select: { id: true, topic: true, status: true } } }
@@ -50,7 +50,7 @@ export async function mediaRoutes(app: FastifyInstance) {
         storageType: "stored" as const,
         selection: { fileId: file.id },
         usageCount: usages.length,
-        canDelete: usages.length === 0,
+        canDelete: true,
         uses: formatUsages(usages)
       };
     });
@@ -64,8 +64,9 @@ export async function mediaRoutes(app: FastifyInstance) {
       generatedByUrl.set(url, group);
     }
     const generatedImages = [...generatedByUrl.entries()].map(([url, usages]) => {
-      const source = usages[0];
-      const topic = source.request?.topic ?? "Generated content image";
+      const source = usages.find((usage) => usage.request === null) ?? usages[0];
+      const linkedUses = formatUsages(usages);
+      const topic = usages.find((usage) => usage.request)?.request?.topic ?? "Generated content image";
       return {
         id: `asset:${source.id}`,
         originalName: `Generated image for ${topic}`,
@@ -78,9 +79,9 @@ export async function mediaRoutes(app: FastifyInstance) {
         previewUrl: url,
         storageType: "generated" as const,
         selection: { assetId: source.id },
-        usageCount: usages.length,
-        canDelete: false,
-        uses: formatUsages(usages)
+        usageCount: linkedUses.length,
+        canDelete: true,
+        uses: linkedUses
       };
     });
 
@@ -125,13 +126,35 @@ export async function mediaRoutes(app: FastifyInstance) {
   app.delete("/api/media/images/:id", { preHandler: requirePermission("content.write") }, async (request) => {
     const current = request.currentUser!;
     const params = z.object({ id: z.string() }).parse(request.params);
+
+    if (params.id.startsWith("asset:")) {
+      const sourceId = params.id.slice("asset:".length);
+      const source = await prisma.creativeAsset.findUniqueOrThrow({ where: { id: sourceId } });
+      const sourceUrl = findImageUrl(source.metadata);
+      if (source.assetType !== "image" || !sourceUrl) throw new Error("Generated image is no longer available");
+      const candidates = await prisma.creativeAsset.findMany({ where: { assetType: "image", fileId: null }, select: { id: true, contentRequestId: true, metadata: true } });
+      const matches = candidates.filter((asset) => findImageUrl(asset.metadata) === sourceUrl);
+      const assetIds = matches.map((asset) => asset.id);
+      const requestIds = [...new Set(matches.flatMap((asset) => asset.contentRequestId ? [asset.contentRequestId] : []))];
+      await prisma.$transaction([
+        prisma.approval.deleteMany({ where: { entityId: { in: assetIds } } }),
+        prisma.creativeAsset.deleteMany({ where: { id: { in: assetIds } } }),
+        prisma.contentRequest.updateMany({ where: { id: { in: requestIds }, status: { notIn: ["REJECTED", "ARCHIVED"] } }, data: { status: "REVISION_REQUESTED" } })
+      ]);
+      await audit({ actorUserId: current.user.id, action: "media.generated_image_deleted", entityType: "creative_asset", entityId: sourceId, summary: "Generated image deleted from media library", metadata: { detachedRequestCount: requestIds.length } });
+      return { ok: true, detachedRequestCount: requestIds.length };
+    }
+
     const file = await prisma.fileObject.findUniqueOrThrow({ where: { id: params.id } });
     if (file.assetType !== "image") throw new Error("Requested file is not an image");
-    const activeUsageCount = await prisma.creativeAsset.count({ where: { fileId: file.id, status: { notIn: inactiveAssetStatuses } } });
-    if (activeUsageCount) throw new Error("This image is attached to content. Replace or delete those uses before deleting it from the library");
+    const usages = await prisma.creativeAsset.findMany({ where: { fileId: file.id }, select: { id: true, contentRequestId: true } });
+    const assetIds = usages.map((asset) => asset.id);
+    const requestIds = [...new Set(usages.flatMap((asset) => asset.contentRequestId ? [asset.contentRequestId] : []))];
     await prisma.$transaction([
+      prisma.approval.deleteMany({ where: { entityId: { in: assetIds } } }),
       prisma.creativeAsset.deleteMany({ where: { fileId: file.id } }),
-      prisma.fileObject.delete({ where: { id: file.id } })
+      prisma.fileObject.delete({ where: { id: file.id } }),
+      prisma.contentRequest.updateMany({ where: { id: { in: requestIds }, status: { notIn: ["REJECTED", "ARCHIVED"] } }, data: { status: "REVISION_REQUESTED" } })
     ]);
     let storageDeleted = true;
     try {
@@ -140,10 +163,9 @@ export async function mediaRoutes(app: FastifyInstance) {
       storageDeleted = false;
       await audit({ actorUserId: current.user.id, action: "media.image_storage_delete_failed", entityType: "file_object", entityId: file.id, summary: "Media library record deleted but stored file cleanup failed", metadata: { message: error instanceof Error ? error.message : "Unknown storage error" } });
     }
-    await audit({ actorUserId: current.user.id, action: "media.image_deleted", entityType: "file_object", entityId: file.id, summary: "Unused image deleted from media library", metadata: { storageDeleted } });
-    return { ok: true, storageDeleted };
+    await audit({ actorUserId: current.user.id, action: "media.image_deleted", entityType: "file_object", entityId: file.id, summary: "Image deleted from media library", metadata: { storageDeleted, detachedRequestCount: requestIds.length } });
+    return { ok: true, storageDeleted, detachedRequestCount: requestIds.length };
   });
-
   app.post("/api/content/requests/:id/assets/select", { preHandler: requirePermission("content.write") }, async (request) => {
     const current = request.currentUser!;
     const params = z.object({ id: z.string() }).parse(request.params);

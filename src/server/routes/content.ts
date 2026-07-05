@@ -5,7 +5,7 @@ import { config } from "../config.js";
 import { requirePermission } from "../security/auth.js";
 import { audit } from "../services/audit.js";
 import { createAutomationJob, dispatchJob } from "../services/automation.js";
-import { deleteFile, readFile, saveFile } from "../services/storage.js";
+import { readFile, saveFile } from "../services/storage.js";
 import { contentRequestSchema } from "../../shared/contracts.js";
 
 export async function contentRoutes(app: FastifyInstance) {
@@ -196,18 +196,14 @@ export async function contentRoutes(app: FastifyInstance) {
     });
     const itemIds = content.items.map((item) => item.id);
     const assetIds = content.assets.map((asset) => asset.id);
-    const fileIds = content.assets.flatMap((asset) => asset.fileId ? [asset.fileId] : []);
-    const sharedFileRefs = fileIds.length ? await prisma.creativeAsset.findMany({
-      where: { fileId: { in: fileIds }, contentRequestId: { not: content.id } },
-      select: { fileId: true }
-    }) : [];
-    const sharedFileIds = new Set(sharedFileRefs.flatMap((asset) => asset.fileId ? [asset.fileId] : []));
-    const deletableFileIds = fileIds.filter((fileId) => !sharedFileIds.has(fileId));
-    const storedFiles = deletableFileIds.length ? await prisma.fileObject.findMany({ where: { id: { in: deletableFileIds } }, select: { storageKey: true } }) : [];
+    const retainedGeneratedAssetIds = content.assets
+      .filter((asset) => asset.assetType === "image" && asset.fileId === null && asset.sourceTool === "n8n")
+      .map((asset) => asset.id);
+    const deletedAssetIds = assetIds.filter((id) => !retainedGeneratedAssetIds.includes(id));
     await prisma.$transaction([
       prisma.approval.deleteMany({ where: { entityId: { in: [content.id, ...assetIds] } } }),
-      prisma.creativeAsset.deleteMany({ where: { contentRequestId: content.id } }),
-      prisma.fileObject.deleteMany({ where: { id: { in: deletableFileIds } } }),
+      prisma.creativeAsset.updateMany({ where: { id: { in: retainedGeneratedAssetIds } }, data: { contentRequestId: null, status: "library" } }),
+      prisma.creativeAsset.deleteMany({ where: { id: { in: deletedAssetIds } } }),
       prisma.automationJob.deleteMany({ where: { OR: [
         { contentRequestId: content.id },
         { relatedEntityType: "content_request", relatedEntityId: content.id },
@@ -215,7 +211,6 @@ export async function contentRoutes(app: FastifyInstance) {
       ] } }),
       prisma.contentRequest.delete({ where: { id: content.id } })
     ]);
-    await Promise.all(storedFiles.map((file) => deleteFile(file.storageKey).catch(() => undefined)));
     await audit({ actorUserId: current.user.id, action: "content.request_deleted", entityType: "content_request", entityId: content.id, summary: `Content request permanently deleted from ${content.status}` });
     return { ok: true };
   });

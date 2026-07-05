@@ -19,18 +19,19 @@ describe("media library contract", () => {
     expect(routes).toMatch(/requirePermission\("content\.(read|write)"\)/);
   });
 
-  it("protects images that are actively used by content", () => {
+  it("deletes stored or generated images after detaching their content uses", () => {
     const routes = read("src/server/routes/media.ts");
-    expect(routes).toContain("activeUsageCount");
-    expect(routes).toContain("This image is attached to content");
-    expect(routes).toContain("status: { notIn: inactiveAssetStatuses }");
+    expect(routes).toContain('params.id.startsWith("asset:")');
+    expect(routes).toContain('action: "media.generated_image_deleted"');
+    expect(routes).toContain('data: { status: "REVISION_REQUESTED" }');
+    expect(routes).not.toContain("activeUsageCount");
   });
 
-  it("keeps reused files when a failed request is deleted", () => {
+  it("keeps request media in the library when content is deleted", () => {
     const routes = read("src/server/routes/content.ts");
-    expect(routes).toContain("sharedFileRefs");
-    expect(routes).toContain("deletableFileIds");
-    expect(routes).toContain("deleteFile(file.storageKey)");
+    expect(routes).toContain("retainedGeneratedAssetIds");
+    expect(routes).toContain('data: { contentRequestId: null, status: "library" }');
+    expect(routes).not.toContain("prisma.fileObject.deleteMany");
   });
 
   it("ships a private image folder without tracking uploaded binaries", () => {

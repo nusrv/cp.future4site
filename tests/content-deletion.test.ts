@@ -13,12 +13,13 @@ describe("content request cleanup", () => {
     expect(route).toContain('action: "content.request_deleted"');
   });
 
-  it("clears request, item, asset, publishing, approval, file, and automation associations", () => {
+  it("clears request records and jobs while retaining reusable media", () => {
     expect(route).toContain('relatedEntityType: "content_request"');
     expect(route).toContain('relatedEntityType: "content_item"');
     expect(route).toContain("prisma.approval.deleteMany");
     expect(route).toContain("prisma.creativeAsset.deleteMany");
-    expect(route).toContain("prisma.fileObject.deleteMany");
+    expect(route).toContain("retainedGeneratedAssetIds");
+    expect(route).not.toContain("prisma.fileObject.deleteMany");
     expect(route).toContain("prisma.automationJob.deleteMany");
     expect(route).toContain("prisma.contentRequest.delete");
   });

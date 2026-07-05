@@ -11,10 +11,10 @@ The internal Media library supports:
 - Browsing stored uploads and generated images used by content.
 - Selecting or reusing a stored or generated image across multiple content requests.
 - Usage counts and links back to content requests.
-- Permanent deletion of unused images.
-- Deletion protection while an image is attached to active content.
+- Permanent deletion of stored and generated images, including detaching their CP content uses.
+- Generated images remain in the library when their originating content request is deleted.
 
-Images uploaded directly during post review are also added to the shared library automatically. Generated images are indexed from active creative assets and remain hosted at their provider URL unless they were uploaded into local storage.
+Images uploaded directly during post review are also added to the shared library automatically. Generated images are indexed from creative assets, remain hosted at their provider URL, and are detached into the library when their originating request is deleted.
 
 ## Storage layout
 
@@ -52,8 +52,8 @@ For a simple deployment where the application directory itself persists, `FILE_S
 - File paths are resolved and checked against the configured storage root.
 - Preview routes require an authenticated user with `content.read`.
 - Upload, selection, reuse, and deletion require `content.write`.
-- Images attached to active content cannot be deleted from the library.
-- Failed-request deletion preserves files reused by other content requests.
+- Deleting a library image removes its CP creative-asset links and returns affected content requests to review.
+- Deleting a content request keeps its uploaded and generated images available in the library.
 - Virus scanning should be added before accepting files from untrusted external users.
 
 ## Long term

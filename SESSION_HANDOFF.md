@@ -3,6 +3,26 @@
 Canonical restart point after any interrupted or completed session. Read this file first before changing the CP or its n8n workflows.
 
 Last verified: **2026-07-05 (Asia/Amman)**
+## Latest media ownership and deletion fix
+
+Implemented in source on **2026-07-05**:
+
+- Fixed generated-image discovery: the Media library now indexes valid generated image URLs regardless of whether the originating creative asset is active, rejected, superseded, or detached.
+- Deleting a content request now keeps uploaded files in the Media library and detaches its original n8n-generated image assets into library ownership instead of deleting them with the request.
+- Stored and generated images can both be permanently deleted from the Media library, even when linked to content. Deletion removes the CP creative-asset links and returns affected non-rejected/non-archived requests to copy review.
+- Generated-image deletion groups duplicate creative-asset references by provider URL so the selected image disappears completely from the CP library.
+- The Media library now uses an inline confirmation showing how many requests will be detached. External Facebook or Instagram posts are not modified.
+- Updated file-storage documentation and media/request deletion regression coverage. No database migration is required.
+
+Verification used the clean local temporary copy:
+
+- Typecheck passed for client and server.
+- `npm test` passed: 7 files, 23 tests.
+- `npm run build` passed.
+- ESLint passed for all changed TypeScript/test files.
+- Deployment required: pull this commit on Plesk, run `npm ci && npm run build`, and restart the CP. No n8n deployment or database migration is required.
+
+Historical limitation: generated image records already deleted by the previous request-deletion behavior cannot be recreated from the CP database. Recovery would require the original provider URL from n8n execution history or a database backup.
 ## Latest unrestricted content cleanup update
 
 Implemented in source on **2026-07-05**:
