@@ -1,0 +1,41 @@
+{
+    "schema_version":  1,
+    "brand_id":  "future-oils",
+    "public_base_path":  "/assets",
+    "logos":  {
+                  "primary":  "logo/future-oils-logo.png",
+                  "emblem":  "logo/future-oils-emblem.png"
+              },
+    "products":  {
+                     "sunflower-oil-1l":  {
+                                              "file":  "products/1L-sunflower-oil.png",
+                                              "approved_for_marketing":  true
+                                          },
+                     "sunflower-oil-3l":  {
+                                              "file":  "products/3L-sunflower-oil.png",
+                                              "approved_for_marketing":  false,
+                                              "restriction":  "Not in the current KB-approved packaging list"
+                                          },
+                     "sunflower-oil-4l":  {
+                                              "file":  "products/4L-sunflower-oil.png",
+                                              "approved_for_marketing":  true
+                                          },
+                     "sunflower-oil-5l":  {
+                                              "file":  "products/5L-sunflower-oil.png",
+                                              "approved_for_marketing":  true
+                                          },
+                     "sunflower-oil-10l":  {
+                                               "file":  "products/10L-sunflower-oil.png",
+                                               "approved_for_marketing":  true
+                                           },
+                     "sunflower-oil-17l":  {
+                                               "file":  "products/17L-sunflower-oil.png",
+                                               "approved_for_marketing":  false,
+                                               "restriction":  "Not in the current KB-approved packaging list"
+                                           },
+                     "sunflower-oil-18l":  {
+                                               "file":  "products/18L-sunflower-oil.png",
+                                               "approved_for_marketing":  true
+                                           }
+                 }
+}

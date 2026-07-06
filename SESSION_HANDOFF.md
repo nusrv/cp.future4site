@@ -2,7 +2,25 @@
 
 Canonical restart point after any interrupted or completed session. Read this file first before changing the CP or its n8n workflows.
 
-Last verified: **2026-07-05 (Asia/Amman)**
+Last verified: **2026-07-06 (Asia/Amman)**
+## Latest public brand-assets package
+
+Implemented in source on **2026-07-06**:
+
+- Added the existing Future Oils logo, emblem, and product render package under tracked `public/assets/`.
+- Added `public/assets/brand-profile.json` with deterministic logo/product IDs and marketing approval flags. Existing 3 L and 17 L assets are retained but marked unavailable under current KB packaging rules.
+- Configured Vite `publicDir` so `npm run build` copies `public/assets/` to `dist-client/assets/`. The running CP serves the files at `/assets/...` through its existing static server.
+- Added `public/assets/README.md`, Plesk pull/build/mount documentation, and regression tests covering the manifest and every declared file.
+- For n8n local access, mount the Plesk Git checkout's `public/assets` directory read-only at `/data/brand-assets`; do not mount replaceable `dist-client` output.
+
+Verification used the clean local temporary copy:
+
+- Typecheck passed.
+- `npm test` passed: 8 files, 26 tests.
+- `npm run build` passed.
+- ESLint passed for the new test.
+- Verified all 11 source files appeared in `dist-client/assets` with identical SHA-256 hashes.
+- Deployment required: pull this commit on Plesk, run `npm ci && npm run build`, and restart the CP. No database migration or n8n workflow deployment is required for asset availability.
 ## Latest media ownership and deletion fix
 
 Implemented in source on **2026-07-05**:

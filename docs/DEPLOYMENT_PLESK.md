@@ -45,6 +45,39 @@ MAX_UPLOAD_MB=25
 
 Grant the Plesk application user read and write permission to the directory. Uploaded images are private and are served only through authenticated CP routes.
 
+## Public Brand Assets
+
+The tracked runtime asset package lives at `public/assets/`. Vite copies it to `dist-client/assets/` during `npm run build`, and the running CP serves it at `/assets/`.
+
+After pulling a commit that changes brand assets:
+
+```bash
+npm ci
+npm run build
+# restart the CP application
+```
+
+Verify:
+
+```bash
+test -f public/assets/brand-profile.json
+test -f dist-client/assets/brand-profile.json
+```
+
+Example public URL:
+
+```text
+https://YOUR-CP-DOMAIN/assets/logo/future-oils-logo.png
+```
+
+For n8n local access, mount the Git checkout source directory, not `dist-client`, because build output is replaceable:
+
+```yaml
+volumes:
+  - /ABSOLUTE-PLESK-CHECKOUT/public/assets:/data/brand-assets:ro
+```
+
+Set `BRAND_ASSETS_BASE_DIR=/data/brand-assets` in the n8n execution container. The exact left-hand path depends on the Plesk Git checkout configured for this application and must be confirmed on the server.
 ## Health Check
 
 `GET /health`
