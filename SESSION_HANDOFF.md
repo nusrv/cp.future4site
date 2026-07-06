@@ -3,6 +3,34 @@
 Canonical restart point after any interrupted or completed session. Read this file first before changing the CP or its n8n workflows.
 
 Last verified: **2026-07-06 (Asia/Amman)**
+## Latest deterministic Sharp creative pipeline
+
+Implemented in source on **2026-07-06** and intentionally not activated live:
+
+- Replaced whole-image generation with a background-only Magnific prompt that forbids products, packaging, logos, typography, badges, and people.
+- Added a path-safe n8n brand resolver using `BRAND_ASSETS_BASE_DIR`, `brand-profile.json`, strict IDs, root containment checks, file existence checks, and `approved_for_marketing` enforcement.
+- Added deterministic Sharp composition for exact logo, optional approved product cutout, headline, CTA, ratio, and final PNG dimensions.
+- Extended CP creative job payloads with `brand_id`, `logo_id`, optional `product_asset_id`, `ratio`, and `visual_direction`. Size-specific product IDs are resolved only when the content product includes an available package size.
+- Added signed composed-image callback ingestion. The CP decodes the Sharp PNG, stores it in private file storage, creates a `FileObject`, links the reviewable `CreativeAsset`, and removes base64 data from database metadata/events.
+- Added `Dockerfile.n8n-sharp`, module allowlists, mount/preflight documentation, and an activation guard requiring `--confirm-sharp-ready`.
+- Generated workflow remains inactive until the exact live n8n image version and execution-container topology are confirmed and the live Sharp/mount preflight passes.
+
+Verification:
+
+- Typecheck passed.
+- `npm test` passed: 9 files, 30 tests.
+- `npm run build` passed.
+- Creative workflow contract passed with 11 nodes.
+- ESLint passed for changed TypeScript/test files.
+- Real Sharp composition passed using the public 10 L asset and logo: 1080 x 1350 PNG, 2,125,126 bytes.
+
+Required before live activation:
+
+1. Identify and pin the currently deployed n8n image tag/digest.
+2. Confirm whether Code nodes execute in the main container, workers, or external task runners.
+3. Build/deploy the Sharp-enabled image and mount Plesk `public/assets` read-only at `/data/brand-assets` in every execution container.
+4. Run the documented container preflight.
+5. Deploy the inactive workflow, inspect credential bindings, activate with all confirmation flags, and run one paid generation through CP review.
 ## Latest public brand-assets package
 
 Implemented in source on **2026-07-06**:

@@ -19,7 +19,8 @@ loadEnv();
 
 const activate = process.argv.includes("--activate");
 const confirmLive = process.argv.includes("--confirm-live");
-if (activate && !confirmLive) throw new Error("Activation requires both --activate and --confirm-live");
+const confirmSharpReady = process.argv.includes("--confirm-sharp-ready");
+if (activate && (!confirmLive || !confirmSharpReady)) throw new Error("Activation requires --activate, --confirm-live, and --confirm-sharp-ready after the container preflight passes");
 const baseUrl = process.env.N8N_BASE_URL?.replace(/\/$/, "");
 const apiKey = process.env.N8N_API_KEY;
 if (!baseUrl || !apiKey) throw new Error("Missing N8N_BASE_URL or N8N_API_KEY");

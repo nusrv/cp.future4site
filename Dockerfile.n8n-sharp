@@ -1,0 +1,5 @@
+ARG N8N_BASE_IMAGE
+FROM ${N8N_BASE_IMAGE}
+USER root
+RUN cd /usr/local/lib/node_modules/n8n && npm install --omit=dev --no-save sharp@0.34.3
+USER node

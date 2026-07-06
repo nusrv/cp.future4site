@@ -361,6 +361,11 @@ async function requestCreativeProduction(contentRequestId: string, requestedByUs
       brand: content.brand,
       business_line: content.businessLine,
       product: content.product,
+      brand_id: resolveBrandId(content.brand),
+      logo_id: "primary",
+      product_asset_id: resolveProductAssetId(content.product),
+      ratio: "4:5",
+      visual_direction: "premium clean B2B commercial background with bright neutral lighting",
       market: content.market,
       audience: content.audience,
       objective: content.objective,
@@ -406,5 +411,18 @@ async function requestCreativeProduction(contentRequestId: string, requestedByUs
 function getCreativeWorkflowType(format: string) {
   if (format === "text_video") return "creative_video_generation";
   if (format === "text_image" || format === "carousel") return "creative_image_generation";
+  return null;
+}
+
+function resolveBrandId(brand: string) {
+  return /future oils/i.test(brand) ? "future-oils" : "future-oils";
+}
+
+function resolveProductAssetId(product?: string | null) {
+  if (!product) return null;
+  const normalized = product.toLowerCase().replace(/\s+/g, "");
+  for (const size of ["18l", "17l", "10l", "5l", "4l", "3l", "1l"]) {
+    if (normalized.includes(size)) return `sunflower-oil-${size}`;
+  }
   return null;
 }

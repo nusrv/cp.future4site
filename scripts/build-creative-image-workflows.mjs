@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 const generatedDir = path.join(process.cwd(), "workflows", "n8n", "generated");
+const codeDir = path.join(process.cwd(), "workflows", "n8n", "code");
+const readCode = (name) => fs.readFileSync(path.join(codeDir, name), "utf8");
 fs.mkdirSync(generatedDir, { recursive: true });
 
 const MAGNIFIC_MCP_ENDPOINT = "https://mcp.magnific.com";
@@ -100,31 +102,9 @@ const calculated = Buffer.from(expected, "hex");
 if (supplied.length !== calculated.length || !crypto.timingSafeEqual(supplied, calculated)) throw new Error("Invalid CP request signature");
 return [{ json: { cp: body, accepted: true, received_at: new Date().toISOString() } }];`;
 
-const buildMagnificMcpRequest = `const cp = $json.cp;
-const payload = cp.payload ?? {};
-const headline = String(payload.headline ?? "").trim();
-const caption = String(payload.caption ?? "").trim();
-const product = String(payload.product ?? "").trim() || "the selected product";
-const brand = String(payload.brand ?? "Future Foresight").trim() || "Future Foresight";
-const market = String(payload.market ?? "Gulf and MENA importers and distributors").trim();
-const prompt = [
-  "Create one premium photorealistic B2B social advertising image for " + brand + ".",
-  "The visual must promote " + product + " for " + market + ".",
-  "Treat " + product + " as authoritative: every visible product, package, raw material, and contextual cue must match it. Do not depict edible oil unless the selected product itself is an edible oil.",
-  headline ? "Campaign headline context: " + headline + "." : "",
-  caption ? "Post caption context: " + caption.slice(0, 700) + "." : "",
-  "Use a portrait 4:5 social composition suitable for Facebook and Instagram.",
-  "Use bright premium commercial photography, a clean white to light neutral background, restrained olive and gold brand accents, and a confident international-trade look.",
-  "Show one clear hero representation appropriate to the selected product, using realistic proportions, material, packaging, and industrial or commodity context.",
-  "Do not add typography, floating text, badges, prices, certification seals, unsupported technical claims, people, hands, watermarks, duplicate products, clutter, oil bottles for non-oil products, or distorted brand marks.",
-  "Leave safe space around the product for platform cropping. The final image should be ready for human creative review before publishing."
-].filter(Boolean).join(" ");
-return [{ json: {
-  cp,
-  mcp_endpoint: "https://mcp.magnific.com",
-  mcp_generate_args: { prompt },
-  requested_output: { type: "image", aspect_ratio: "4:5", review_required: true }
-} }];`;
+const resolveBrandAssets = readCode("resolve-brand-assets.js");
+const buildBackgroundPrompt = readCode("build-background-prompt.js");
+const composeBrandImage = readCode("compose-brand-image.js");
 
 const prepareMagnificWaitInput = `function parseMaybeJson(value) {
   if (typeof value !== "string") return value;
@@ -185,81 +165,41 @@ return [{ json: {
 } }];`;
 
 const prepareCompletedCallback = `const crypto = require("crypto");
-function parseMaybeJson(value) {
-  if (typeof value !== "string") return value;
-  try { return JSON.parse(value); } catch { return value; }
-}
-function walk(value, visitor, seen = new Set()) {
-  const parsed = parseMaybeJson(value);
-  if (!parsed || typeof parsed !== "object" || seen.has(parsed)) return;
-  seen.add(parsed);
-  visitor(parsed);
-  if (Array.isArray(parsed)) {
-    for (const item of parsed) walk(item, visitor, seen);
-    return;
-  }
-  for (const item of Object.values(parsed)) walk(item, visitor, seen);
-}
-function collectUrls(value) {
-  const urls = new Set();
-  const urlKeys = new Set(["url", "image_url", "imageUrl", "output_url", "outputUrl", "download_url", "downloadUrl", "public_url", "publicUrl"]);
-  walk(value, (item) => {
-    if (Array.isArray(item)) return;
-    for (const [key, raw] of Object.entries(item)) {
-      if (typeof raw === "string" && /^https?:\/\//.test(raw) && (urlKeys.has(key) || /image|generated|download|url/i.test(key))) urls.add(raw);
-      if (Array.isArray(raw)) {
-        for (const entry of raw) if (typeof entry === "string" && /^https?:\/\//.test(entry)) urls.add(entry);
-      }
-    }
-    if (item.type === "image" && typeof item.data === "string") urls.add("data:" + String(item.mimeType ?? "image/png") + ";base64," + item.data);
-  });
-  return [...urls];
-}
-const built = $("Build Magnific MCP Request").item.json;
-const waitInput = $("Prepare Magnific Wait Input").item.json;
-const waitResult = $json;
-const urls = [...new Set([...collectUrls(waitResult), ...collectUrls(waitInput.generation_result)])];
-const complete = urls.length > 0;
-const status = complete ? "completed" : "failed";
-const callbackSecret = $env.PLATFORM_CALLBACK_SECRET;
-if (!callbackSecret) throw new Error("Missing PLATFORM_CALLBACK_SECRET in n8n environment");
+const item = $json;
+const secret = $env.PLATFORM_CALLBACK_SECRET;
+if (!secret) throw new Error("Missing PLATFORM_CALLBACK_SECRET in n8n environment");
 const timestamp = new Date().toISOString();
-const nonce = "n8n_mcp_image_result_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-const files = complete ? urls.map((url, index) => ({
-  file_id: String(waitInput.creation_id) + "_" + index,
+const nonce = "n8n_composed_image_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+const file = {
+  file_id: item.provider_creation_id + "_composed",
   type: "image",
-  url,
-  source: "magnific-mcp",
-  provider_creation_id: waitInput.creation_id
-})) : [];
+  name: item.composed_file.name,
+  mime_type: item.composed_file.mime_type,
+  data_base64: item.composed_file.data_base64,
+  size_bytes: item.composed_file.size_bytes,
+  width: item.composed_file.width,
+  height: item.composed_file.height,
+  source: "n8n-sharp-compositor"
+};
 const callbackBody = {
-  job_id: built.cp.job_id,
-  correlation_id: built.cp.correlation_id,
-  idempotency_key: built.cp.idempotency_key,
+  job_id: item.cp.job_id,
+  correlation_id: item.cp.correlation_id,
+  idempotency_key: item.cp.idempotency_key,
   workflow_type: "creative_image_generation",
-  workflow_version: built.cp.workflow_version ?? "creative-image-mcp-v1",
-  status,
-  current_step: complete ? "Magnific MCP image is ready for review" : "Magnific MCP completed without a usable image URL",
+  workflow_version: "creative-image-sharp-v1",
+  status: "completed",
+  current_step: "Branded image composed and ready for review",
   nonce,
   signature_timestamp: timestamp,
   signature: "",
-  outputs: {
-    provider: "magnific-mcp",
-    mcp_endpoint: built.mcp_endpoint,
-    creation_id: waitInput.creation_id,
-    files,
-    generation_result: waitInput.generation_result,
-    wait_result: waitResult
-  },
-  files,
-  warnings: [],
-  error: complete ? undefined : { code: "MAGNIFIC_MCP_NO_IMAGE_URL", message: "Magnific MCP result did not include a usable image URL or image payload", retryable: true }
+  outputs: { provider: "magnific-background-plus-sharp", asset_contract: item.asset_contract, background_url: item.background_url, files: [{ ...file, data_base64: undefined }] },
+  files: [file],
+  warnings: []
 };
-if (!callbackBody.error) delete callbackBody.error;
+delete callbackBody.outputs.files[0].data_base64;
 const raw = JSON.stringify(callbackBody);
-const signature = crypto.createHmac("sha256", callbackSecret).update(timestamp + "." + nonce + "." + raw).digest("hex");
-return [{ json: { callback_url: built.cp.callback_url, callback_headers: { signature, timestamp, nonce }, callback_body: callbackBody } }];`;
-
+const signature = crypto.createHmac("sha256", secret).update(timestamp + "." + nonce + "." + raw).digest("hex");
+return [{ json: { callback_url: item.cp.callback_url, callback_headers: { signature, timestamp, nonce }, callback_body: callbackBody } }];`;
 writeWorkflow(
   "10-creative-image-generation.json",
   "FF Admin - Creative Image Generation",
@@ -267,21 +207,25 @@ writeWorkflow(
     webhookNode("creative-image-webhook", "CP Creative Image Request Webhook", "future-foresight/creative-image-generation", [0, 0]),
     codeNode("validate-cp-request", "Validate Signed CP Request", validateCpRequest, [250, 0]),
     respondNode("respond-cp", "Acknowledge CP Request", [500, 0], '={{ { accepted: true, job_id: $json.cp.job_id, workflow_type: "creative_image_generation" } }}'),
-    codeNode("build-magnific-mcp-request", "Build Magnific MCP Request", buildMagnificMcpRequest, [750, 0]),
-    mcpClientNode("generate-image-with-magnific-mcp", "Generate Image With Magnific MCP", "images_generate", { prompt: "={{ $json.mcp_generate_args.prompt }}" }, [1000, 0]),
-    codeNode("prepare-magnific-wait-input", "Prepare Magnific Wait Input", prepareMagnificWaitInput, [1250, 0]),
-    mcpClientNode("wait-for-magnific-creation", "Wait For Magnific Creation", "creations_wait", { identifiers: "={{ $json.mcp_wait_args.identifiers }}" }, [1500, 0]),
-    codeNode("prepare-completed-callback", "Prepare Completed CP Callback", prepareCompletedCallback, [1750, 0]),
-    callbackNode("send-completed-callback", [2000, 0])
+    codeNode("resolve-brand-assets", "Resolve Brand Assets", resolveBrandAssets, [750, 0]),
+    codeNode("build-background-prompt", "Build Background Prompt", buildBackgroundPrompt, [1000, 0]),
+    mcpClientNode("generate-image-with-magnific-mcp", "Generate Background With Magnific MCP", "images_generate", { prompt: "={{ $json.mcp_generate_args.prompt }}" }, [1250, 0]),
+    codeNode("prepare-magnific-wait-input", "Prepare Magnific Wait Input", prepareMagnificWaitInput, [1500, 0]),
+    mcpClientNode("wait-for-magnific-creation", "Wait For Magnific Creation", "creations_wait", { identifiers: "={{ $json.mcp_wait_args.identifiers }}" }, [1750, 0]),
+    codeNode("compose-brand-image", "Compose Brand Image With Sharp", composeBrandImage, [2000, 0]),
+    codeNode("prepare-completed-callback", "Prepare Completed CP Callback", prepareCompletedCallback, [2250, 0]),
+    callbackNode("send-completed-callback", [2500, 0])
   ],
   {
     "CP Creative Image Request Webhook": { main: [[{ node: "Validate Signed CP Request", type: "main", index: 0 }]] },
     "Validate Signed CP Request": { main: [[{ node: "Acknowledge CP Request", type: "main", index: 0 }]] },
-    "Acknowledge CP Request": { main: [[{ node: "Build Magnific MCP Request", type: "main", index: 0 }]] },
-    "Build Magnific MCP Request": { main: [[{ node: "Generate Image With Magnific MCP", type: "main", index: 0 }]] },
-    "Generate Image With Magnific MCP": { main: [[{ node: "Prepare Magnific Wait Input", type: "main", index: 0 }]] },
+    "Acknowledge CP Request": { main: [[{ node: "Resolve Brand Assets", type: "main", index: 0 }]] },
+    "Resolve Brand Assets": { main: [[{ node: "Build Background Prompt", type: "main", index: 0 }]] },
+    "Build Background Prompt": { main: [[{ node: "Generate Background With Magnific MCP", type: "main", index: 0 }]] },
+    "Generate Background With Magnific MCP": { main: [[{ node: "Prepare Magnific Wait Input", type: "main", index: 0 }]] },
     "Prepare Magnific Wait Input": { main: [[{ node: "Wait For Magnific Creation", type: "main", index: 0 }]] },
-    "Wait For Magnific Creation": { main: [[{ node: "Prepare Completed CP Callback", type: "main", index: 0 }]] },
+    "Wait For Magnific Creation": { main: [[{ node: "Compose Brand Image With Sharp", type: "main", index: 0 }]] },
+    "Compose Brand Image With Sharp": { main: [[{ node: "Prepare Completed CP Callback", type: "main", index: 0 }]] },
     "Prepare Completed CP Callback": { main: [[{ node: "Send Signed Callback To CP", type: "main", index: 0 }]] }
   }
 );

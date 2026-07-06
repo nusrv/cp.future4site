@@ -47,8 +47,8 @@
       }
     },
     {
-      "id": "build-magnific-mcp-request",
-      "name": "Build Magnific MCP Request",
+      "id": "resolve-brand-assets",
+      "name": "Resolve Brand Assets",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -56,16 +56,29 @@
         0
       ],
       "parameters": {
-        "jsCode": "const cp = $json.cp;\nconst payload = cp.payload ?? {};\nconst headline = String(payload.headline ?? \"\").trim();\nconst caption = String(payload.caption ?? \"\").trim();\nconst product = String(payload.product ?? \"\").trim() || \"the selected product\";\nconst brand = String(payload.brand ?? \"Future Foresight\").trim() || \"Future Foresight\";\nconst market = String(payload.market ?? \"Gulf and MENA importers and distributors\").trim();\nconst prompt = [\n  \"Create one premium photorealistic B2B social advertising image for \" + brand + \".\",\n  \"The visual must promote \" + product + \" for \" + market + \".\",\n  \"Treat \" + product + \" as authoritative: every visible product, package, raw material, and contextual cue must match it. Do not depict edible oil unless the selected product itself is an edible oil.\",\n  headline ? \"Campaign headline context: \" + headline + \".\" : \"\",\n  caption ? \"Post caption context: \" + caption.slice(0, 700) + \".\" : \"\",\n  \"Use a portrait 4:5 social composition suitable for Facebook and Instagram.\",\n  \"Use bright premium commercial photography, a clean white to light neutral background, restrained olive and gold brand accents, and a confident international-trade look.\",\n  \"Show one clear hero representation appropriate to the selected product, using realistic proportions, material, packaging, and industrial or commodity context.\",\n  \"Do not add typography, floating text, badges, prices, certification seals, unsupported technical claims, people, hands, watermarks, duplicate products, clutter, oil bottles for non-oil products, or distorted brand marks.\",\n  \"Leave safe space around the product for platform cropping. The final image should be ready for human creative review before publishing.\"\n].filter(Boolean).join(\" \");\nreturn [{ json: {\n  cp,\n  mcp_endpoint: \"https://mcp.magnific.com\",\n  mcp_generate_args: { prompt },\n  requested_output: { type: \"image\", aspect_ratio: \"4:5\", review_required: true }\n} }];"
+        "jsCode": "const fs = require(\"fs\");\nconst path = require(\"path\");\nconst cp = $json.cp;\nconst payload = cp.payload ?? {};\nconst baseDir = path.resolve(String($env.BRAND_ASSETS_BASE_DIR || \"/data/brand-assets\"));\nconst idPattern = /^[a-z0-9][a-z0-9-]{0,63}$/;\nconst brandId = String(payload.brand_id || \"future-oils\");\nconst logoId = String(payload.logo_id || \"primary\");\nconst productAssetId = payload.product_asset_id ? String(payload.product_asset_id) : null;\nconst ratio = String(payload.ratio || \"4:5\");\nif (!idPattern.test(brandId) || !idPattern.test(logoId) || (productAssetId && !idPattern.test(productAssetId))) throw new Error(\"Invalid brand asset identifier\");\nif (!new Set([\"4:5\", \"1:1\", \"9:16\"]).has(ratio)) throw new Error(\"Unsupported creative ratio\");\nconst profilePath = path.resolve(baseDir, \"brand-profile.json\");\nif (!profilePath.startsWith(baseDir + path.sep)) throw new Error(\"Brand profile path escaped asset root\");\nconst profile = JSON.parse(fs.readFileSync(profilePath, \"utf8\"));\nif (profile.brand_id !== brandId) throw new Error(\"Requested brand profile is unavailable\");\nfunction resolveAsset(relative) {\n  if (!relative || typeof relative !== \"string\") throw new Error(\"Brand asset is missing from profile\");\n  const absolute = path.resolve(baseDir, relative);\n  if (!absolute.startsWith(baseDir + path.sep)) throw new Error(\"Brand asset path escaped asset root\");\n  if (!fs.statSync(absolute).isFile()) throw new Error(\"Brand asset file is unavailable\");\n  return absolute;\n}\nconst logoRelative = profile.logos?.[logoId];\nconst product = productAssetId ? profile.products?.[productAssetId] : null;\nif (productAssetId && !product) throw new Error(\"Requested product asset is unavailable\");\nif (product && product.approved_for_marketing !== true) throw new Error(product.restriction || \"Requested product asset is not approved for marketing\");\nreturn [{ json: {\n  cp,\n  asset_contract: {\n    brand_id: brandId,\n    logo_id: logoId,\n    product_asset_id: productAssetId,\n    ratio,\n    profile_version: profile.schema_version,\n    logo_path: resolveAsset(logoRelative),\n    product_path: product ? resolveAsset(product.file) : null\n  }\n} }];"
+      }
+    },
+    {
+      "id": "build-background-prompt",
+      "name": "Build Background Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const item = $json;\nconst payload = item.cp.payload ?? {};\nconst product = String(payload.product ?? \"the selected product\").trim();\nconst market = String(payload.market ?? \"international B2B buyers\").trim();\nconst visualDirection = String(payload.visual_direction ?? \"premium clean B2B commercial background with bright neutral lighting\").trim();\nconst prompt = [\n  \"Create a background scene only for a professional B2B social creative.\",\n  \"Product category context: \" + product + \". Target market: \" + market + \".\",\n  \"Visual direction: \" + visualDirection + \".\",\n  \"Use a portrait commercial composition with clean depth, realistic lighting, and generous negative space.\",\n  \"Do not show any product, package, bottle, container, commodity pile, logo, emblem, brand mark, typography, headline, CTA, badge, certification, watermark, person, or hand.\",\n  \"The final result must be a clean background plate. Exact product, logo, and text will be composited later.\"\n].join(\" \");\nreturn [{ json: { ...item, mcp_generate_args: { prompt }, requested_output: { type: \"background\", aspect_ratio: item.asset_contract.ratio, review_required: true } } }];"
       }
     },
     {
       "id": "generate-image-with-magnific-mcp",
-      "name": "Generate Image With Magnific MCP",
+      "name": "Generate Background With Magnific MCP",
       "type": "@n8n/n8n-nodes-langchain.mcpClient",
       "typeVersion": 1,
       "position": [
-        1000,
+        1250,
         0
       ],
       "parameters": {
@@ -96,7 +109,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1250,
+        1500,
         0
       ],
       "parameters": {
@@ -109,7 +122,7 @@
       "type": "@n8n/n8n-nodes-langchain.mcpClient",
       "typeVersion": 1,
       "position": [
-        1500,
+        1750,
         0
       ],
       "parameters": {
@@ -135,16 +148,29 @@
       }
     },
     {
+      "id": "compose-brand-image",
+      "name": "Compose Brand Image With Sharp",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const sharp = require(\"sharp\");\nconst fs = require(\"fs\");\nfunction parseMaybeJson(value) { if (typeof value !== \"string\") return value; try { return JSON.parse(value); } catch { return value; } }\nfunction collectUrls(value, urls = new Set(), seen = new Set()) {\n  const parsed = parseMaybeJson(value);\n  if (!parsed || typeof parsed !== \"object\" || seen.has(parsed)) return urls;\n  seen.add(parsed);\n  if (Array.isArray(parsed)) { for (const item of parsed) collectUrls(item, urls, seen); return urls; }\n  for (const [key, raw] of Object.entries(parsed)) {\n    if (typeof raw === \"string\" && /^https?:\\/\\//.test(raw) && /url|image|download|web/i.test(key)) urls.add(raw);\n    else collectUrls(raw, urls, seen);\n  }\n  return urls;\n}\nfunction escapeXml(value) { return String(value).replace(/[&<>\"']/g, (char) => ({ \"&\": \"&amp;\", \"<\": \"&lt;\", \">\": \"&gt;\", '\"': \"&quot;\", \"'\": \"&apos;\" })[char]); }\nconst resolved = $(\"Resolve Brand Assets\").item.json;\nconst waitInput = $(\"Prepare Magnific Wait Input\").item.json;\nconst urls = [...collectUrls($json), ...collectUrls(waitInput.generation_result)];\nconst backgroundUrl = urls[0];\nif (!backgroundUrl) throw new Error(\"Magnific result did not contain a background URL\");\nconst response = await fetch(backgroundUrl);\nif (!response.ok) throw new Error(\"Could not download Magnific background: \" + response.status);\nconst background = Buffer.from(await response.arrayBuffer());\nconst payload = resolved.cp.payload ?? {};\nconst contract = resolved.asset_contract;\nconst dimensions = { \"4:5\": [1080, 1350], \"1:1\": [1080, 1080], \"9:16\": [1080, 1920] }[contract.ratio];\nconst [width, height] = dimensions;\nconst logo = await sharp(fs.readFileSync(contract.logo_path)).resize({ width: Math.round(width * 0.22), withoutEnlargement: true }).png().toBuffer();\nconst composites = [{ input: logo, left: Math.round(width * 0.065), top: Math.round(height * 0.055) }];\nif (contract.product_path) {\n  const product = await sharp(fs.readFileSync(contract.product_path)).resize({ width: Math.round(width * 0.46), height: Math.round(height * 0.68), fit: \"inside\", withoutEnlargement: true }).png().toBuffer();\n  const meta = await sharp(product).metadata();\n  composites.push({ input: product, left: width - (meta.width || 0) - Math.round(width * 0.055), top: height - (meta.height || 0) - Math.round(height * 0.045) });\n}\nconst headline = escapeXml(String(payload.headline || \"\").slice(0, 90));\nconst cta = escapeXml(String(payload.cta || \"\").slice(0, 40));\nconst textSvg = Buffer.from(`<svg width=\"${width}\" height=\"${height}\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"${Math.round(width*0.055)}\" y=\"${Math.round(height*0.23)}\" width=\"${Math.round(width*0.55)}\" height=\"${Math.round(height*0.34)}\" rx=\"24\" fill=\"#F8F4EA\" fill-opacity=\"0.90\"/><text x=\"${Math.round(width*0.085)}\" y=\"${Math.round(height*0.32)}\" font-family=\"Arial, sans-serif\" font-size=\"58\" font-weight=\"700\" fill=\"#2B2B2B\"><tspan>${headline}</tspan></text><rect x=\"${Math.round(width*0.085)}\" y=\"${Math.round(height*0.43)}\" width=\"${Math.max(220, cta.length*24)}\" height=\"74\" rx=\"37\" fill=\"#2E4A2E\"/><text x=\"${Math.round(width*0.11)}\" y=\"${Math.round(height*0.472)}\" font-family=\"Arial, sans-serif\" font-size=\"30\" font-weight=\"700\" fill=\"#F8F4EA\">${cta}</text></svg>`);\ncomposites.push({ input: textSvg, left: 0, top: 0 });\nconst finalBuffer = await sharp(background).resize(width, height, { fit: \"cover\" }).composite(composites).png({ compressionLevel: 9 }).toBuffer();\nreturn [{ json: {\n  cp: resolved.cp,\n  asset_contract: contract,\n  provider_creation_id: waitInput.creation_id,\n  composed_file: { name: `creative-${resolved.cp.job_id}.png`, mime_type: \"image/png\", data_base64: finalBuffer.toString(\"base64\"), size_bytes: finalBuffer.length, width, height },\n  background_url: backgroundUrl\n} }];"
+      }
+    },
+    {
       "id": "prepare-completed-callback",
       "name": "Prepare Completed CP Callback",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1750,
+        2250,
         0
       ],
       "parameters": {
-        "jsCode": "const crypto = require(\"crypto\");\nfunction parseMaybeJson(value) {\n  if (typeof value !== \"string\") return value;\n  try { return JSON.parse(value); } catch { return value; }\n}\nfunction walk(value, visitor, seen = new Set()) {\n  const parsed = parseMaybeJson(value);\n  if (!parsed || typeof parsed !== \"object\" || seen.has(parsed)) return;\n  seen.add(parsed);\n  visitor(parsed);\n  if (Array.isArray(parsed)) {\n    for (const item of parsed) walk(item, visitor, seen);\n    return;\n  }\n  for (const item of Object.values(parsed)) walk(item, visitor, seen);\n}\nfunction collectUrls(value) {\n  const urls = new Set();\n  const urlKeys = new Set([\"url\", \"image_url\", \"imageUrl\", \"output_url\", \"outputUrl\", \"download_url\", \"downloadUrl\", \"public_url\", \"publicUrl\"]);\n  walk(value, (item) => {\n    if (Array.isArray(item)) return;\n    for (const [key, raw] of Object.entries(item)) {\n      if (typeof raw === \"string\" && /^https?:///.test(raw) && (urlKeys.has(key) || /image|generated|download|url/i.test(key))) urls.add(raw);\n      if (Array.isArray(raw)) {\n        for (const entry of raw) if (typeof entry === \"string\" && /^https?:///.test(entry)) urls.add(entry);\n      }\n    }\n    if (item.type === \"image\" && typeof item.data === \"string\") urls.add(\"data:\" + String(item.mimeType ?? \"image/png\") + \";base64,\" + item.data);\n  });\n  return [...urls];\n}\nconst built = $(\"Build Magnific MCP Request\").item.json;\nconst waitInput = $(\"Prepare Magnific Wait Input\").item.json;\nconst waitResult = $json;\nconst urls = [...new Set([...collectUrls(waitResult), ...collectUrls(waitInput.generation_result)])];\nconst complete = urls.length > 0;\nconst status = complete ? \"completed\" : \"failed\";\nconst callbackSecret = $env.PLATFORM_CALLBACK_SECRET;\nif (!callbackSecret) throw new Error(\"Missing PLATFORM_CALLBACK_SECRET in n8n environment\");\nconst timestamp = new Date().toISOString();\nconst nonce = \"n8n_mcp_image_result_\" + Date.now() + \"_\" + Math.random().toString(36).slice(2);\nconst files = complete ? urls.map((url, index) => ({\n  file_id: String(waitInput.creation_id) + \"_\" + index,\n  type: \"image\",\n  url,\n  source: \"magnific-mcp\",\n  provider_creation_id: waitInput.creation_id\n})) : [];\nconst callbackBody = {\n  job_id: built.cp.job_id,\n  correlation_id: built.cp.correlation_id,\n  idempotency_key: built.cp.idempotency_key,\n  workflow_type: \"creative_image_generation\",\n  workflow_version: built.cp.workflow_version ?? \"creative-image-mcp-v1\",\n  status,\n  current_step: complete ? \"Magnific MCP image is ready for review\" : \"Magnific MCP completed without a usable image URL\",\n  nonce,\n  signature_timestamp: timestamp,\n  signature: \"\",\n  outputs: {\n    provider: \"magnific-mcp\",\n    mcp_endpoint: built.mcp_endpoint,\n    creation_id: waitInput.creation_id,\n    files,\n    generation_result: waitInput.generation_result,\n    wait_result: waitResult\n  },\n  files,\n  warnings: [],\n  error: complete ? undefined : { code: \"MAGNIFIC_MCP_NO_IMAGE_URL\", message: \"Magnific MCP result did not include a usable image URL or image payload\", retryable: true }\n};\nif (!callbackBody.error) delete callbackBody.error;\nconst raw = JSON.stringify(callbackBody);\nconst signature = crypto.createHmac(\"sha256\", callbackSecret).update(timestamp + \".\" + nonce + \".\" + raw).digest(\"hex\");\nreturn [{ json: { callback_url: built.cp.callback_url, callback_headers: { signature, timestamp, nonce }, callback_body: callbackBody } }];"
+        "jsCode": "const crypto = require(\"crypto\");\nconst item = $json;\nconst secret = $env.PLATFORM_CALLBACK_SECRET;\nif (!secret) throw new Error(\"Missing PLATFORM_CALLBACK_SECRET in n8n environment\");\nconst timestamp = new Date().toISOString();\nconst nonce = \"n8n_composed_image_\" + Date.now() + \"_\" + Math.random().toString(36).slice(2);\nconst file = {\n  file_id: item.provider_creation_id + \"_composed\",\n  type: \"image\",\n  name: item.composed_file.name,\n  mime_type: item.composed_file.mime_type,\n  data_base64: item.composed_file.data_base64,\n  size_bytes: item.composed_file.size_bytes,\n  width: item.composed_file.width,\n  height: item.composed_file.height,\n  source: \"n8n-sharp-compositor\"\n};\nconst callbackBody = {\n  job_id: item.cp.job_id,\n  correlation_id: item.cp.correlation_id,\n  idempotency_key: item.cp.idempotency_key,\n  workflow_type: \"creative_image_generation\",\n  workflow_version: \"creative-image-sharp-v1\",\n  status: \"completed\",\n  current_step: \"Branded image composed and ready for review\",\n  nonce,\n  signature_timestamp: timestamp,\n  signature: \"\",\n  outputs: { provider: \"magnific-background-plus-sharp\", asset_contract: item.asset_contract, background_url: item.background_url, files: [{ ...file, data_base64: undefined }] },\n  files: [file],\n  warnings: []\n};\ndelete callbackBody.outputs.files[0].data_base64;\nconst raw = JSON.stringify(callbackBody);\nconst signature = crypto.createHmac(\"sha256\", secret).update(timestamp + \".\" + nonce + \".\" + raw).digest(\"hex\");\nreturn [{ json: { callback_url: item.cp.callback_url, callback_headers: { signature, timestamp, nonce }, callback_body: callbackBody } }];"
       }
     },
     {
@@ -153,7 +179,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [
-        2000,
+        2500,
         0
       ],
       "parameters": {
@@ -214,25 +240,36 @@
       "main": [
         [
           {
-            "node": "Build Magnific MCP Request",
+            "node": "Resolve Brand Assets",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Build Magnific MCP Request": {
+    "Resolve Brand Assets": {
       "main": [
         [
           {
-            "node": "Generate Image With Magnific MCP",
+            "node": "Build Background Prompt",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Generate Image With Magnific MCP": {
+    "Build Background Prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate Background With Magnific MCP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Background With Magnific MCP": {
       "main": [
         [
           {
@@ -255,6 +292,17 @@
       ]
     },
     "Wait For Magnific Creation": {
+      "main": [
+        [
+          {
+            "node": "Compose Brand Image With Sharp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compose Brand Image With Sharp": {
       "main": [
         [
           {

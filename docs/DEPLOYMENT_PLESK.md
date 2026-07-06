@@ -91,3 +91,7 @@ Expected response includes `ok: true`.
 3. Restore database backup if migrations were already applied.
 4. Restart.
 5. Verify `/health` and login.
+
+## Branded Image Composition
+
+The n8n custom-image, bind-mount, module allowlist, preflight, and activation procedure is documented in `docs/N8N_SHARP_COMPOSITION.md`.

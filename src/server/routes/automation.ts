@@ -6,6 +6,7 @@ import { prisma } from "../db.js";
 import { requirePermission } from "../security/auth.js";
 import { signPayload, timingSafeEqual } from "../security/crypto.js";
 import { addJobEvent, dispatchJob, transitionJob } from "../services/automation.js";
+import { deleteFile, saveFile } from "../services/storage.js";
 import { automationCallbackSchema } from "../../shared/contracts.js";
 
 const completedContentStatuses = new Set(["completed", "completed_with_warnings"]);
@@ -75,13 +76,26 @@ export async function automationRoutes(app: FastifyInstance) {
 
     const input = automationCallbackSchema.parse(request.body);
     const job = await prisma.automationJob.findUniqueOrThrow({ where: { id: input.job_id } });
+    const previousNonce = await prisma.automationJobEvent.findFirst({ where: { externalReference: nonce } });
+    if (previousNonce) return { ok: true, duplicate: true };
     if (job.correlationId !== input.correlation_id) {
       reply.code(409);
       return { error: "Callback correlation mismatch" };
     }
+    const composedFile = job.jobType === "creative_image_generation" && completedContentStatuses.has(input.status)
+      ? input.files?.find((file) => file.source === "n8n-sharp-compositor" && typeof file.data_base64 === "string")
+      : undefined;
+    let storedComposition: Awaited<ReturnType<typeof saveFile>> | undefined;
+    if (composedFile) {
+      const buffer = Buffer.from(String(composedFile.data_base64), "base64");
+      if (!buffer.length) throw new Error("Composed image payload is empty");
+      storedComposition = await saveFile(buffer, String(composedFile.name || `creative-${job.id}.png`), "image/png");
+    }
 
     const newStatus = input.status.toUpperCase() as any;
-    const result = await prisma.$transaction(async (tx) => {
+    let result;
+    try {
+      result = await prisma.$transaction(async (tx) => {
       const existingNonce = await tx.automationJobEvent.findFirst({ where: { externalReference: nonce } });
       if (existingNonce) return { duplicate: true, contentItemId: undefined as string | undefined, creativeAssetId: undefined as string | undefined };
 
@@ -105,7 +119,7 @@ export async function automationRoutes(app: FastifyInstance) {
           previousStatus: currentJob.currentStatus,
           newStatus,
           message: input.current_step ?? `Callback: ${input.status}`,
-          payloadSummary: { warnings: input.warnings, files: input.files, error: input.error } as Prisma.InputJsonValue,
+          payloadSummary: { warnings: input.warnings, files: input.files?.map((file) => ({ ...file, data_base64: undefined })), error: input.error } as Prisma.InputJsonValue,
           externalReference: nonce
         }
       });
@@ -167,13 +181,25 @@ export async function automationRoutes(app: FastifyInstance) {
               ? (input.outputs as Record<string, unknown>).files as Record<string, unknown>[]
               : [];
             const file = input.files?.[0] ?? outputFiles[0];
+            const storedFile = storedComposition ? await tx.fileObject.create({ data: {
+              storageKey: storedComposition.storageKey,
+              originalName: storedComposition.originalName,
+              mimeType: storedComposition.mimeType,
+              sizeBytes: storedComposition.sizeBytes,
+              sha256Hash: storedComposition.sha256Hash,
+              assetType: "image",
+              visibilityScope: "INTERNAL",
+              approvalStatus: "not_approved"
+            } }) : null;
+            const safeFile = file ? { ...file, data_base64: undefined } : null;
             const asset = await tx.creativeAsset.create({ data: {
               contentRequestId: currentJob.contentRequestId,
+              fileId: storedFile?.id ?? null,
               assetType: currentJob.jobType === "creative_video_generation" ? "video" : "image",
               status: "ready_for_review",
               approvalStatus: "not_approved",
-              sourceTool: "n8n",
-              metadata: { automationJobId: currentJob.id, file: file ?? null, output: input.outputs ?? {} } as Prisma.InputJsonValue
+              sourceTool: storedFile ? "n8n-sharp-compositor" : "n8n",
+              metadata: { automationJobId: currentJob.id, file: safeFile, output: input.outputs ?? {} } as Prisma.InputJsonValue
             } });
             creativeAssetId = asset.id;
             await tx.contentRequest.update({ where: { id: currentJob.contentRequestId }, data: { status: "APPROVED_INTERNAL" } });
@@ -190,8 +216,15 @@ export async function automationRoutes(app: FastifyInstance) {
       }
 
       return { duplicate: false, contentItemId, creativeAssetId };
-    });
+      });
+    } catch (error) {
+      if (storedComposition) await deleteFile(storedComposition.storageKey).catch(() => undefined);
+      throw error;
+    }
 
+    if (storedComposition && !result.creativeAssetId) {
+      await deleteFile(storedComposition.storageKey).catch(() => undefined);
+    }
     if (result.duplicate) return { ok: true, duplicate: true };
     return { ok: true, content_item_id: result.contentItemId, creative_asset_id: result.creativeAssetId };
   });
