@@ -11,17 +11,17 @@ npm run n8n:push-workflows
 npm run n8n:verify-workflows
 ```
 
-The push and verify scripts load n8n API credentials from the parent project `.env` first:
+The push and verify scripts load n8n API credentials from the parent project `1.env` first:
 
 ```text
-G:\Other computers\My Computer\Dev_Projects\Future4site\.env
+G:\Other computers\My Computer\Dev_Projects\Future4site\1.env
 ```
 
 This keeps local n8n operator credentials separate from the deployed CP `.env` in `future-foresight-admin/.env`.
 If needed, override the env file explicitly:
 
 ```bash
-N8N_ENV_FILE=/path/to/.env npm run n8n:push-workflows
+N8N_ENV_FILE=/path/to/1.env npm run n8n:push-workflows
 ```
 
 The content workflow signs CP callbacks inside an n8n Code node. The n8n server must allow the built-in Node `crypto` module:
@@ -43,7 +43,7 @@ Restart n8n after changing these values.
 
 ## Platform Webhook Paths
 
-Use these paths in `.env` and n8n:
+Use these paths in `1.env` and n8n:
 
 - `N8N_BASE_URL=https://wap.nusrv.com`
 - `N8N_WEBHOOK_BASE_PATH=webhook-test` for n8n test webhooks

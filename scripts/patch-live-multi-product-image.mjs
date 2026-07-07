@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 function loadEnv() {
-  for (const envPath of [process.env.N8N_ENV_FILE, path.join(process.cwd(), "..", ".env"), path.join(process.cwd(), ".env")].filter(Boolean)) {
+  for (const envPath of [process.env.N8N_ENV_FILE, path.join(process.cwd(), "..", "1.env"), path.join(process.cwd(), "1.env")].filter(Boolean)) {
     if (!fs.existsSync(envPath)) continue;
     for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
       const trimmed = line.trim();

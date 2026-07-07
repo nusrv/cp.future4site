@@ -2,7 +2,14 @@
 
 Canonical restart point after any interrupted or completed session. Read this file first before changing the CP or its n8n workflows.
 
-Last verified: **2026-07-06 (Asia/Amman)**
+Last verified: **2026-07-07 (Asia/Amman)**
+
+## 2026-07-07 credential-file convention
+
+
+- Local n8n operator credentials now load from the untracked `1.env` file, never `.env`.
+- `1.env` is explicitly ignored by Git. Plesk container runtime values remain configured through the Docker environment UI.
+
 ## Latest deterministic Sharp creative pipeline
 
 Implemented in source on **2026-07-06** and intentionally not activated live:

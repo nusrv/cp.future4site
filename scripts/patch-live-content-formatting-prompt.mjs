@@ -4,8 +4,8 @@ import path from "node:path";
 function loadEnv() {
   const envPaths = [
     process.env.N8N_ENV_FILE,
-    path.join(process.cwd(), "..", ".env"),
-    path.join(process.cwd(), ".env")
+    path.join(process.cwd(), "..", "1.env"),
+    path.join(process.cwd(), "1.env")
   ].filter(Boolean);
 
   for (const envPath of envPaths) {
