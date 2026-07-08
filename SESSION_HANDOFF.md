@@ -4,6 +4,30 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-08 fixed-template smaller safe fit-area update
+
+Completed after syncing from current live n8n first:
+
+- Exported current live `FF Admin - Creative Image Generation` (`rWQZP7saIkXUXDUD`) before editing.
+- Saved restore backup at `workflows/n8n/backups/creative-image-generation-backup-2026-07-08-17-09.json`.
+- The previous larger fit area made the 10L product overflow the requested area. Updated the virtual product frame to an inset/safe frame inside the detected `fit-area.png` guide.
+- New source-reference frame on 1122x1402: x=272, y=321, w=685, h=907.
+- New proportional frame in `Compose Brand Image With Sharp`:
+  - `x = Math.round(width * 0.2424)`
+  - `y = Math.round(height * 0.2290)`
+  - `w = Math.round(width * 0.6105)`
+  - `h = Math.round(height * 0.6469)`
+- For 1080x1350 output, final frame is x=262, y=309, w=659, h=873.
+- Product still uses `fit: "inside"`, `withoutEnlargement: false`, horizontal centering, and bottom alignment to `productFrame.y + productFrame.h - productHeight`.
+- Confirmed no vertical centering, no product trim, no product ratio knobs, no visible frame, no extra logo/headline/CTA/button/text panel, and no Magnific nodes.
+- Rebuilt and contract-checked locally. Deployed and activated live workflow `rWQZP7saIkXUXDUD`. Live n8n `updatedAt`: `2026-07-08T14:10:50.869Z`.
+- Re-exported live workflow after deploy and confirmed active=true, 7 nodes, new smaller frame constants present, bottom alignment present, no vertical centering, no trim, and no Magnific nodes.
+
+Testing status:
+
+- Static workflow/source verification passed.
+- End-to-end CP test should be rerun with 10L first, then 1L and 5L, to confirm all products fit inside the smaller safe frame and callback remains below the CP limit.
+
 ## 2026-07-08 fixed-template larger product fit-area update
 
 Completed after syncing from current live n8n first:
