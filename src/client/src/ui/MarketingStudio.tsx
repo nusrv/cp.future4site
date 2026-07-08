@@ -135,9 +135,14 @@ function RequestDetail({ request, busy, onGenerate, onReview, onCreativeReview, 
   useEffect(() => { setEditingCopy(false); setShowLibrary(false); setConfirmingDelete(false); }, [request.id]);
   const stage = deriveStage(request);
   const item = request.items[0];
-  const asset = request.assets.find((entry) => entry.approvalStatus !== "rejected") ?? request.assets[0];
+  const asset = request.assets.find((entry) => entry.approvalStatus !== "rejected" && entry.status !== "superseded") ?? request.assets[0];
+  const imageSetJobId = asset?.metadata?.automationJobId;
+  const mediaAssets = asset
+    ? request.assets
+        .filter((entry) => entry.approvalStatus !== "rejected" && entry.status !== "superseded" && (imageSetJobId ? entry.metadata?.automationJobId === imageSetJobId : entry.id === asset.id))
+        .sort((a, b) => Number(a.metadata?.imageSetPosition ?? 1) - Number(b.metadata?.imageSetPosition ?? 1))
+    : [];
   const latestJob = request.jobs[0];
-  const mediaUrl = assetUrl(asset);
   const mediaName = request.format === "text_video" ? "video" : request.format === "carousel" ? "carousel" : "image";
   const approvalLabel = request.format === "text" ? "Approve and send to Publishing" : `Approve copy and create ${mediaName}`;
   const failed = stage === "copy_failed" || stage === "media_failed";
@@ -164,7 +169,7 @@ function RequestDetail({ request, busy, onGenerate, onReview, onCreativeReview, 
         <h3>Media</h3>
         {stage === "generating_media" ? <ProcessingPanel title={`Creating ${mediaName}`} detail="This usually takes a few minutes. This page updates automatically." /> : null}
         {stage === "media_failed" ? <div className="media-placeholder error"><strong>Media generation failed</strong><p>{latestJob?.errorMessage || "The automation did not return a usable asset."}</p></div> : null}
-        {asset && ["review_media", "ready"].includes(stage) ? <div className="media-preview">{mediaUrl ? (asset.assetType === "video" ? <video src={mediaUrl} controls /> : <img src={mediaUrl} alt={`${asset.sourceTool === "manual_upload" ? "Uploaded" : "Generated"} ${mediaName} for ${request.topic}`} />) : <div className="asset-file"><strong>{mediaName[0].toUpperCase() + mediaName.slice(1)} received</strong><p>The asset is stored internally. Public preview is not available for this file reference.</p></div>}</div> : null}
+        {asset && ["review_media", "ready"].includes(stage) ? <div className={mediaAssets.length > 1 ? "media-preview-grid" : "media-preview"}>{mediaAssets.map((entry, index) => { const url = assetUrl(entry); return <figure className={mediaAssets.length > 1 ? "media-preview-item" : "media-preview-single"} key={entry.id}>{url ? (entry.assetType === "video" ? <video src={url} controls /> : <img src={url} alt={`${entry.sourceTool === "manual_upload" ? "Uploaded" : "Generated"} ${mediaName} ${index + 1} of ${mediaAssets.length} for ${request.topic}`} />) : <div className="asset-file"><strong>{mediaName[0].toUpperCase() + mediaName.slice(1)} received</strong><p>The asset is stored internally. Public preview is not available for this file reference.</p></div>}{mediaAssets.length > 1 ? <figcaption>Image {index + 1} of {mediaAssets.length}</figcaption> : null}</figure>; })}</div> : null}
         {["draft", "review_copy", "generating_copy", "copy_failed"].includes(stage) ? <div className="empty-preview">Media starts after the copy is approved.</div> : null}
       </section> : null}
     </div>
@@ -195,7 +200,7 @@ function RequestDetail({ request, busy, onGenerate, onReview, onCreativeReview, 
         {["draft", "copy_failed"].includes(stage) ? <button className="btn btn-primary" disabled={busy} onClick={onGenerate}>{stage === "copy_failed" ? "Retry copy generation" : "Generate copy"}</button> : null}
         {stage === "review_copy" ? <button className="btn btn-primary" disabled={busy} onClick={() => onReview("approved_publication")}>{approvalLabel}</button> : null}
         {stage === "media_failed" ? <button className="btn btn-primary" disabled={busy} onClick={() => onReview("approved_publication")}>Retry {mediaName} generation</button> : null}
-        {stage === "review_media" && asset ? <button className="btn btn-primary" disabled={busy} onClick={() => onCreativeReview(asset.id, "approved")}>Approve {mediaName} and send to Publishing</button> : null}
+        {stage === "review_media" && asset ? <button className="btn btn-primary" disabled={busy} onClick={() => onCreativeReview(asset.id, "approved")}>Approve {mediaAssets.length > 1 ? `${mediaAssets.length} images` : mediaName} and send to Publishing</button> : null}
         {stage === "ready" ? <Link className="btn btn-primary" to="/publishing">Open Publishing</Link> : null}
       </div>
     </footer>

@@ -1,4 +1,4 @@
-﻿import fs from "node:fs";
+import fs from "node:fs";
 import path from "node:path";
 
 const file = path.join(process.cwd(), "workflows", "n8n", "generated", "10-creative-image-generation.json");
@@ -53,7 +53,8 @@ if (
   !composer.includes("image/jpeg") ||
   !composer.includes("maxCallbackImageBytes") ||
   !composer.includes("template_background_source") ||
-  !composer.includes("getLayoutSlots") ||
+  !composer.includes("composed_files") ||
+  !composer.includes('mode: "separate-images"') ||
   !composer.includes("productPaths") ||
   !composer.includes("product_layout")
 ) {
@@ -78,7 +79,7 @@ if (composer.includes("(productFrame.h - productHeight) / 2")) {
   throw new Error("Fixed-template composer must bottom-align product, not vertically center it");
 }
 
-if (!callback.includes("n8n-sharp-compositor") || !callback.includes("data_base64")) {
+if (!callback.includes("n8n-sharp-compositor") || !callback.includes("data_base64") || !callback.includes("publicFiles") || !callback.includes("file_count")) {
   throw new Error("Composed callback contract missing");
 }
 

@@ -54,7 +54,7 @@ export async function automationRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
-  app.post("/api/automation/callback", async (request, reply) => {
+  app.post("/api/automation/callback", { bodyLimit: 10 * 1024 * 1024 }, async (request, reply) => {
     const raw = JSON.stringify(request.body ?? {});
     const signature = String(request.headers["x-ff-signature"] ?? "");
     const timestamp = String(request.headers["x-ff-timestamp"] ?? "");
@@ -82,22 +82,32 @@ export async function automationRoutes(app: FastifyInstance) {
       reply.code(409);
       return { error: "Callback correlation mismatch" };
     }
-    const composedFile = job.jobType === "creative_image_generation" && completedContentStatuses.has(input.status)
-      ? input.files?.find((file) => file.source === "n8n-sharp-compositor" && typeof file.data_base64 === "string")
-      : undefined;
-    let storedComposition: Awaited<ReturnType<typeof saveFile>> | undefined;
-    if (composedFile) {
-      const buffer = Buffer.from(String(composedFile.data_base64), "base64");
-      if (!buffer.length) throw new Error("Composed image payload is empty");
-      storedComposition = await saveFile(buffer, String(composedFile.name || `creative-${job.id}.png`), "image/png");
+    const composedFiles = job.jobType === "creative_image_generation" && completedContentStatuses.has(input.status)
+      ? (input.files ?? []).filter((file) => file.source === "n8n-sharp-compositor" && typeof file.data_base64 === "string")
+      : [];
+    const storedCompositions: Array<{
+      descriptor: Record<string, unknown>;
+      stored: Awaited<ReturnType<typeof saveFile>>;
+    }> = [];
+    try {
+      for (const [index, composedFile] of composedFiles.entries()) {
+        const buffer = Buffer.from(String(composedFile.data_base64), "base64");
+        if (!buffer.length) throw new Error(`Composed image ${index + 1} payload is empty`);
+        const mimeType = String(composedFile.mime_type || "image/jpeg");
+        const name = String(composedFile.name || `creative-${job.id}-${index + 1}.jpg`);
+        const stored = await saveFile(buffer, name, mimeType);
+        storedCompositions.push({ descriptor: composedFile, stored });
+      }
+    } catch (error) {
+      await Promise.all(storedCompositions.map(({ stored }) => deleteFile(stored.storageKey).catch(() => undefined)));
+      throw error;
     }
-
     const newStatus = input.status.toUpperCase() as any;
     let result;
     try {
       result = await prisma.$transaction(async (tx) => {
       const existingNonce = await tx.automationJobEvent.findFirst({ where: { externalReference: nonce } });
-      if (existingNonce) return { duplicate: true, contentItemId: undefined as string | undefined, creativeAssetId: undefined as string | undefined };
+      if (existingNonce) return { duplicate: true, contentItemId: undefined as string | undefined, creativeAssetId: undefined as string | undefined, creativeAssetIds: [] as string[] };
 
       const currentJob = await tx.automationJob.findUniqueOrThrow({ where: { id: input.job_id } });
       await tx.automationJob.update({
@@ -171,43 +181,66 @@ export async function automationRoutes(app: FastifyInstance) {
       }
 
       let creativeAssetId: string | undefined;
+      let creativeAssetIds: string[] = [];
       if (["creative_image_generation", "creative_video_generation"].includes(currentJob.jobType) && currentJob.contentRequestId) {
         if (completedContentStatuses.has(input.status)) {
           const existingMaterialization = await tx.automationJobEvent.findFirst({ where: { jobId: currentJob.id, eventType: "creative_result_materialized" } });
           if (existingMaterialization) {
-            creativeAssetId = existingMaterialization.externalReference ?? undefined;
+            const existingAssets = await tx.creativeAsset.findMany({
+              where: { contentRequestId: currentJob.contentRequestId, metadata: { path: "$.automationJobId", equals: currentJob.id } },
+              select: { id: true }
+            });
+            creativeAssetIds = existingAssets.map((asset) => asset.id);
+            creativeAssetId = existingMaterialization.externalReference ?? creativeAssetIds[0];
           } else {
             const outputFiles = Array.isArray((input.outputs as Record<string, unknown> | undefined)?.files)
               ? (input.outputs as Record<string, unknown>).files as Record<string, unknown>[]
               : [];
-            const file = input.files?.[0] ?? outputFiles[0];
-            const storedFile = storedComposition ? await tx.fileObject.create({ data: {
-              storageKey: storedComposition.storageKey,
-              originalName: storedComposition.originalName,
-              mimeType: storedComposition.mimeType,
-              sizeBytes: storedComposition.sizeBytes,
-              sha256Hash: storedComposition.sha256Hash,
-              assetType: "image",
-              visibilityScope: "INTERNAL",
-              approvalStatus: "not_approved"
-            } }) : null;
-            const safeFile = file ? { ...file, data_base64: undefined } : null;
-            const asset = await tx.creativeAsset.create({ data: {
-              contentRequestId: currentJob.contentRequestId,
-              fileId: storedFile?.id ?? null,
-              assetType: currentJob.jobType === "creative_video_generation" ? "video" : "image",
-              status: "ready_for_review",
-              approvalStatus: "not_approved",
-              sourceTool: storedFile ? "n8n-sharp-compositor" : "n8n",
-              metadata: { automationJobId: currentJob.id, file: safeFile, output: input.outputs ?? {} } as Prisma.InputJsonValue
-            } });
-            creativeAssetId = asset.id;
+            const fallbackFile = input.files?.[0] ?? outputFiles[0] ?? null;
+            const materializations = storedCompositions.length
+              ? storedCompositions.map(({ descriptor, stored }) => ({ descriptor, stored }))
+              : [{ descriptor: fallbackFile, stored: null }];
+
+            for (const [index, materialization] of materializations.entries()) {
+              const storedFile = materialization.stored ? await tx.fileObject.create({ data: {
+                storageKey: materialization.stored.storageKey,
+                originalName: materialization.stored.originalName,
+                mimeType: materialization.stored.mimeType,
+                sizeBytes: materialization.stored.sizeBytes,
+                sha256Hash: materialization.stored.sha256Hash,
+                assetType: "image",
+                visibilityScope: "INTERNAL",
+                approvalStatus: "not_approved"
+              } }) : null;
+              const safeFile = materialization.descriptor
+                ? { ...materialization.descriptor, data_base64: undefined }
+                : null;
+              const asset = await tx.creativeAsset.create({ data: {
+                contentRequestId: currentJob.contentRequestId,
+                fileId: storedFile?.id ?? null,
+                assetType: currentJob.jobType === "creative_video_generation" ? "video" : "image",
+                status: "ready_for_review",
+                approvalStatus: "not_approved",
+                sourceTool: storedFile ? "n8n-sharp-compositor" : "n8n",
+                metadata: {
+                  automationJobId: currentJob.id,
+                  imageSetPosition: index + 1,
+                  imageSetSize: materializations.length,
+                  file: safeFile,
+                  output: input.outputs ?? {}
+                } as Prisma.InputJsonValue
+              } });
+              creativeAssetIds.push(asset.id);
+            }
+
+            creativeAssetId = creativeAssetIds[0];
             await tx.contentRequest.update({ where: { id: currentJob.contentRequestId }, data: { status: "APPROVED_INTERNAL" } });
             await tx.automationJobEvent.create({ data: {
               jobId: currentJob.id,
               eventType: "creative_result_materialized",
-              message: "Creative output saved for human review",
-              externalReference: asset.id
+              message: creativeAssetIds.length === 1 ? "Creative output saved for human review" : `${creativeAssetIds.length} creative outputs saved for human review`,
+              payloadSummary: { creativeAssetIds } as Prisma.InputJsonValue,
+              externalReference: creativeAssetId
             } });
           }
         } else if (input.status === "failed") {
@@ -215,17 +248,17 @@ export async function automationRoutes(app: FastifyInstance) {
         }
       }
 
-      return { duplicate: false, contentItemId, creativeAssetId };
+      return { duplicate: false, contentItemId, creativeAssetId, creativeAssetIds };
       });
     } catch (error) {
-      if (storedComposition) await deleteFile(storedComposition.storageKey).catch(() => undefined);
+      await Promise.all(storedCompositions.map(({ stored }) => deleteFile(stored.storageKey).catch(() => undefined)));
       throw error;
     }
 
-    if (storedComposition && !result.creativeAssetId) {
-      await deleteFile(storedComposition.storageKey).catch(() => undefined);
+    if (storedCompositions.length && !result.creativeAssetIds.length) {
+      await Promise.all(storedCompositions.map(({ stored }) => deleteFile(stored.storageKey).catch(() => undefined)));
     }
     if (result.duplicate) return { ok: true, duplicate: true };
-    return { ok: true, content_item_id: result.contentItemId, creative_asset_id: result.creativeAssetId };
+    return { ok: true, content_item_id: result.contentItemId, creative_asset_id: result.creativeAssetId, creative_asset_ids: result.creativeAssetIds };
   });
 }

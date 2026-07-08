@@ -260,21 +260,33 @@ export async function contentRoutes(app: FastifyInstance) {
     const input = z.object({ decision: z.enum(["approved", "regenerate", "rejected"]), notes: z.string().optional() }).parse(request.body);
     const asset = await prisma.creativeAsset.findUniqueOrThrow({ where: { id: params.id } });
     if (!asset.contentRequestId) throw new Error("Creative asset is not linked to a content request");
+    const metadata = asset.metadata as Record<string, unknown> | null;
+    const automationJobId = typeof metadata?.automationJobId === "string" ? metadata.automationJobId : null;
+    const imageSet = automationJobId
+      ? await prisma.creativeAsset.findMany({
+          where: { contentRequestId: asset.contentRequestId, metadata: { path: "$.automationJobId", equals: automationJobId } },
+          select: { id: true, fileId: true }
+        })
+      : [{ id: asset.id, fileId: asset.fileId }];
+    const imageSetIds = imageSet.map((entry) => entry.id);
+    const imageSetFileIds = imageSet.flatMap((entry) => entry.fileId ? [entry.fileId] : []);
+
     if (input.decision === "approved") {
       await prisma.$transaction([
-        prisma.creativeAsset.updateMany({ where: { contentRequestId: asset.contentRequestId, id: { not: asset.id } }, data: { approvalStatus: "rejected", status: "superseded" } }),
-        prisma.creativeAsset.update({ where: { id: asset.id }, data: { approvalStatus: "approved", status: "approved" } }),
-        prisma.fileObject.updateMany({ where: { id: asset.fileId ?? "__no_uploaded_file__" }, data: { approvalStatus: "approved" } }),
+        prisma.creativeAsset.updateMany({ where: { contentRequestId: asset.contentRequestId, id: { notIn: imageSetIds } }, data: { approvalStatus: "rejected", status: "superseded" } }),
+        prisma.creativeAsset.updateMany({ where: { id: { in: imageSetIds } }, data: { approvalStatus: "approved", status: "approved" } }),
+        prisma.fileObject.updateMany({ where: { id: { in: imageSetFileIds } }, data: { approvalStatus: "approved" } }),
         prisma.contentRequest.update({ where: { id: asset.contentRequestId }, data: { status: "APPROVED_PUBLICATION" } }),
-        prisma.approval.create({ data: { entityType: "creative_asset", entityId: asset.id, approvalType: "creative", status: "approved", decidedByUserId: current.user.id, decisionNotes: input.notes, decidedAt: new Date() } })
+        prisma.approval.create({ data: { entityType: "creative_asset_set", entityId: asset.id, approvalType: "creative", status: "approved", decidedByUserId: current.user.id, decisionNotes: input.notes, decidedAt: new Date() } })
       ]);
     } else {
-      await prisma.creativeAsset.update({ where: { id: asset.id }, data: { approvalStatus: input.decision, status: input.decision } });
-      if (asset.fileId) await prisma.fileObject.update({ where: { id: asset.fileId }, data: { approvalStatus: input.decision } });
-      await prisma.contentRequest.update({ where: { id: asset.contentRequestId }, data: { status: input.decision === "rejected" ? "REJECTED" : "APPROVED_INTERNAL" } });
+      await prisma.$transaction([
+        prisma.creativeAsset.updateMany({ where: { id: { in: imageSetIds } }, data: { approvalStatus: input.decision, status: input.decision } }),
+        prisma.fileObject.updateMany({ where: { id: { in: imageSetFileIds } }, data: { approvalStatus: input.decision } }),
+        prisma.contentRequest.update({ where: { id: asset.contentRequestId }, data: { status: input.decision === "rejected" ? "REJECTED" : "APPROVED_INTERNAL" } })
+      ]);
       if (input.decision === "regenerate") await requestCreativeProduction(asset.contentRequestId, current.user.id);
-    }
-    await audit({ actorUserId: current.user.id, action: `creative.${input.decision}`, entityType: "creative_asset", entityId: asset.id, summary: `Creative review: ${input.decision}` });
+    }    await audit({ actorUserId: current.user.id, action: `creative.${input.decision}`, entityType: "creative_asset", entityId: asset.id, summary: `Creative review: ${input.decision}` });
     return { ok: true };
   });
 
@@ -284,8 +296,15 @@ export async function contentRoutes(app: FastifyInstance) {
     const input = z.object({ platforms: z.array(z.enum(["facebook", "instagram"])).min(1), dryRun: z.boolean().default(true) }).parse(request.body);
     const item = await prisma.contentItem.findUniqueOrThrow({ where: { id: params.id }, include: { request: { include: { assets: true } }, publishingRecords: true } });
     if (item.request.status !== "APPROVED_PUBLICATION") throw new Error("Content is not approved for publication");
-    const approvedAsset = item.request.assets.find((asset) => asset.approvalStatus === "approved");
-    if (getCreativeWorkflowType(item.request.format) && !approvedAsset) throw new Error("Approve the required media before publishing");
+    const approvedAssets = item.request.assets
+      .filter((asset) => asset.approvalStatus === "approved")
+      .sort((a, b) => {
+        const aPosition = Number((a.metadata as Record<string, unknown> | null)?.imageSetPosition ?? 1);
+        const bPosition = Number((b.metadata as Record<string, unknown> | null)?.imageSetPosition ?? 1);
+        return aPosition - bPosition;
+      });
+    const approvedAsset = approvedAssets[0];
+    if (getCreativeWorkflowType(item.request.format) && !approvedAssets.length) throw new Error("Approve the required media before publishing");
     if (item.request.format === "text" && input.platforms.includes("instagram")) throw new Error("Instagram publishing requires an approved image or video");
     if (!input.dryRun) {
       const checked = new Set(item.publishingRecords.filter((record) => record.mode === "DRY_RUN").map((record) => record.platform.toLowerCase()));
@@ -309,7 +328,9 @@ export async function contentRoutes(app: FastifyInstance) {
           headline: item.headline,
           cta: item.cta,
           creative_asset_id: approvedAsset?.id ?? null,
-          creative_asset: approvedAsset?.metadata ?? null
+          creative_asset: approvedAsset?.metadata ?? null,
+          creative_asset_ids: approvedAssets.map((asset) => asset.id),
+          creative_assets: approvedAssets.map((asset) => ({ id: asset.id, file_id: asset.fileId, metadata: asset.metadata }))
         }
       });
       await dispatchJob(job.id);

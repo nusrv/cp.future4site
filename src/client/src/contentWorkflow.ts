@@ -14,7 +14,13 @@ export type CreativeAsset = {
   status: string;
   approvalStatus: string;
   sourceTool?: string;
-  metadata?: { file?: Record<string, unknown>; url?: string } | null;
+  metadata?: {
+    file?: Record<string, unknown>;
+    url?: string;
+    automationJobId?: string;
+    imageSetPosition?: number;
+    imageSetSize?: number;
+  } | null;
 };
 
 export type PublishingRecord = {

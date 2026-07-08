@@ -84,82 +84,39 @@ function getProductFrame(targetWidth, targetHeight) {
   };
 }
 
-function getLayoutSlots(frame, count) {
-  if (count <= 1) {
-    return [{ x: frame.x, y: frame.y, w: frame.w, h: frame.h, maxHeightRatio: 1 }];
-  }
-
-  if (count === 2) {
-    return [
-      { x: frame.x, y: frame.y, w: Math.round(frame.w * 0.56), h: frame.h, maxHeightRatio: 0.98 },
-      { x: frame.x + Math.round(frame.w * 0.44), y: frame.y, w: Math.round(frame.w * 0.56), h: frame.h, maxHeightRatio: 0.98 }
-    ];
-  }
-
-  if (count === 3) {
-    return [
-      { x: frame.x, y: frame.y, w: Math.round(frame.w * 0.36), h: frame.h, maxHeightRatio: 0.84 },
-      { x: frame.x + Math.round(frame.w * 0.25), y: frame.y, w: Math.round(frame.w * 0.50), h: frame.h, maxHeightRatio: 1.00 },
-      { x: frame.x + Math.round(frame.w * 0.64), y: frame.y, w: Math.round(frame.w * 0.36), h: frame.h, maxHeightRatio: 0.84 }
-    ];
-  }
-
-  const gap = Math.round(frame.w * 0.015);
-  const slotWidth = Math.max(1, Math.floor((frame.w + gap) / count));
-
-  return Array.from({ length: count }, (_, index) => ({
-    x: frame.x + index * (slotWidth - gap),
-    y: frame.y,
-    w: slotWidth,
-    h: frame.h,
-    maxHeightRatio: count > 5 ? 0.76 : 0.82
-  }));
-}
-
-async function buildProductComposites(targetWidth, targetHeight) {
+async function buildProductComposite(targetWidth, targetHeight, productPath) {
   const frame = getProductFrame(targetWidth, targetHeight);
-  const slots = getLayoutSlots(frame, productPaths.length);
   const baseline = frame.y + frame.h;
-  const composites = [];
+  const trimmedBuffer = await trimProductBuffer(productPath);
+  const productBuffer = await sharp(trimmedBuffer)
+    .resize({
+      width: frame.w,
+      height: frame.h,
+      fit: "inside",
+      withoutEnlargement: false
+    })
+    .png()
+    .toBuffer();
+  const productMeta = await sharp(productBuffer).metadata();
+  const productWidth = productMeta.width || 0;
+  const productHeight = productMeta.height || 0;
 
-  for (let index = 0; index < productPaths.length; index++) {
-    const slot = slots[index];
-    const trimmedBuffer = await trimProductBuffer(productPaths[index]);
-    const slotHeight = Math.max(1, Math.round(slot.h * (slot.maxHeightRatio || 1)));
-
-    const productBuffer = await sharp(trimmedBuffer)
-      .resize({
-        width: slot.w,
-        height: slotHeight,
-        fit: "inside",
-        withoutEnlargement: false
-      })
-      .png()
-      .toBuffer();
-
-    const productMeta = await sharp(productBuffer).metadata();
-    const productWidth = productMeta.width || 0;
-    const productHeight = productMeta.height || 0;
-
-    composites.push({
-      input: productBuffer,
-      left: Math.round(slot.x + (slot.w - productWidth) / 2),
-      top: Math.round(baseline - productHeight)
-    });
-  }
-
-  return composites;
+  return {
+    input: productBuffer,
+    left: Math.round(frame.x + (frame.w - productWidth) / 2),
+    top: Math.round(baseline - productHeight)
+  };
 }
 
-async function renderJpeg(targetWidth, targetHeight, quality) {
-  const productComposites = await buildProductComposites(targetWidth, targetHeight);
+async function renderJpeg(productPath, targetWidth, targetHeight, quality) {
+  const productComposite = await buildProductComposite(targetWidth, targetHeight, productPath);
 
   return sharp(backgroundBuffer)
     .resize(targetWidth, targetHeight, {
       fit: "cover",
       position: "center"
     })
-    .composite(productComposites)
+    .composite([productComposite])
     .flatten({
       background: "#ffffff"
     })
@@ -169,44 +126,65 @@ async function renderJpeg(targetWidth, targetHeight, quality) {
     })
     .toBuffer();
 }
-
 const maxCallbackImageBytes = clampNumber(
   payload.max_callback_image_bytes,
   650 * 1024,
-  220 * 1024,
+  180 * 1024,
   2 * 1024 * 1024
 );
+const maxCallbackTotalImageBytes = clampNumber(
+  payload.max_callback_total_image_bytes,
+  5 * 1024 * 1024,
+  1 * 1024 * 1024,
+  8 * 1024 * 1024
+);
+const perImageLimit = Math.max(
+  180 * 1024,
+  Math.min(maxCallbackImageBytes, Math.floor(maxCallbackTotalImageBytes / productPaths.length))
+);
 
-let outputWidth = width;
-let outputHeight = height;
-let finalBuffer = null;
-let finalQuality = null;
+async function renderProductFile(productPath, index) {
+  let outputWidth = width;
+  let outputHeight = height;
+  let finalBuffer = null;
+  let finalQuality = null;
 
-for (const quality of [82, 78, 74, 70, 66, 62, 58, 54, 50, 46, 42]) {
-  const candidate = await renderJpeg(width, height, quality);
-
-  finalBuffer = candidate;
-  finalQuality = quality;
-
-  if (candidate.length <= maxCallbackImageBytes) {
-    break;
-  }
-}
-
-if (finalBuffer.length > maxCallbackImageBytes) {
-  outputWidth = Math.round(width * 0.85);
-  outputHeight = Math.round(height * 0.85);
-
-  for (const quality of [78, 74, 70, 66, 62, 58, 54, 50, 46, 42]) {
-    const candidate = await renderJpeg(outputWidth, outputHeight, quality);
-
+  for (const quality of [82, 78, 74, 70, 66, 62, 58, 54, 50, 46, 42]) {
+    const candidate = await renderJpeg(productPath, width, height, quality);
     finalBuffer = candidate;
     finalQuality = quality;
+    if (candidate.length <= perImageLimit) break;
+  }
 
-    if (candidate.length <= maxCallbackImageBytes) {
-      break;
+  if (finalBuffer.length > perImageLimit) {
+    outputWidth = Math.round(width * 0.85);
+    outputHeight = Math.round(height * 0.85);
+
+    for (const quality of [78, 74, 70, 66, 62, 58, 54, 50, 46, 42]) {
+      const candidate = await renderJpeg(productPath, outputWidth, outputHeight, quality);
+      finalBuffer = candidate;
+      finalQuality = quality;
+      if (candidate.length <= perImageLimit) break;
     }
   }
+
+  const productAssetId = contract.product_asset_ids?.[index] || `product-${index + 1}`;
+  return {
+    name: `creative-${resolved.cp.job_id}-${productAssetId}.jpg`,
+    mime_type: "image/jpeg",
+    data_base64: finalBuffer.toString("base64"),
+    size_bytes: finalBuffer.length,
+    width: outputWidth,
+    height: outputHeight,
+    quality: finalQuality,
+    product_asset_id: productAssetId,
+    position: index + 1
+  };
+}
+
+const composedFiles = [];
+for (let index = 0; index < productPaths.length; index++) {
+  composedFiles.push(await renderProductFile(productPaths[index], index));
 }
 
 return [
@@ -215,17 +193,10 @@ return [
       cp: resolved.cp,
       asset_contract: contract,
       provider_creation_id: String(resolved.cp.job_id) + "_fixed_template",
-      composed_file: {
-        name: "creative-" + resolved.cp.job_id + ".jpg",
-        mime_type: "image/jpeg",
-        data_base64: finalBuffer.toString("base64"),
-        size_bytes: finalBuffer.length,
-        width: outputWidth,
-        height: outputHeight,
-        quality: finalQuality
-      },
+      composed_file: composedFiles[0],
+      composed_files: composedFiles,
       product_layout: {
-        mode: productPaths.length === 1 ? "single" : productPaths.length <= 3 ? "group" : "lineup",
+        mode: "separate-images",
         product_count: productPaths.length,
         product_asset_ids: contract.product_asset_ids || []
       },
@@ -233,4 +204,3 @@ return [
     }
   }
 ];
-

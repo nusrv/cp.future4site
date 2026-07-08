@@ -4,6 +4,28 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-08 separate image per product implementation
+
+Implemented after the combined multi-product image was judged too crowded and products appeared too small.
+
+- Preferred architecture: one CP creative job contains all selected product IDs; n8n returns one full-size image per product in one ordered signed callback. CP attaches all images to the same content request and later passes the ordered set to one publishing job. CP does not create separate text posts.
+- Synced from live workflow `FF Admin - Creative Image Generation` (`rWQZP7saIkXUXDUD`) before editing.
+- Restore backup: `workflows/n8n/backups/creative-image-generation-backup-2026-07-08-19-27.json`.
+- `Compose Brand Image With Sharp` now renders each product separately at the established full single-product frame and returns `composed_files[]`; it no longer creates group/lineup layouts.
+- `Prepare Completed CP Callback` now sends ordered `files[]`, including product asset ID and position, and signs the complete callback body.
+- CP callback route accepts up to 10 MiB, stores every returned JPEG, creates one ordered creative asset per product, and cleans up all stored files on transaction failure.
+- Approve, reject, and regenerate actions operate on the complete image set.
+- Marketing Studio shows all current images in an ordered responsive grid and approves them together.
+- Publishing job payload now includes legacy single-asset fields plus ordered `creative_asset_ids` and `creative_assets`. Actual Meta multi-photo/carousel publishing remains a later publishing-workflow concern; the current repository still keeps live Meta publishing blocked.
+- Validation passed: creative workflow build/check, secret scan, TypeScript check, diff check, and a two-file callback/HMAC execution test. Local Sharp rendering was not run because Sharp is installed only in the production n8n image.
+- Live n8n was intentionally not changed yet. Deployment order is mandatory: pull/build/restart CP first, then deploy and activate the generated n8n workflow, then run a real two-product request.
+
+Pending coordinated deployment and test:
+1. Pull the new commit on Plesk, run `npm run build`, and restart CP.
+2. Deploy/activate workflow `rWQZP7saIkXUXDUD` from this synchronized repo.
+3. Test 17L + 18L and confirm two full-size JPEGs arrive, both appear in CP, approval selects both, and callback body stays under the configured limit.
+
+
 ## 2026-07-08 17L approval and 17L/18L CP product-selection fix
 
 Completed after a `17 & 18 Liter Sunflower oil` request first failed approval and then generated only the 1L image.
