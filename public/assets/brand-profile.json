@@ -30,8 +30,7 @@
                                            },
                      "sunflower-oil-17l":  {
                                                "file":  "products/17L-sunflower-oil.png",
-                                               "approved_for_marketing":  false,
-                                               "restriction":  "Not in the current KB-approved packaging list"
+                                               "approved_for_marketing":  true
                                            },
                      "sunflower-oil-18l":  {
                                                "file":  "products/18L-sunflower-oil.png",
