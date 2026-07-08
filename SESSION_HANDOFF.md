@@ -4,6 +4,20 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-08 Magnific background URL normalization fix
+
+A retry reached `Compose Brand Image With Sharp` and failed with `Invalid Magnific background URL`. The composer was using the first raw URL candidate returned from the MCP result without enough normalization.
+
+Source and live workflow fix completed:
+
+- Added `addUrlCandidate()` to extract `http/https` URLs from strings, trim trailing punctuation, validate with `new URL()`, and ignore malformed candidates.
+- Updated `collectUrls()` to handle URLs embedded inside text/JSON and URL-like keys such as `url`, `image`, `download`, `web`, and `src`.
+- Kept the built-in `http`/`https` download path; no global `fetch` usage returned.
+- Regenerated and redeployed `FF Admin - Creative Image Generation` (`rWQZP7saIkXUXDUD`).
+- Live workflow remained active and was verified by read-only export.
+- Live n8n `updatedAt`: `2026-07-08T09:07:43.153Z`.
+
+Next operator check: retry the same CP image request. If another failure occurs, inspect the exact `Compose Brand Image With Sharp` error text and the preceding `Wait For Magnific Creation` output shape.
 ## 2026-07-08 Sharp composer fetch runtime fix
 
 A live CP image-generation test reached `Compose Brand Image With Sharp` and failed with `fetch is not defined`. The n8n Code node runtime did not expose global `fetch`.

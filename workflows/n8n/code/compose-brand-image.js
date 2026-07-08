@@ -3,14 +3,26 @@ const fs = require("fs");
 const http = require("http");
 const https = require("https");
 function parseMaybeJson(value) { if (typeof value !== "string") return value; try { return JSON.parse(value); } catch { return value; } }
+function addUrlCandidate(raw, urls) {
+  if (typeof raw !== "string") return;
+  const candidates = raw.match(/https?:\/\/[^\s"'<>\\)\]]+/g) || [];
+  for (const candidate of candidates) {
+    const cleaned = candidate.trim().replace(/[.,;:!?]+$/g, "");
+    try {
+      const parsed = new URL(cleaned);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") urls.add(parsed.toString());
+    } catch {}
+  }
+}
 function collectUrls(value, urls = new Set(), seen = new Set()) {
   const parsed = parseMaybeJson(value);
+  if (typeof parsed === "string") { addUrlCandidate(parsed, urls); return urls; }
   if (!parsed || typeof parsed !== "object" || seen.has(parsed)) return urls;
   seen.add(parsed);
   if (Array.isArray(parsed)) { for (const item of parsed) collectUrls(item, urls, seen); return urls; }
   for (const [key, raw] of Object.entries(parsed)) {
-    if (typeof raw === "string" && /^https?:\/\//.test(raw) && /url|image|download|web/i.test(key)) urls.add(raw);
-    else collectUrls(raw, urls, seen);
+    if (typeof raw === "string" && /url|image|download|web|src/i.test(key)) addUrlCandidate(raw, urls);
+    collectUrls(raw, urls, seen);
   }
   return urls;
 }
@@ -19,7 +31,7 @@ function downloadBuffer(url, redirectCount = 0) {
   if (redirectCount > 5) return Promise.reject(new Error("Too many redirects while downloading Magnific background"));
   return new Promise((resolve, reject) => {
     let parsed;
-    try { parsed = new URL(url); } catch (error) { reject(new Error("Invalid Magnific background URL")); return; }
+    try { parsed = new URL(String(url).trim()); } catch (error) { reject(new Error("Invalid Magnific background URL: " + String(url).slice(0, 120))); return; }
     const client = parsed.protocol === "https:" ? https : parsed.protocol === "http:" ? http : null;
     if (!client) { reject(new Error("Unsupported Magnific background URL protocol")); return; }
     const request = client.get(parsed, (response) => {
