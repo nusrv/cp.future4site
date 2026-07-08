@@ -4,6 +4,32 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-08 fixed-template product bottom-alignment update
+
+Completed after syncing from current live n8n first:
+
+- Exported current live `FF Admin - Creative Image Generation` (`rWQZP7saIkXUXDUD`) before editing.
+- Saved restore backup at `workflows/n8n/backups/creative-image-generation-backup-2026-07-08-16-52.json`.
+- Synced local `workflows/n8n/generated/10-creative-image-generation.json` from that live export before modifying placement logic.
+- Updated `Compose Brand Image With Sharp` fixed-template placement only.
+- Product frame is now based on the detected black rectangle guide from the 1122x1402 reference template:
+  - `x = Math.round(width * 0.2086)`
+  - `y = Math.round(height * 0.2247)`
+  - `w = Math.round(width * 0.5294)`
+  - `h = Math.round(height * 0.6355)`
+- For 1080x1350, expected frame is approximately x=225, y=303, w=572, h=858.
+- Product is now resized with `fit: "inside"`, `withoutEnlargement: false`, horizontally centered, and bottom-aligned to the virtual frame using `productFrame.y + productFrame.h - productHeight`.
+- Removed product trimming from fixed-template composition so the product bottom aligns to the actual PNG bounds supplied in the asset.
+- Confirmed generated/live workflow has no vertical-centering formula, no `trim()`, and no fixed-template product ratio knobs such as `productWidthRatio`, `productHeightRatio`, or `product_capacity_scale`.
+- Deployed and activated live workflow `rWQZP7saIkXUXDUD`. Live n8n `updatedAt`: `2026-07-08T13:53:00.774Z`.
+- Re-exported live workflow after deploy and confirmed active=true, 7 nodes, frame constants present, bottom alignment present, no vertical centering, no trim, and no Magnific nodes.
+
+Testing status:
+
+- Static workflow/source verification passed.
+- End-to-end CP tests for 1L, 5L, and 10L still need to be run from CP because local `../1.env` contains only n8n API credentials and does not contain the webhook signing secret or CP auth needed to generate valid signed requests.
+- Expected operator test: dispatch CP image requests for 1L, 5L, and 10L; confirm each product fits inside the virtual frame, is horizontally centered, touches the frame bottom, no black rectangle is visible, callback succeeds, CP receives JPEG, and callback body size remains under limit.
+
 ## 2026-07-08 fixed-template Sharp creative workflow
 
 Completed after syncing from the current live n8n workflow first:

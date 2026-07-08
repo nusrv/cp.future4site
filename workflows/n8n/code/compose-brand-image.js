@@ -65,14 +65,13 @@ try {
 
 async function buildProductComposite(targetWidth, targetHeight) {
   const productFrame = {
-    x: Math.round(targetWidth * 0.21),
-    y: Math.round(targetHeight * 0.24),
-    w: Math.round(targetWidth * 0.58),
-    h: Math.round(targetHeight * 0.57)
+    x: Math.round(targetWidth * 0.2086),
+    y: Math.round(targetHeight * 0.2247),
+    w: Math.round(targetWidth * 0.5294),
+    h: Math.round(targetHeight * 0.6355)
   };
 
   const productBuffer = await sharp(productSourceBuffer)
-    .trim({ threshold: 10 })
     .resize({
       width: productFrame.w,
       height: productFrame.h,
@@ -82,14 +81,22 @@ async function buildProductComposite(targetWidth, targetHeight) {
     .png()
     .toBuffer();
 
-  const metadata = await sharp(productBuffer).metadata();
-  const productWidth = metadata.width || productFrame.w;
-  const productHeight = metadata.height || productFrame.h;
+  const productMeta = await sharp(productBuffer).metadata();
+  const productWidth = productMeta.width || 0;
+  const productHeight = productMeta.height || 0;
+
+  const productLeft = Math.round(
+    productFrame.x + (productFrame.w - productWidth) / 2
+  );
+
+  const productTop = Math.round(
+    productFrame.y + productFrame.h - productHeight
+  );
 
   return {
     input: productBuffer,
-    left: Math.round(productFrame.x + (productFrame.w - productWidth) / 2),
-    top: Math.round(productFrame.y + (productFrame.h - productHeight) / 2)
+    left: productLeft,
+    top: productTop
   };
 }
 
@@ -170,3 +177,4 @@ return [
     }
   }
 ];
+
