@@ -1,19 +1,76 @@
-import fs from "node:fs";
+﻿import fs from "node:fs";
 import path from "node:path";
+
 const file = path.join(process.cwd(), "workflows", "n8n", "generated", "10-creative-image-generation.json");
 const workflow = JSON.parse(fs.readFileSync(file, "utf8"));
 const get = (name) => workflow.nodes.find((node) => node.name === name) ?? (() => { throw new Error(`Missing node: ${name}`); })();
-for (const name of ["Validate Signed CP Request", "Resolve Brand Assets", "Build Background Prompt", "Generate Background With Magnific MCP", "Wait For Magnific Creation", "Compose Brand Image With Sharp", "Prepare Completed CP Callback", "Send Signed Callback To CP"]) get(name);
+
+const requiredNodes = [
+  "Validate Signed CP Request",
+  "Resolve Brand Assets",
+  "Compose Brand Image With Sharp",
+  "Prepare Completed CP Callback",
+  "Send Signed Callback To CP"
+];
+
+const removedNodes = [
+  "Build Background Prompt",
+  "Generate Background With Magnific MCP",
+  "Prepare Magnific Wait Input",
+  "Wait For Magnific Creation"
+];
+
+for (const name of requiredNodes) get(name);
+
+for (const name of removedNodes) {
+  if (workflow.nodes.some((node) => node.name === name)) {
+    throw new Error(`Magnific node must be removed from fixed-template workflow: ${name}`);
+  }
+}
+
 const resolver = get("Resolve Brand Assets").parameters.jsCode;
-const prompt = get("Build Background Prompt").parameters.jsCode;
 const composer = get("Compose Brand Image With Sharp").parameters.jsCode;
 const callback = get("Prepare Completed CP Callback").parameters.jsCode;
-const waitInput = get("Prepare Magnific Wait Input").parameters.jsCode;
-if (!resolver.includes("BRAND_ASSETS_BASE_DIR") || !resolver.includes("approved_for_marketing")) throw new Error("Brand resolver contract missing");
-if (!prompt.includes("background scene only") || !prompt.includes("Do not show any product")) throw new Error("Background-only prompt contract missing");
-if (!waitInput.includes('$("Build Background Prompt").item.json')) throw new Error("Magnific wait input must read from the actual background prompt node");
-if (waitInput.includes("Build Magnific MCP Request")) throw new Error("Magnific wait input references an obsolete node");
-if (!composer.includes('require("sharp")') || !composer.includes('require("http")') || !composer.includes('require("https")') || composer.includes("fetch(") || !composer.includes("composite(composites)") || !composer.includes("brand_theme") || !composer.includes("layout_rules")) throw new Error("Sharp composition contract missing");
-if (!callback.includes("n8n-sharp-compositor") || !callback.includes("data_base64")) throw new Error("Composed callback contract missing");
-if (workflow.active !== false) throw new Error("Generated workflow must remain inactive until Sharp container preflight passes");
-console.log(`Sharp creative workflow contract passed (${workflow.nodes.length} nodes).`);
+
+if (
+  !resolver.includes("BRAND_ASSETS_BASE_DIR") ||
+  !resolver.includes("approved_for_marketing") ||
+  !resolver.includes("template_background_path") ||
+  !resolver.includes("Fixed template background is unavailable")
+) {
+  throw new Error("Brand resolver fixed-template contract missing");
+}
+
+if (
+  !composer.includes('require("sharp")') ||
+  composer.includes('require("http")') ||
+  composer.includes('require("https")') ||
+  composer.includes("fetch(") ||
+  !composer.includes("template_background_path") ||
+  !composer.includes("Product image is required for fixed template composition") ||
+  !composer.includes("image/jpeg") ||
+  !composer.includes("maxCallbackImageBytes") ||
+  !composer.includes("template_background_source")
+) {
+  throw new Error("Sharp fixed-template composition contract missing");
+}
+
+if (
+  composer.includes("logo_path") ||
+  composer.includes("headline") ||
+  composer.includes("cta") ||
+  composer.includes("Request a Quote") ||
+  composer.includes("textPanel")
+) {
+  throw new Error("Fixed-template composer must not add logo, headline, CTA, or text panel");
+}
+
+if (!callback.includes("n8n-sharp-compositor") || !callback.includes("data_base64")) {
+  throw new Error("Composed callback contract missing");
+}
+
+if (workflow.active !== false) {
+  throw new Error("Generated workflow must remain inactive until Sharp container preflight passes");
+}
+
+console.log(`Fixed-template Sharp creative workflow contract passed (${workflow.nodes.length} nodes).`);

@@ -4,6 +4,40 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-08 fixed-template Sharp creative workflow
+
+Completed after syncing from the current live n8n workflow first:
+
+- Exported the live workflow `FF Admin - Creative Image Generation` (`rWQZP7saIkXUXDUD`) before editing.
+- Saved a full restore backup at `workflows/n8n/backups/creative-image-generation-backup-2026-07-08-16-15.json`.
+- Synced `workflows/n8n/generated/10-creative-image-generation.json` from the live export before making workflow changes.
+- Confirmed the synced live workflow already contained the latest working fixes: Sharp composer node, capacity matching for known package sizes, JPEG/max callback size handling, and the working completed CP callback node.
+- Added the approved fixed Future Oils template image at `public/assets/logo/background.png`.
+- Removed/bypassed the Magnific background path from the creative workflow:
+  - `Build Background Prompt`
+  - `Generate Background With Magnific MCP`
+  - `Prepare Magnific Wait Input`
+  - `Wait For Magnific Creation`
+- New live path is now: Webhook -> Validate Signed CP Request -> Acknowledge CP Request -> Resolve Brand Assets -> Compose Brand Image With Sharp -> Prepare Completed CP Callback -> Send Signed Callback To CP.
+- `Resolve Brand Assets` now exposes `asset_contract.template_background_path` resolved safely from `BRAND_ASSETS_BASE_DIR/logo/background.png`, with the error `Fixed template background is unavailable` when missing.
+- `Compose Brand Image With Sharp` now reads the fixed template directly, requires `contract.product_path`, places only the real product PNG inside the virtual product frame, and outputs JPEG. It no longer downloads a Magnific background, adds a logo, adds headline/CTA text, draws a button, or draws a text panel.
+- `Prepare Completed CP Callback` kept the existing signed callback body shape and signature logic. Metadata now reports provider `fixed-template-sharp` and includes `template_background_source` instead of Magnific background metadata.
+- Updated workflow source files and builder so future rebuilds keep the fixed-template workflow:
+  - `workflows/n8n/code/resolve-brand-assets.js`
+  - `workflows/n8n/code/compose-brand-image.js`
+  - `workflows/n8n/code/prepare-completed-callback.js`
+  - `scripts/build-creative-image-workflows.mjs`
+  - `scripts/check-creative-image-workflows.mjs`
+- Rebuilt and contract-checked locally: `node scripts/check-creative-image-workflows.mjs` passed with 7 nodes.
+- Deployed and activated live workflow `rWQZP7saIkXUXDUD`. Live n8n `updatedAt`: `2026-07-08T13:33:09.749Z`.
+- Re-exported live workflow after deploy. The export confirmed active=true, 7 nodes, no Magnific nodes, and fixed-template fields present.
+
+Testing status:
+
+- Local offline Sharp rendering could not run because this Google Drive workspace does not have local `sharp` installed, and npm installs should not be run here.
+- A direct signed webhook test could not be generated locally because `../1.env` only contains n8n API credentials, not `N8N_WEBHOOK_SECRET` or CP auth credentials. This is expected and avoids storing production webhook secrets locally.
+- Required next operator test: create/dispatch two CP image requests through the CP UI/API, one for a 1L product and one for a 10L product. Confirm CP receives JPEG files from `n8n-sharp-compositor`, products are centered in the template frame, no duplicate logo/text/CTA appears, and callback body size remains under the CP limit.
+
 ## 2026-07-08 protocol-relative image URL and topic-relevance fixes
 
 Follow-up fixes after live testing:

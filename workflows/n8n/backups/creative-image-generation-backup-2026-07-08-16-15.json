@@ -1,0 +1,739 @@
+{
+  "updatedAt": "2026-07-08T13:08:05.643Z",
+  "createdAt": "2026-06-29T09:08:54.729Z",
+  "id": "rWQZP7saIkXUXDUD",
+  "name": "FF Admin - Creative Image Generation",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "future-foresight/creative-image-generation",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "creative-image-webhook",
+      "name": "CP Creative Image Request Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "ce36e217-c1bd-4d40-8063-e2c0549f89ff"
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require(\"crypto\");\nconst envelope = $json;\nconst body = envelope.body ?? envelope;\nconst headers = envelope.headers ?? {};\nconst signature = String(headers[\"x-ff-signature\"] ?? \"\");\nconst timestamp = String(headers[\"x-ff-timestamp\"] ?? \"\");\nconst nonce = String(headers[\"x-ff-nonce\"] ?? \"\");\nconst secret = $env.N8N_WEBHOOK_SECRET;\nif (!secret) throw new Error(\"Missing N8N_WEBHOOK_SECRET in n8n environment\");\nif (!signature || !timestamp || !nonce) throw new Error(\"Missing CP request signature headers\");\nif (!body.job_id || !body.correlation_id || !body.callback_url) throw new Error(\"Missing job_id, correlation_id, or callback_url\");\nif (body.workflow_type !== \"creative_image_generation\") throw new Error(\"Unexpected workflow_type\");\nconst drift = Math.abs(Date.now() - Date.parse(timestamp));\nif (!Number.isFinite(drift) || drift > 5 * 60 * 1000) throw new Error(\"CP request timestamp rejected\");\nconst raw = JSON.stringify(body);\nconst expected = crypto.createHmac(\"sha256\", secret).update(timestamp + \".\" + nonce + \".\" + raw).digest(\"hex\");\nconst supplied = Buffer.from(signature, \"hex\");\nconst calculated = Buffer.from(expected, \"hex\");\nif (supplied.length !== calculated.length || !crypto.timingSafeEqual(supplied, calculated)) throw new Error(\"Invalid CP request signature\");\nreturn [{ json: { cp: body, accepted: true, received_at: new Date().toISOString() } }];"
+      },
+      "id": "validate-cp-request",
+      "name": "Validate Signed CP Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: true, job_id: $json.cp.job_id, workflow_type: \"creative_image_generation\" } }}",
+        "options": {}
+      },
+      "id": "respond-cp",
+      "name": "Acknowledge CP Request",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        512,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require(\"fs\");\nconst path = require(\"path\");\n\nconst cp = $json.cp;\nconst payload = cp.payload ?? {};\n\nconst baseDir = path.resolve(String($env.BRAND_ASSETS_BASE_DIR || \"/data/brand-assets\"));\n\nconst idPattern = /^[a-z0-9][a-z0-9-]{0,63}$/;\n\nconst brandId = String(payload.brand_id || \"future-oils\");\nconst logoId = String(payload.logo_id || \"primary\");\nconst ratio = String(payload.ratio || \"4:5\");\n\nif (!idPattern.test(brandId) || !idPattern.test(logoId)) {\n  throw new Error(\"Invalid brand asset identifier\");\n}\n\nif (!new Set([\"4:5\", \"1:1\", \"9:16\"]).has(ratio)) {\n  throw new Error(\"Unsupported creative ratio\");\n}\n\nconst profilePath = path.resolve(baseDir, \"brand-profile.json\");\n\nif (!profilePath.startsWith(baseDir + path.sep)) {\n  throw new Error(\"Brand profile path escaped asset root\");\n}\n\nconst profile = JSON.parse(fs.readFileSync(profilePath, \"utf8\"));\n\nif (profile.brand_id !== brandId) {\n  throw new Error(\"Requested brand profile is unavailable\");\n}\n\nfunction resolveAsset(relative) {\n  if (!relative || typeof relative !== \"string\") {\n    throw new Error(\"Brand asset is missing from profile\");\n  }\n\n  const absolute = path.resolve(baseDir, relative);\n\n  if (!absolute.startsWith(baseDir + path.sep)) {\n    throw new Error(\"Brand asset path escaped asset root\");\n  }\n\n  if (!fs.statSync(absolute).isFile()) {\n    throw new Error(\"Brand asset file is unavailable: \" + absolute);\n  }\n\n  return absolute;\n}\n\nfunction normalizeArabicDigits(value) {\n  const arabicIndic = \"٠١٢٣٤٥٦٧٨٩\";\n  const easternArabicIndic = \"۰۱۲۳۴۵۶۷۸۹\";\n\n  return String(value || \"\").replace(/[٠-٩۰-۹]/g, (digit) => {\n    const a = arabicIndic.indexOf(digit);\n    if (a >= 0) return String(a);\n\n    const e = easternArabicIndic.indexOf(digit);\n    if (e >= 0) return String(e);\n\n    return digit;\n  });\n}\n\nfunction normalizeText(value) {\n  return normalizeArabicDigits(value)\n    .toLowerCase()\n    .replace(/&/g, \" and \")\n    .replace(/[._/\\\\]+/g, \" \")\n    .replace(/[-]+/g, \" \")\n    .replace(/\\s+/g, \" \")\n    .trim();\n}\n\nfunction compactText(value) {\n  return normalizeText(value).replace(/\\s+/g, \"\");\n}\n\nfunction getPayloadSearchText(payload) {\n  return [\n    payload.product_asset_id,\n    payload.product_key,\n    payload.product_code,\n    payload.product_id,\n    payload.sku,\n    payload.product_sku,\n    payload.product,\n    payload.product_name,\n    payload.title,\n    payload.headline,\n    payload.description,\n    payload.size,\n    payload.capacity,\n    payload.volume,\n    payload.package_size,\n    payload.pack_size\n  ]\n    .filter((value) => value !== null && value !== undefined && String(value).trim())\n    .map(String)\n    .join(\" \");\n}\n\n/**\n * Extract liter capacity from payload.\n * Supports:\n * 5L\n * 5 L\n * 5-liter\n * 5 liter\n * 5 litres\n * 5 ltr\n * 5 لتر\n * ٥ لتر\n */\nfunction extractCapacityLiters(payload) {\n  const explicitFields = [\n    payload.capacity_liters,\n    payload.capacity_litre,\n    payload.volume_liters,\n    payload.volume_litre,\n    payload.liters,\n    payload.litres,\n    payload.size_liters,\n    payload.size_litre,\n    payload.pack_size_liters,\n    payload.pack_size_litre\n  ];\n\n  for (const value of explicitFields) {\n    const number = Number(normalizeArabicDigits(value));\n\n    if (Number.isFinite(number) && number > 0 && number <= 100) {\n      return number;\n    }\n  }\n\n  const text = normalizeText(getPayloadSearchText(payload));\n\n  const patterns = [\n    /(?:^|\\D)(\\d+(?:\\.\\d+)?)\\s*(?:l|lt|ltr|liter|liters|litre|litres|لتر|ليتر)(?:\\D|$)/i,\n    /(?:^|\\D)(\\d+(?:\\.\\d+)?)\\s*[- ]?\\s*(?:l|lt|ltr)(?:\\D|$)/i\n  ];\n\n  for (const pattern of patterns) {\n    const match = text.match(pattern);\n\n    if (match) {\n      const number = Number(match[1]);\n\n      if (Number.isFinite(number) && number > 0 && number <= 100) {\n        return number;\n      }\n    }\n  }\n\n  /**\n   * Fallback:\n   * لو لم نجد وحدة L/لتر، نبحث عن رقم واضح من السعات المعروفة.\n   * رتبنا 18 و13 و12 و10 قبل 1 و2 حتى لا يلتقط رقم 1 من 10 أو 12.\n   */\n  const knownSizes = [18, 13, 12, 10, 5, 4, 3, 2, 1];\n\n  for (const size of knownSizes) {\n    const re = new RegExp(\"(^|\\\\D)\" + size + \"(\\\\D|$)\", \"i\");\n\n    if (re.test(text)) {\n      return size;\n    }\n  }\n\n  return null;\n}\n\nfunction productCandidateText(productId, product) {\n  return [\n    productId,\n    product?.id,\n    product?.key,\n    product?.sku,\n    product?.code,\n    product?.name,\n    product?.title,\n    product?.label,\n    product?.description,\n    product?.size,\n    product?.capacity,\n    product?.volume,\n    product?.package_size,\n    product?.pack_size,\n    product?.file\n  ]\n    .filter((value) => value !== null && value !== undefined && String(value).trim())\n    .map(String)\n    .join(\" \");\n}\n\nfunction productHasCapacity(productId, product, capacityLiters) {\n  if (!capacityLiters) return false;\n\n  const numericFields = [\n    product?.capacity_liters,\n    product?.capacity_litre,\n    product?.volume_liters,\n    product?.volume_litre,\n    product?.liters,\n    product?.litres,\n    product?.size_liters,\n    product?.size_litre,\n    product?.pack_size_liters,\n    product?.pack_size_litre\n  ];\n\n  for (const value of numericFields) {\n    const number = Number(normalizeArabicDigits(value));\n\n    if (Number.isFinite(number) && number === capacityLiters) {\n      return true;\n    }\n  }\n\n  const text = normalizeText(productCandidateText(productId, product));\n  const compact = compactText(productCandidateText(productId, product));\n\n  const size = String(capacityLiters).replace(/\\.0+$/, \"\");\n\n  const capacityPatterns = [\n    new RegExp(\"(^|\\\\D)\" + size + \"\\\\s*(l|lt|ltr|liter|liters|litre|litres|لتر|ليتر)(\\\\D|$)\", \"i\"),\n    new RegExp(\"(^|\\\\D)\" + size + \"\\\\s*[- ]?\\\\s*(l|lt|ltr)(\\\\D|$)\", \"i\"),\n    new RegExp(\"(^|\\\\D)\" + size + \"\\\\s*لتر(\\\\D|$)\", \"i\")\n  ];\n\n  if (capacityPatterns.some((pattern) => pattern.test(text))) {\n    return true;\n  }\n\n  const compactPatterns = [\n    size + \"l\",\n    size + \"lt\",\n    size + \"ltr\",\n    size + \"liter\",\n    size + \"litre\",\n    size + \"liters\",\n    size + \"litres\",\n    size + \"لتر\",\n    size + \"ليتر\"\n  ];\n\n  if (compactPatterns.some((token) => compact.includes(token))) {\n    return true;\n  }\n\n  /**\n   * Fallback مضبوط:\n   * يطابق الرقم كجزء مستقل في product id أو اسم الملف أو الاسم.\n   */\n  const standaloneNumber = new RegExp(\"(^|\\\\D)\" + size + \"(\\\\D|$)\", \"i\");\n\n  return standaloneNumber.test(text);\n}\n\nfunction scoreProductMatch(productId, product, payload, capacityLiters) {\n  const searchText = normalizeText(getPayloadSearchText(payload));\n  const searchCompact = compactText(getPayloadSearchText(payload));\n\n  const candidateText = normalizeText(productCandidateText(productId, product));\n  const candidateCompact = compactText(productCandidateText(productId, product));\n\n  let score = 0;\n  const reasons = [];\n\n  const explicitKeys = [\n    payload.product_asset_id,\n    payload.product_key,\n    payload.product_code,\n    payload.product_id,\n    payload.sku,\n    payload.product_sku\n  ]\n    .filter((value) => value !== null && value !== undefined && String(value).trim())\n    .map((value) => compactText(value));\n\n  const productIdCompact = compactText(productId);\n\n  for (const key of explicitKeys) {\n    if (!key) continue;\n\n    if (productIdCompact === key) {\n      score += 1000;\n      reasons.push(\"exact explicit key match\");\n    } else if (candidateCompact.includes(key) || key.includes(productIdCompact)) {\n      score += 600;\n      reasons.push(\"partial explicit key match\");\n    }\n  }\n\n  if (capacityLiters && productHasCapacity(productId, product, capacityLiters)) {\n    score += 300;\n    reasons.push(\"capacity match \" + capacityLiters + \"L\");\n  }\n\n  /**\n   * Product/category hints.\n   */\n  const categoryWords = [\n    \"sunflower\",\n    \"refined\",\n    \"oil\",\n    \"زيت\",\n    \"دوار\",\n    \"الشمس\"\n  ];\n\n  for (const word of categoryWords) {\n    if (searchCompact.includes(compactText(word)) && candidateCompact.includes(compactText(word))) {\n      score += 20;\n      reasons.push(\"category word match: \" + word);\n    }\n  }\n\n  /**\n   * Prefer marketing-approved products.\n   */\n  if (product?.approved_for_marketing === true) {\n    score += 25;\n    reasons.push(\"approved for marketing\");\n  }\n\n  return {\n    productId,\n    product,\n    score,\n    reasons\n  };\n}\n\nfunction findProductAssetId(profile, payload) {\n  const products = profile.products || {};\n  const productIds = Object.keys(products);\n\n  if (!productIds.length) {\n    return {\n      product_asset_id: null,\n      reason: \"brand profile has no products\",\n      capacity_liters: null,\n      candidates: []\n    };\n  }\n\n  /**\n   * 1. Exact product_asset_id if provided.\n   */\n  const explicitProductAssetId = String(payload.product_asset_id || \"\").trim();\n\n  if (explicitProductAssetId) {\n    const normalizedExplicit = compactText(explicitProductAssetId);\n\n    const exactId = productIds.find((id) => compactText(id) === normalizedExplicit);\n\n    if (exactId) {\n      return {\n        product_asset_id: exactId,\n        reason: \"matched explicit product_asset_id\",\n        capacity_liters: extractCapacityLiters(payload),\n        candidates: [{ productId: exactId, score: 1000, reasons: [\"explicit product_asset_id\"] }]\n      };\n    }\n  }\n\n  const capacityLiters = extractCapacityLiters(payload);\n\n  const scored = productIds\n    .map((productId) => scoreProductMatch(productId, products[productId], payload, capacityLiters))\n    .filter((candidate) => candidate.score > 0)\n    .sort((a, b) => b.score - a.score);\n\n  if (!scored.length) {\n    return {\n      product_asset_id: null,\n      reason: \"no product matched payload text or capacity\",\n      capacity_liters: capacityLiters,\n      candidates: []\n    };\n  }\n\n  const best = scored[0];\n\n  return {\n    product_asset_id: best.productId,\n    reason: \"selected highest scoring product match\",\n    capacity_liters: capacityLiters,\n    candidates: scored.slice(0, 5).map((candidate) => ({\n      productId: candidate.productId,\n      score: candidate.score,\n      reasons: candidate.reasons\n    }))\n  };\n}\n\nconst logoRelative = profile.logos?.[logoId];\n\nif (!logoRelative) {\n  throw new Error(\"Requested logo asset is unavailable\");\n}\n\nconst productResolution = findProductAssetId(profile, payload);\nconst productAssetId = productResolution.product_asset_id;\nconst product = productAssetId ? profile.products?.[productAssetId] : null;\n\nif (productAssetId && !product) {\n  throw new Error(\"Requested product asset is unavailable: \" + productAssetId);\n}\n\nif (product && product.approved_for_marketing !== true) {\n  throw new Error(product.restriction || \"Requested product asset is not approved for marketing\");\n}\n\nreturn [\n  {\n    json: {\n      cp,\n      asset_contract: {\n        brand_id: brandId,\n        logo_id: logoId,\n        product_asset_id: productAssetId,\n        product_resolution: productResolution,\n        ratio,\n        profile_version: profile.schema_version,\n        brand_theme: profile.brand_theme || {},\n        layout_rules: profile.layout_rules || {},\n        logo_path: resolveAsset(logoRelative),\n        product_path: product ? resolveAsset(product.file) : null\n      }\n    }\n  }\n];"
+      },
+      "id": "resolve-brand-assets",
+      "name": "Resolve Brand Assets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        752,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $json;\n\n/**\n * Light premium background only.\n * Magnific مسؤول عن الخلفية فقط، وليس عن الإعلان.\n */\nconst prompt = [\n  \"Create an empty bright luxury abstract studio backdrop only.\",\n  \"This is not an advertisement, not a poster, and not a product mockup.\",\n  \"The image must be a clean blank background plate only.\",\n  \"Use a high-key bright composition with warm ivory, cream, soft beige, pale gold, and very subtle light olive accents.\",\n  \"The overall background must be light, airy, clean, premium, and elegant.\",\n  \"Avoid dark areas, dark green blocks, heavy shadows, black tones, brown tones, and deep olive backgrounds.\",\n  \"Use only smooth abstract curves, elegant soft gradients, gentle highlights, clean depth, and premium studio lighting.\",\n  \"Keep the central vertical area bright and clean for a large product packshot to be added later.\",\n  \"Keep the lower area bright and calm for text to be added later.\",\n  \"Absolutely no text of any kind.\",\n  \"No typography. No letters. No numbers. No words. No readable text. No fake text. No gibberish text. No handwriting. No printed marks.\",\n  \"No objects. No products. No bottles. No packages. No labels. No sunflowers. No seeds. No oil splashes.\",\n  \"No logos. No icons. No badges. No certificates. No QR codes. No signs. No posters. No UI elements.\",\n  \"No people. No faces. No portraits. No models. No hands. No body parts. No businessperson. No character.\",\n  \"Final result: an empty bright premium beige and pale gold abstract studio background only.\"\n].join(\" \");\n\nreturn [\n  {\n    json: {\n      ...item,\n      mcp_generate_args: {\n        prompt\n      },\n      requested_output: {\n        type: \"background\",\n        aspect_ratio: item.asset_contract.ratio,\n        review_required: true\n      }\n    }\n  }\n];"
+      },
+      "id": "build-background-prompt",
+      "name": "Build Background Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "endpointUrl": "https://mcp.magnific.com",
+        "authentication": "mcpOAuth2Api",
+        "tool": {
+          "__rl": true,
+          "mode": "list",
+          "value": "images_generate",
+          "cachedResultName": "images_generate"
+        },
+        "parameters": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "prompt": "={{ $json.mcp_generate_args.prompt }}"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "generate-image-with-magnific-mcp",
+      "name": "Generate Background With Magnific MCP",
+      "type": "@n8n/n8n-nodes-langchain.mcpClient",
+      "typeVersion": 1,
+      "position": [
+        1264,
+        0
+      ],
+      "credentials": {
+        "mcpOAuth2Api": {
+          "id": "yZUlimcfhBdzy2Ba",
+          "name": "MCP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function parseMaybeJson(value) {\n  if (typeof value !== \"string\") return value;\n  try { return JSON.parse(value); } catch { return value; }\n}\nfunction collectCandidates(value, output = []) {\n  const parsed = parseMaybeJson(value);\n  if (parsed && typeof parsed === \"object\") {\n    output.push(parsed);\n    if (Array.isArray(parsed.content)) {\n      for (const item of parsed.content) {\n        if (item?.type === \"text\") collectCandidates(item.text, output);\n        else collectCandidates(item, output);\n      }\n    }\n    if (parsed.structuredContent) collectCandidates(parsed.structuredContent, output);\n  }\n  return output;\n}\nfunction findByKeys(value, keys, seen = new Set()) {\n  if (!value || typeof value !== \"object\" || seen.has(value)) return undefined;\n  seen.add(value);\n  if (Array.isArray(value)) {\n    for (const item of value) {\n      const found = findByKeys(item, keys, seen);\n      if (found) return found;\n    }\n    return undefined;\n  }\n  for (const key of keys) {\n    const candidate = value[key];\n    if (typeof candidate === \"string\" && candidate.trim()) return candidate.trim();\n    if (typeof candidate === \"number\" && Number.isFinite(candidate)) return String(candidate);\n  }\n  for (const nested of Object.values(value)) {\n    const found = findByKeys(nested, keys, seen);\n    if (found) return found;\n  }\n  return undefined;\n}\nconst built = $(\"Build Background Prompt\").item.json;\nconst generationResult = $json;\nconst candidates = collectCandidates(generationResult);\nlet creationId;\nfor (const candidate of candidates) {\n  creationId = findByKeys(candidate, [\"identifier\", \"id\", \"creation_id\", \"creationId\", \"task_id\", \"taskId\", \"job_id\", \"jobId\"]);\n  if (creationId) break;\n}\nif (!creationId) {\n  throw new Error(\"Magnific MCP images_generate did not return a creation identifier. Open this execution, inspect the MCP output, and adjust Prepare Magnific Wait Input to the live tools/list schema.\");\n}\nreturn [{ json: {\n  cp: built.cp,\n  mcp_endpoint: built.mcp_endpoint,\n  generation_result: generationResult,\n  creation_id: creationId,\n  mcp_wait_args: { identifiers: [creationId] }\n} }];"
+      },
+      "id": "prepare-magnific-wait-input",
+      "name": "Prepare Magnific Wait Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1504,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "endpointUrl": "https://mcp.magnific.com",
+        "authentication": "mcpOAuth2Api",
+        "tool": {
+          "__rl": true,
+          "mode": "list",
+          "value": "creations_wait",
+          "cachedResultName": "creations_wait"
+        },
+        "parameters": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "identifiers": "={{ $json.mcp_wait_args.identifiers }}"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "wait-for-magnific-creation",
+      "name": "Wait For Magnific Creation",
+      "type": "@n8n/n8n-nodes-langchain.mcpClient",
+      "typeVersion": 1,
+      "position": [
+        1760,
+        0
+      ],
+      "credentials": {
+        "mcpOAuth2Api": {
+          "id": "yZUlimcfhBdzy2Ba",
+          "name": "MCP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const sharp = require(\"sharp\");\nconst fs = require(\"fs\");\nconst http = require(\"http\");\nconst https = require(\"https\");\n\n/**\n * Parse JSON if a value is JSON text.\n */\nfunction parseMaybeJson(value) {\n  if (typeof value !== \"string\") return value;\n\n  try {\n    return JSON.parse(value);\n  } catch {\n    return value;\n  }\n}\n\n/**\n * Force any //domain/path URL to become https://domain/path\n */\nfunction normalizeImageUrl(value) {\n  if (value === null || value === undefined) return \"\";\n\n  let url = String(value)\n    .trim()\n    .replace(/&amp;/g, \"&\")\n    .replace(/^[\"'`]+/g, \"\")\n    .replace(/[\"'`]+$/g, \"\")\n    .replace(/[)\\],.;]+$/g, \"\");\n\n  // Sometimes the URL is inside a larger text string\n  const match = url.match(/(?:https?:)?\\/\\/[^\\s\"'<>\\\\)\\]]+/i);\n  if (match) {\n    url = match[0];\n  }\n\n  // This is the important fix for your error\n  if (url.startsWith(\"//\")) {\n    url = \"https:\" + url;\n  }\n\n  return url;\n}\n\n/**\n * Extract URLs from any nested object/string.\n */\nfunction collectImageUrls(value, urls = new Set(), seen = new Set()) {\n  const parsed = parseMaybeJson(value);\n\n  if (typeof parsed === \"string\") {\n    const matches = parsed.match(/(?:https?:)?\\/\\/[^\\s\"'<>\\\\)\\]]+/gi) || [];\n\n    for (const raw of matches) {\n      const normalized = normalizeImageUrl(raw);\n\n      if (/^https?:\\/\\//i.test(normalized)) {\n        urls.add(normalized);\n      }\n    }\n\n    return urls;\n  }\n\n  if (!parsed || typeof parsed !== \"object\" || seen.has(parsed)) {\n    return urls;\n  }\n\n  seen.add(parsed);\n\n  if (Array.isArray(parsed)) {\n    for (const item of parsed) {\n      collectImageUrls(item, urls, seen);\n    }\n\n    return urls;\n  }\n\n  for (const raw of Object.values(parsed)) {\n    collectImageUrls(raw, urls, seen);\n  }\n\n  return urls;\n}\n\n/**\n * Check if downloaded buffer looks like an image.\n */\nfunction looksLikeImageBuffer(buffer) {\n  if (!Buffer.isBuffer(buffer) || buffer.length < 12) return false;\n\n  // JPG\n  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {\n    return true;\n  }\n\n  // PNG\n  if (\n    buffer[0] === 0x89 &&\n    buffer[1] === 0x50 &&\n    buffer[2] === 0x4e &&\n    buffer[3] === 0x47\n  ) {\n    return true;\n  }\n\n  // WEBP\n  if (\n    buffer.toString(\"ascii\", 0, 4) === \"RIFF\" &&\n    buffer.toString(\"ascii\", 8, 12) === \"WEBP\"\n  ) {\n    return true;\n  }\n\n  return false;\n}\n\n/**\n * Download image as buffer.\n */\nfunction parseHttpImageUrl(rawUrl) {\n  let fixedUrl = normalizeImageUrl(rawUrl);\n\n  if (!fixedUrl) {\n    throw new Error(\"Background image URL is empty\");\n  }\n\n  if (fixedUrl.startsWith(\"//\")) {\n    fixedUrl = \"https:\" + fixedUrl;\n  }\n\n  if (!/^https?:\\/\\//i.test(fixedUrl)) {\n    throw new Error(\"Background image URL is invalid after normalization: \" + fixedUrl);\n  }\n\n  const match = fixedUrl.match(/^(https?):\\/\\/([^\\/?#:]+)(?::([0-9]+))?([^\\s]*)$/i);\n\n  if (!match) {\n    throw new Error(\"Could not parse background image URL without URL module: \" + fixedUrl);\n  }\n\n  const protocol = match[1].toLowerCase() + \":\";\n  const hostname = match[2];\n  const port = match[3] || \"\";\n  let path = match[4] || \"/\";\n\n  if (!path.startsWith(\"/\")) {\n    path = \"/\" + path;\n  }\n\n  return {\n    href: fixedUrl,\n    protocol,\n    hostname,\n    port,\n    path,\n    origin: protocol + \"//\" + hostname + (port ? \":\" + port : \"\")\n  };\n}\n\nfunction resolveRedirectLocation(location, currentParsed) {\n  let nextUrl = String(location || \"\").trim();\n\n  if (!nextUrl) {\n    return \"\";\n  }\n\n  if (nextUrl.startsWith(\"//\")) {\n    return currentParsed.protocol + nextUrl;\n  }\n\n  if (/^https?:\\/\\//i.test(nextUrl)) {\n    return nextUrl;\n  }\n\n  if (nextUrl.startsWith(\"/\")) {\n    return currentParsed.origin + nextUrl;\n  }\n\n  const currentPath = currentParsed.path.split(\"?\")[0];\n  const baseDir = currentPath.includes(\"/\")\n    ? currentPath.slice(0, currentPath.lastIndexOf(\"/\") + 1)\n    : \"/\";\n\n  return currentParsed.origin + baseDir + nextUrl;\n}\n\nfunction downloadImageBuffer(rawUrl, redirectCount = 0) {\n  if (redirectCount > 5) {\n    return Promise.reject(new Error(\"Too many redirects while downloading background image\"));\n  }\n\n  let parsed;\n\n  try {\n    parsed = parseHttpImageUrl(rawUrl);\n  } catch (error) {\n    return Promise.reject(\n      new Error(\n        \"Invalid background image URL before request. \" +\n        \"raw-url=\" + String(rawUrl).slice(0, 300) +\n        \", error=\" + error.message\n      )\n    );\n  }\n\n  const client = parsed.protocol === \"https:\" ? https : http;\n\n  const requestOptions = {\n    protocol: parsed.protocol,\n    hostname: parsed.hostname,\n    port: parsed.port || undefined,\n    path: parsed.path,\n    method: \"GET\",\n    headers: {\n      \"User-Agent\": \"Mozilla/5.0 (compatible; n8n-sharp-compositor/1.0)\",\n      \"Accept\": \"image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8\",\n      \"Cache-Control\": \"no-cache\"\n    }\n  };\n\n  return new Promise((resolve, reject) => {\n    const request = client.request(requestOptions, (response) => {\n      const status = response.statusCode || 0;\n      const location = response.headers.location;\n      const contentType = String(response.headers[\"content-type\"] || \"\");\n\n      if (status >= 300 && status < 400 && location) {\n        response.resume();\n\n        const nextUrl = resolveRedirectLocation(location, parsed);\n\n        downloadImageBuffer(nextUrl, redirectCount + 1).then(resolve, reject);\n        return;\n      }\n\n      const chunks = [];\n\n      response.on(\"data\", (chunk) => {\n        chunks.push(Buffer.from(chunk));\n      });\n\n      response.on(\"end\", () => {\n        const buffer = Buffer.concat(chunks);\n        const bodyPreview = buffer.toString(\"utf8\", 0, Math.min(buffer.length, 500));\n\n        if (status < 200 || status >= 300) {\n          reject(\n            new Error(\n              \"Could not download background image. \" +\n              \"status=\" + status +\n              \", content-type=\" + contentType +\n              \", normalized-url=\" + parsed.href +\n              \", original-url=\" + String(rawUrl).slice(0, 250) +\n              \", body-preview=\" + bodyPreview\n            )\n          );\n          return;\n        }\n\n        if (!contentType.startsWith(\"image/\") && !looksLikeImageBuffer(buffer)) {\n          reject(\n            new Error(\n              \"Downloaded background URL is not an image. \" +\n              \"status=\" + status +\n              \", content-type=\" + contentType +\n              \", normalized-url=\" + parsed.href +\n              \", original-url=\" + String(rawUrl).slice(0, 250) +\n              \", body-preview=\" + bodyPreview\n            )\n          );\n          return;\n        }\n\n        resolve({\n          buffer,\n          finalUrl: parsed.href,\n          contentType,\n          sizeBytes: buffer.length\n        });\n      });\n\n      response.on(\"error\", (error) => {\n        reject(\n          new Error(\n            \"Response error while downloading background image. \" +\n            \"message=\" + error.message +\n            \", normalized-url=\" + parsed.href\n          )\n        );\n      });\n    });\n\n    request.setTimeout(60000, () => {\n      request.destroy(\n        new Error(\"Timed out downloading background image. normalized-url=\" + parsed.href)\n      );\n    });\n\n    request.on(\"error\", (error) => {\n      reject(\n        new Error(\n          \"Network error downloading background image. \" +\n          \"message=\" + error.message +\n          \", normalized-url=\" + parsed.href +\n          \", original-url=\" + String(rawUrl).slice(0, 250)\n        )\n      );\n    });\n\n    request.end();\n  });\n}\n\n/**\n * XML escaping for SVG text.\n */\nfunction escapeXml(value) {\n  return String(value).replace(/[&<>\"']/g, (char) => ({\n    \"&\": \"&amp;\",\n    \"<\": \"&lt;\",\n    \">\": \"&gt;\",\n    '\"': \"&quot;\",\n    \"'\": \"&apos;\"\n  })[char]);\n}\n\nfunction safeColor(value, fallback) {\n  return /^#[0-9a-f]{6}$/i.test(String(value || \"\")) ? String(value) : fallback;\n}\n\nfunction clampNumber(value, fallback, min, max) {\n  const number = Number(value);\n\n  if (!Number.isFinite(number)) return fallback;\n\n  return Math.min(max, Math.max(min, number));\n}\n\nfunction wrapText(text, maxCharsPerLine = 20, maxLines = 3) {\n  const clean = String(text || \"\").trim().replace(/\\s+/g, \" \");\n\n  if (!clean) return [];\n\n  const words = clean.split(\" \");\n  const lines = [];\n  let current = \"\";\n\n  for (const word of words) {\n    const next = current ? `${current} ${word}` : word;\n\n    if (next.length <= maxCharsPerLine) {\n      current = next;\n    } else {\n      if (current) {\n        lines.push(current);\n        current = word;\n      } else {\n        lines.push(word.slice(0, maxCharsPerLine));\n        current = word.slice(maxCharsPerLine);\n      }\n    }\n\n    if (lines.length >= maxLines) break;\n  }\n\n  if (current && lines.length < maxLines) {\n    lines.push(current);\n  }\n\n  return lines;\n}\n\n/**\n * Read data from previous nodes.\n */\nconst resolved = $(\"Resolve Brand Assets\").item.json;\nconst waitInput = $(\"Prepare Magnific Wait Input\").item.json;\nconst waitResult = $(\"Wait For Magnific Creation\").item.json;\n\nconst payload = resolved.cp.payload ?? {};\nconst contract = resolved.asset_contract;\n\nif (!contract) {\n  throw new Error(\"Missing asset_contract from Resolve Brand Assets\");\n}\n\nif (!contract.logo_path) {\n  throw new Error(\"Missing logo_path from asset_contract\");\n}\n\nif (!fs.existsSync(contract.logo_path)) {\n  throw new Error(\"Logo file does not exist: \" + contract.logo_path);\n}\n\nif (contract.product_path && !fs.existsSync(contract.product_path)) {\n  throw new Error(\"Product file does not exist: \" + contract.product_path);\n}\n\n/**\n * Find background URL.\n */\nconst allUrls = [\n  ...collectImageUrls(waitResult),\n  ...collectImageUrls($json),\n  ...collectImageUrls(waitInput.generation_result)\n].map(normalizeImageUrl);\n\nconst imageUrls = allUrls.filter((url) => /^https?:\\/\\//i.test(url));\n\nconst backgroundUrl =\n  imageUrls.find((url) => /render\\.(jpg|jpeg|png|webp)(\\?|$)/i.test(url)) ||\n  imageUrls.find((url) => /\\.(jpg|jpeg|png|webp)(\\?|$)/i.test(url)) ||\n  imageUrls[0];\n\nif (!backgroundUrl) {\n  throw new Error(\n    \"No usable background image URL found in Magnific result. Found URLs: \" +\n      JSON.stringify(allUrls.slice(0, 10))\n  );\n}\n\n/**\n * Download background.\n */\nconst downloadedBackground = await downloadImageBuffer(backgroundUrl);\nconst backgroundBuffer = downloadedBackground.buffer;\n\n/**\n * Validate Sharp can read the downloaded background.\n */\ntry {\n  await sharp(backgroundBuffer).metadata();\n} catch (error) {\n  throw new Error(\n    \"Sharp could not read downloaded background image. \" +\n      \"url=\" +\n      downloadedBackground.finalUrl +\n      \", content-type=\" +\n      downloadedBackground.contentType +\n      \", size=\" +\n      downloadedBackground.sizeBytes +\n      \", sharp-error=\" +\n      error.message\n  );\n}\n\n/**\n * Canvas dimensions.\n */\nconst dimensions = {\n  \"4:5\": [1080, 1350],\n  \"1:1\": [1080, 1080],\n  \"9:16\": [1080, 1920]\n}[contract.ratio];\n\nif (!dimensions) {\n  throw new Error(\"Unsupported ratio: \" + contract.ratio);\n}\n\nconst [width, height] = dimensions;\n\n/**\n * Theme and layout.\n */\nconst theme = contract.brand_theme || {};\nconst colors = theme.colors || {};\nconst layout = contract.layout_rules || {};\n\nconst panelColor = safeColor(colors.panel, \"#F8F4EA\");\nconst headlineColor = safeColor(colors.headline, \"#2B2B2B\");\nconst ctaColor = safeColor(colors.cta_background, \"#2E4A2E\");\nconst ctaTextColor = safeColor(colors.cta_text, \"#F8F4EA\");\n\nconst logoWidthRatio = clampNumber(payload.logo_width_ratio, 0.26, 0.18, 0.34);\nconst productWidthRatio = clampNumber(payload.product_width_ratio, 0.86, 0.68, 0.96);\nconst productHeightRatio = clampNumber(payload.product_height_ratio, 0.88, 0.74, 0.96);\n\nfunction getProductCapacityLiters(contract) {\n  const fromResolution = Number(contract.product_resolution?.capacity_liters);\n\n  if (Number.isFinite(fromResolution) && fromResolution > 0) {\n    return fromResolution;\n  }\n\n  const idText = String(contract.product_asset_id || \"\");\n  const match = idText.match(/(\\d+(?:\\.\\d+)?)\\s*l/i);\n\n  if (match) {\n    return Number(match[1]);\n  }\n\n  return null;\n}\n\nfunction getProductScaleByCapacity(capacityLiters) {\n  const capacity = Number(capacityLiters);\n\n  if (capacity === 1) return 1.00;\n  if (capacity === 2) return 0.94;\n  if (capacity === 4) return 0.88;\n  if (capacity === 5) return 0.84;\n  if (capacity === 10) return 0.36;\n  if (capacity === 12) return 0.42;\n  if (capacity === 13) return 0.40;\n  if (capacity === 18) return 0.36;\n\n  return 0.82;\n}\n\nconst productCapacityLiters = getProductCapacityLiters(contract);\nconst productCapacityScale = clampNumber(\n  payload.product_capacity_scale,\n  getProductScaleByCapacity(productCapacityLiters),\n  0.45,\n  1.10\n);\n\n/**\n * Logo with compact visibility backing.\n * نقصّ الفراغ حول الشعار ثم نضع خلفه بطاقة صغيرة فقط.\n */\nconst logoTargetWidth = Math.round(width * logoWidthRatio);\n\nconst logoBuffer = await sharp(fs.readFileSync(contract.logo_path))\n  .trim({\n    threshold: 12\n  })\n  .resize({\n    width: logoTargetWidth,\n    withoutEnlargement: true\n  })\n  .png()\n  .toBuffer();\n\nconst logoMeta = await sharp(logoBuffer).metadata();\n\nconst logoLeft = Math.round(width * 0.065);\nconst logoTop = Math.round(height * 0.055);\n\nconst logoPaddingX = Math.round(width * 0.014);\nconst logoPaddingY = Math.round(height * 0.009);\n\nconst logoBackW = (logoMeta.width || logoTargetWidth) + logoPaddingX * 2;\nconst logoBackH = (logoMeta.height || Math.round(height * 0.06)) + logoPaddingY * 2;\n\nconst logoBackSvg = Buffer.from(`\n<svg width=\"${logoBackW}\" height=\"${logoBackH}\" xmlns=\"http://www.w3.org/2000/svg\">\n  <rect\n    x=\"0\"\n    y=\"0\"\n    width=\"${logoBackW}\"\n    height=\"${logoBackH}\"\n    rx=\"14\"\n    fill=\"#FFF8EA\"\n    fill-opacity=\"0.74\"\n    stroke=\"#FFFFFF\"\n    stroke-opacity=\"0.55\"\n  />\n</svg>\n`);\n\nconst composites = [\n  {\n    input: logoBackSvg,\n    left: logoLeft - logoPaddingX,\n    top: logoTop - logoPaddingY\n  },\n  {\n    input: logoBuffer,\n    left: logoLeft,\n    top: logoTop\n  }\n];\n\n/**\n/**\n * Product hero placement.\n * المنتج كبير، في الوسط، ونازل للأسفل حتى لا يبدو معلقًا.\n * صندوق النص سيغطي أسفل المنتج قليلًا، وهذا مقصود.\n */\nif (contract.product_path) {\n  const productBuffer = await sharp(fs.readFileSync(contract.product_path))\n    .resize({\n      width: Math.round(width * productWidthRatio),\n      height: Math.round(height * productHeightRatio),\n      fit: \"inside\"\n    })\n    .png()\n    .toBuffer();\n\n  const productMeta = await sharp(productBuffer).metadata();\n\n  const productWidth = productMeta.width || 0;\n  const productHeight = productMeta.height || 0;\n\n  /**\n   * ظل خفيف تحت المنتج حتى لا يبدو معلقًا.\n   */\n  const shadowSvg = Buffer.from(`\n  <svg width=\"${width}\" height=\"${height}\" xmlns=\"http://www.w3.org/2000/svg\">\n    <defs>\n      <filter id=\"blur\" x=\"-50%\" y=\"-50%\" width=\"200%\" height=\"200%\">\n        <feGaussianBlur stdDeviation=\"22\"/>\n      </filter>\n    </defs>\n    <ellipse\n      cx=\"${Math.round(width * 0.50)}\"\n      cy=\"${Math.round(height * 0.795)}\"\n      rx=\"${Math.round(width * 0.25)}\"\n      ry=\"${Math.round(height * 0.035)}\"\n      fill=\"#000000\"\n      fill-opacity=\"0.20\"\n      filter=\"url(#blur)\"\n    />\n  </svg>\n  `);\n\n  composites.push({\n    input: shadowSvg,\n    left: 0,\n    top: 0\n  });\n\n  /**\n   * المنتج ينتهي داخل منطقة النص قليلًا.\n   * هذا يعطي إحساس أنه واقف على الأرض وليس طائرًا.\n   */\n  const productCenterX = Math.round(width * 0.50);\n  const productBottomY = Math.round(height * 1.00);\n\n  composites.push({\n    input: productBuffer,\n    left: Math.round(productCenterX - productWidth / 2),\n    top: Math.round(productBottomY - productHeight)\n  });\n}\n\n/**\n * Text.\n * نص ثابت فقط، بدون زر.\n */\nfunction beautifyMarketingText(value) {\n  return String(value || \"\")\n    .replace(/\\s+/g, \" \")\n    .replace(/(\\d+)\\s*(liter|litre|liters|litres)\\b/gi, \"$1L\")\n    .replace(/(\\d+)\\s*l\\b/gi, \"$1L\")\n    .replace(/\\b1Liter\\b/gi, \"1L\")\n    .replace(/\\b5Liter\\b/gi, \"5L\")\n    .replace(/\\b10Liter\\b/gi, \"10L\")\n    .trim();\n}\n\nfunction simplifyHeadline(value) {\n  const text = beautifyMarketingText(value);\n  const lower = text.toLowerCase();\n\n  const sizeMatch = text.match(/(?:^|\\D)(1L|2L|5L|10L|12L|13L|18L)(?:\\D|$)/i);\n  const size = sizeMatch ? sizeMatch[1].toUpperCase() : \"\";\n\n  if (lower.includes(\"sunflower\") && lower.includes(\"oil\") && size) {\n    return `${size} Refined Sunflower Oil`;\n  }\n\n  if (text.length > 44) {\n    return text.slice(0, 44).trim();\n  }\n\n  return text;\n}\n\nconst headlineRaw = simplifyHeadline(String(payload.headline || \"\").slice(0, 120));\n\nconst textPanelX = Math.round(width * 0.10);\nconst textPanelY = Math.round(height * 0.835);\nconst textPanelW = Math.round(width * 0.80);\nconst textPanelH = Math.round(height * 0.095);\n\nconst textCenterX = Math.round(textPanelX + textPanelW / 2);\nconst textCenterY = Math.round(textPanelY + textPanelH * 0.62);\n\nconst headlineLines = wrapText(headlineRaw, 30, 2);\nconst headlineFontSize = headlineLines.length > 1 ? 36 : 42;\n\nconst lineGap = 44;\nconst firstLineY =\n  headlineLines.length > 1\n    ? textCenterY - Math.round(lineGap / 2)\n    : textCenterY;\n\nconst headlineSvg = headlineLines\n  .map((line, index) => {\n    const y = firstLineY + index * lineGap;\n\n    return `<text x=\"${textCenterX}\" y=\"${y}\" text-anchor=\"middle\" font-family=\"Arial, sans-serif\" font-size=\"${headlineFontSize}\" font-weight=\"700\" fill=\"${headlineColor}\">${escapeXml(line)}</text>`;\n  })\n  .join(\"\");\n\nconst textSvg = Buffer.from(`\n<svg width=\"${width}\" height=\"${height}\" xmlns=\"http://www.w3.org/2000/svg\">\n  <rect\n    x=\"${textPanelX}\"\n    y=\"${textPanelY}\"\n    width=\"${textPanelW}\"\n    height=\"${textPanelH}\"\n    rx=\"30\"\n    fill=\"${panelColor}\"\n    fill-opacity=\"0.90\"\n    stroke=\"#FFFFFF\"\n    stroke-opacity=\"0.45\"\n  />\n  ${headlineSvg}\n</svg>\n`);\n\ncomposites.push({\n  input: textSvg,\n  left: 0,\n  top: 0\n});\n\n/**\n * Compose final image.\n * Use JPEG instead of PNG because callback JSON has a body-size limit.\n */\nlet outputWidth = width;\nlet outputHeight = height;\n\nasync function renderJpeg(targetWidth, targetHeight, quality) {\n  return sharp(backgroundBuffer)\n    .resize(targetWidth, targetHeight, {\n      fit: \"cover\",\n      position: \"center\"\n    })\n    .composite(composites)\n    .flatten({\n      background: \"#ffffff\"\n    })\n    .jpeg({\n      quality,\n      mozjpeg: true\n    })\n    .toBuffer();\n}\n\nconst maxCallbackImageBytes = 650 * 1024;\n\nlet finalBuffer = null;\nlet finalQuality = null;\n\nfor (const quality of [78, 74, 70, 66, 62, 58, 54, 50, 46, 42]) {\n  const candidate = await renderJpeg(width, height, quality);\n\n  finalBuffer = candidate;\n  finalQuality = quality;\n\n  if (candidate.length <= maxCallbackImageBytes) {\n    break;\n  }\n}\n\n/**\n * If 1080x1350 is still too large, reduce dimensions slightly.\n */\nif (finalBuffer.length > maxCallbackImageBytes) {\n  outputWidth = Math.round(width * 0.85);\n  outputHeight = Math.round(height * 0.85);\n\n  for (const quality of [74, 70, 66, 62, 58, 54, 50, 46, 42]) {\n    const candidate = await renderJpeg(outputWidth, outputHeight, quality);\n\n    finalBuffer = candidate;\n    finalQuality = quality;\n\n    if (candidate.length <= maxCallbackImageBytes) {\n      break;\n    }\n  }\n}\n\nreturn [\n  {\n    json: {\n      cp: resolved.cp,\n      asset_contract: contract,\n      provider_creation_id: waitInput.creation_id,\n      composed_file: {\n        name: `creative-${resolved.cp.job_id}.jpg`,\n        mime_type: \"image/jpeg\",\n        data_base64: finalBuffer.toString(\"base64\"),\n        size_bytes: finalBuffer.length,\n        width: outputWidth,\n        height: outputHeight,\n        quality: finalQuality\n      },\n      background_url: downloadedBackground.finalUrl,\n      background_download: {\n        content_type: downloadedBackground.contentType,\n        size_bytes: downloadedBackground.sizeBytes\n      }\n    }\n  }\n];"
+      },
+      "id": "compose-brand-image",
+      "name": "Compose Brand Image With Sharp",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require(\"crypto\");\n\nfunction removeUndefined(value) {\n  if (Array.isArray(value)) {\n    return value.map(removeUndefined);\n  }\n\n  if (value && typeof value === \"object\") {\n    const cleaned = {};\n\n    for (const [key, val] of Object.entries(value)) {\n      if (val !== undefined) {\n        cleaned[key] = removeUndefined(val);\n      }\n    }\n\n    return cleaned;\n  }\n\n  return value;\n}\n\nconst item = $json;\nconst secret = $env.PLATFORM_CALLBACK_SECRET;\n\nif (!secret) {\n  throw new Error(\"Missing PLATFORM_CALLBACK_SECRET in n8n environment\");\n}\n\nif (!item.cp?.callback_url) {\n  throw new Error(\"Missing callback_url from CP payload\");\n}\n\nif (!item.composed_file?.data_base64) {\n  throw new Error(\"Missing composed image data_base64\");\n}\n\nconst timestamp = new Date().toISOString();\n\nconst nonce =\n  \"n8n_composed_image_\" +\n  Date.now() +\n  \"_\" +\n  Math.random().toString(36).slice(2);\n\nconst file = {\n  file_id: String(item.provider_creation_id || item.cp.job_id) + \"_composed\",\n  type: \"image\",\n  name: item.composed_file.name,\n  mime_type: item.composed_file.mime_type,\n  data_base64: item.composed_file.data_base64,\n  size_bytes: item.composed_file.size_bytes,\n  width: item.composed_file.width,\n  height: item.composed_file.height,\n  source: \"n8n-sharp-compositor\"\n};\n\nconst publicFile = {\n  file_id: file.file_id,\n  type: file.type,\n  name: file.name,\n  mime_type: file.mime_type,\n  size_bytes: file.size_bytes,\n  width: file.width,\n  height: file.height,\n  source: file.source\n};\n\nconst publicAssetContract = {\n  brand_id: item.asset_contract?.brand_id || null,\n  logo_id: item.asset_contract?.logo_id || null,\n  product_asset_id: item.asset_contract?.product_asset_id || null,\n  ratio: item.asset_contract?.ratio || null,\n  profile_version: item.asset_contract?.profile_version || null\n};\n\n/**\n * نرجع شكل الـ body قريبًا من النسخة الأصلية.\n * مهم: نترك signature داخل body فارغًا أثناء حساب التوقيع.\n */\nconst callbackBody = removeUndefined({\n  job_id: item.cp.job_id,\n  correlation_id: item.cp.correlation_id,\n  idempotency_key: item.cp.idempotency_key,\n  workflow_type: \"creative_image_generation\",\n  workflow_version: \"creative-image-sharp-v1\",\n  status: \"completed\",\n  current_step: \"Branded image composed and ready for review\",\n\n  nonce,\n  signature_timestamp: timestamp,\n  signature: \"\",\n\n  outputs: {\n    provider: \"magnific-background-plus-sharp\",\n    asset_contract: publicAssetContract,\n    background_url: item.background_url,\n    files: [publicFile]\n  },\n\n  files: [file],\n  warnings: []\n});\n\nconst raw = JSON.stringify(callbackBody);\n\nconst signature = crypto\n  .createHmac(\"sha256\", secret)\n  .update(timestamp + \".\" + nonce + \".\" + raw)\n  .digest(\"hex\");\n\nreturn [\n  {\n    json: {\n      callback_url: item.cp.callback_url,\n      callback_headers: {\n        signature,\n        timestamp,\n        nonce\n      },\n      callback_body: callbackBody,\n      callback_debug: {\n        body_size_bytes: Buffer.byteLength(raw, \"utf8\"),\n        file_size_bytes: item.composed_file.size_bytes,\n        file_mime_type: item.composed_file.mime_type,\n        file_name: item.composed_file.name,\n        has_body_nonce: true,\n        has_body_signature_timestamp: true,\n        has_body_signature_field: true\n      }\n    }\n  }\n];"
+      },
+      "id": "prepare-completed-callback",
+      "name": "Prepare Completed CP Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2256,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-ff-signature",
+              "value": "={{ $json.callback_headers.signature }}"
+            },
+            {
+              "name": "x-ff-timestamp",
+              "value": "={{ $json.callback_headers.timestamp }}"
+            },
+            {
+              "name": "x-ff-nonce",
+              "value": "={{ $json.callback_headers.nonce }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.callback_body }}",
+        "options": {}
+      },
+      "id": "send-completed-callback",
+      "name": "Send Signed Callback To CP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2512,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "CP Creative Image Request Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Signed CP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Signed CP Request": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge CP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acknowledge CP Request": {
+      "main": [
+        [
+          {
+            "node": "Resolve Brand Assets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Brand Assets": {
+      "main": [
+        [
+          {
+            "node": "Build Background Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Background Prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate Background With Magnific MCP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Background With Magnific MCP": {
+      "main": [
+        [
+          {
+            "node": "Prepare Magnific Wait Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Magnific Wait Input": {
+      "main": [
+        [
+          {
+            "node": "Wait For Magnific Creation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait For Magnific Creation": {
+      "main": [
+        [
+          {
+            "node": "Compose Brand Image With Sharp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compose Brand Image With Sharp": {
+      "main": [
+        [
+          {
+            "node": "Prepare Completed CP Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Completed CP Callback": {
+      "main": [
+        [
+          {
+            "node": "Send Signed Callback To CP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "29e5d4c8-e52a-4ad4-b34c-90e6835c09cc",
+  "activeVersionId": "29e5d4c8-e52a-4ad4-b34c-90e6835c09cc",
+  "versionCounter": 211,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-06-29T09:08:54.733Z",
+      "createdAt": "2026-06-29T09:08:54.733Z",
+      "role": "workflow:owner",
+      "workflowId": "rWQZP7saIkXUXDUD",
+      "projectId": "n0ZLPIbmhtqRy4wY",
+      "project": {
+        "updatedAt": "2026-06-22T09:54:55.745Z",
+        "createdAt": "2026-06-22T09:54:21.172Z",
+        "id": "n0ZLPIbmhtqRy4wY",
+        "name": "Future Foresight Technology <info@future4site.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "2dab960c-7788-4018-9b2b-32d0a1877db9"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-07-08T13:08:07.000Z",
+    "createdAt": "2026-07-08T13:08:05.647Z",
+    "versionId": "29e5d4c8-e52a-4ad4-b34c-90e6835c09cc",
+    "workflowId": "rWQZP7saIkXUXDUD",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "future-foresight/creative-image-generation",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "creative-image-webhook",
+        "name": "CP Creative Image Request Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          0,
+          0
+        ],
+        "webhookId": "ce36e217-c1bd-4d40-8063-e2c0549f89ff"
+      },
+      {
+        "parameters": {
+          "jsCode": "const crypto = require(\"crypto\");\nconst envelope = $json;\nconst body = envelope.body ?? envelope;\nconst headers = envelope.headers ?? {};\nconst signature = String(headers[\"x-ff-signature\"] ?? \"\");\nconst timestamp = String(headers[\"x-ff-timestamp\"] ?? \"\");\nconst nonce = String(headers[\"x-ff-nonce\"] ?? \"\");\nconst secret = $env.N8N_WEBHOOK_SECRET;\nif (!secret) throw new Error(\"Missing N8N_WEBHOOK_SECRET in n8n environment\");\nif (!signature || !timestamp || !nonce) throw new Error(\"Missing CP request signature headers\");\nif (!body.job_id || !body.correlation_id || !body.callback_url) throw new Error(\"Missing job_id, correlation_id, or callback_url\");\nif (body.workflow_type !== \"creative_image_generation\") throw new Error(\"Unexpected workflow_type\");\nconst drift = Math.abs(Date.now() - Date.parse(timestamp));\nif (!Number.isFinite(drift) || drift > 5 * 60 * 1000) throw new Error(\"CP request timestamp rejected\");\nconst raw = JSON.stringify(body);\nconst expected = crypto.createHmac(\"sha256\", secret).update(timestamp + \".\" + nonce + \".\" + raw).digest(\"hex\");\nconst supplied = Buffer.from(signature, \"hex\");\nconst calculated = Buffer.from(expected, \"hex\");\nif (supplied.length !== calculated.length || !crypto.timingSafeEqual(supplied, calculated)) throw new Error(\"Invalid CP request signature\");\nreturn [{ json: { cp: body, accepted: true, received_at: new Date().toISOString() } }];"
+        },
+        "id": "validate-cp-request",
+        "name": "Validate Signed CP Request",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          256,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ { accepted: true, job_id: $json.cp.job_id, workflow_type: \"creative_image_generation\" } }}",
+          "options": {}
+        },
+        "id": "respond-cp",
+        "name": "Acknowledge CP Request",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [
+          512,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const fs = require(\"fs\");\nconst path = require(\"path\");\n\nconst cp = $json.cp;\nconst payload = cp.payload ?? {};\n\nconst baseDir = path.resolve(String($env.BRAND_ASSETS_BASE_DIR || \"/data/brand-assets\"));\n\nconst idPattern = /^[a-z0-9][a-z0-9-]{0,63}$/;\n\nconst brandId = String(payload.brand_id || \"future-oils\");\nconst logoId = String(payload.logo_id || \"primary\");\nconst ratio = String(payload.ratio || \"4:5\");\n\nif (!idPattern.test(brandId) || !idPattern.test(logoId)) {\n  throw new Error(\"Invalid brand asset identifier\");\n}\n\nif (!new Set([\"4:5\", \"1:1\", \"9:16\"]).has(ratio)) {\n  throw new Error(\"Unsupported creative ratio\");\n}\n\nconst profilePath = path.resolve(baseDir, \"brand-profile.json\");\n\nif (!profilePath.startsWith(baseDir + path.sep)) {\n  throw new Error(\"Brand profile path escaped asset root\");\n}\n\nconst profile = JSON.parse(fs.readFileSync(profilePath, \"utf8\"));\n\nif (profile.brand_id !== brandId) {\n  throw new Error(\"Requested brand profile is unavailable\");\n}\n\nfunction resolveAsset(relative) {\n  if (!relative || typeof relative !== \"string\") {\n    throw new Error(\"Brand asset is missing from profile\");\n  }\n\n  const absolute = path.resolve(baseDir, relative);\n\n  if (!absolute.startsWith(baseDir + path.sep)) {\n    throw new Error(\"Brand asset path escaped asset root\");\n  }\n\n  if (!fs.statSync(absolute).isFile()) {\n    throw new Error(\"Brand asset file is unavailable: \" + absolute);\n  }\n\n  return absolute;\n}\n\nfunction normalizeArabicDigits(value) {\n  const arabicIndic = \"٠١٢٣٤٥٦٧٨٩\";\n  const easternArabicIndic = \"۰۱۲۳۴۵۶۷۸۹\";\n\n  return String(value || \"\").replace(/[٠-٩۰-۹]/g, (digit) => {\n    const a = arabicIndic.indexOf(digit);\n    if (a >= 0) return String(a);\n\n    const e = easternArabicIndic.indexOf(digit);\n    if (e >= 0) return String(e);\n\n    return digit;\n  });\n}\n\nfunction normalizeText(value) {\n  return normalizeArabicDigits(value)\n    .toLowerCase()\n    .replace(/&/g, \" and \")\n    .replace(/[._/\\\\]+/g, \" \")\n    .replace(/[-]+/g, \" \")\n    .replace(/\\s+/g, \" \")\n    .trim();\n}\n\nfunction compactText(value) {\n  return normalizeText(value).replace(/\\s+/g, \"\");\n}\n\nfunction getPayloadSearchText(payload) {\n  return [\n    payload.product_asset_id,\n    payload.product_key,\n    payload.product_code,\n    payload.product_id,\n    payload.sku,\n    payload.product_sku,\n    payload.product,\n    payload.product_name,\n    payload.title,\n    payload.headline,\n    payload.description,\n    payload.size,\n    payload.capacity,\n    payload.volume,\n    payload.package_size,\n    payload.pack_size\n  ]\n    .filter((value) => value !== null && value !== undefined && String(value).trim())\n    .map(String)\n    .join(\" \");\n}\n\n/**\n * Extract liter capacity from payload.\n * Supports:\n * 5L\n * 5 L\n * 5-liter\n * 5 liter\n * 5 litres\n * 5 ltr\n * 5 لتر\n * ٥ لتر\n */\nfunction extractCapacityLiters(payload) {\n  const explicitFields = [\n    payload.capacity_liters,\n    payload.capacity_litre,\n    payload.volume_liters,\n    payload.volume_litre,\n    payload.liters,\n    payload.litres,\n    payload.size_liters,\n    payload.size_litre,\n    payload.pack_size_liters,\n    payload.pack_size_litre\n  ];\n\n  for (const value of explicitFields) {\n    const number = Number(normalizeArabicDigits(value));\n\n    if (Number.isFinite(number) && number > 0 && number <= 100) {\n      return number;\n    }\n  }\n\n  const text = normalizeText(getPayloadSearchText(payload));\n\n  const patterns = [\n    /(?:^|\\D)(\\d+(?:\\.\\d+)?)\\s*(?:l|lt|ltr|liter|liters|litre|litres|لتر|ليتر)(?:\\D|$)/i,\n    /(?:^|\\D)(\\d+(?:\\.\\d+)?)\\s*[- ]?\\s*(?:l|lt|ltr)(?:\\D|$)/i\n  ];\n\n  for (const pattern of patterns) {\n    const match = text.match(pattern);\n\n    if (match) {\n      const number = Number(match[1]);\n\n      if (Number.isFinite(number) && number > 0 && number <= 100) {\n        return number;\n      }\n    }\n  }\n\n  /**\n   * Fallback:\n   * لو لم نجد وحدة L/لتر، نبحث عن رقم واضح من السعات المعروفة.\n   * رتبنا 18 و13 و12 و10 قبل 1 و2 حتى لا يلتقط رقم 1 من 10 أو 12.\n   */\n  const knownSizes = [18, 13, 12, 10, 5, 4, 3, 2, 1];\n\n  for (const size of knownSizes) {\n    const re = new RegExp(\"(^|\\\\D)\" + size + \"(\\\\D|$)\", \"i\");\n\n    if (re.test(text)) {\n      return size;\n    }\n  }\n\n  return null;\n}\n\nfunction productCandidateText(productId, product) {\n  return [\n    productId,\n    product?.id,\n    product?.key,\n    product?.sku,\n    product?.code,\n    product?.name,\n    product?.title,\n    product?.label,\n    product?.description,\n    product?.size,\n    product?.capacity,\n    product?.volume,\n    product?.package_size,\n    product?.pack_size,\n    product?.file\n  ]\n    .filter((value) => value !== null && value !== undefined && String(value).trim())\n    .map(String)\n    .join(\" \");\n}\n\nfunction productHasCapacity(productId, product, capacityLiters) {\n  if (!capacityLiters) return false;\n\n  const numericFields = [\n    product?.capacity_liters,\n    product?.capacity_litre,\n    product?.volume_liters,\n    product?.volume_litre,\n    product?.liters,\n    product?.litres,\n    product?.size_liters,\n    product?.size_litre,\n    product?.pack_size_liters,\n    product?.pack_size_litre\n  ];\n\n  for (const value of numericFields) {\n    const number = Number(normalizeArabicDigits(value));\n\n    if (Number.isFinite(number) && number === capacityLiters) {\n      return true;\n    }\n  }\n\n  const text = normalizeText(productCandidateText(productId, product));\n  const compact = compactText(productCandidateText(productId, product));\n\n  const size = String(capacityLiters).replace(/\\.0+$/, \"\");\n\n  const capacityPatterns = [\n    new RegExp(\"(^|\\\\D)\" + size + \"\\\\s*(l|lt|ltr|liter|liters|litre|litres|لتر|ليتر)(\\\\D|$)\", \"i\"),\n    new RegExp(\"(^|\\\\D)\" + size + \"\\\\s*[- ]?\\\\s*(l|lt|ltr)(\\\\D|$)\", \"i\"),\n    new RegExp(\"(^|\\\\D)\" + size + \"\\\\s*لتر(\\\\D|$)\", \"i\")\n  ];\n\n  if (capacityPatterns.some((pattern) => pattern.test(text))) {\n    return true;\n  }\n\n  const compactPatterns = [\n    size + \"l\",\n    size + \"lt\",\n    size + \"ltr\",\n    size + \"liter\",\n    size + \"litre\",\n    size + \"liters\",\n    size + \"litres\",\n    size + \"لتر\",\n    size + \"ليتر\"\n  ];\n\n  if (compactPatterns.some((token) => compact.includes(token))) {\n    return true;\n  }\n\n  /**\n   * Fallback مضبوط:\n   * يطابق الرقم كجزء مستقل في product id أو اسم الملف أو الاسم.\n   */\n  const standaloneNumber = new RegExp(\"(^|\\\\D)\" + size + \"(\\\\D|$)\", \"i\");\n\n  return standaloneNumber.test(text);\n}\n\nfunction scoreProductMatch(productId, product, payload, capacityLiters) {\n  const searchText = normalizeText(getPayloadSearchText(payload));\n  const searchCompact = compactText(getPayloadSearchText(payload));\n\n  const candidateText = normalizeText(productCandidateText(productId, product));\n  const candidateCompact = compactText(productCandidateText(productId, product));\n\n  let score = 0;\n  const reasons = [];\n\n  const explicitKeys = [\n    payload.product_asset_id,\n    payload.product_key,\n    payload.product_code,\n    payload.product_id,\n    payload.sku,\n    payload.product_sku\n  ]\n    .filter((value) => value !== null && value !== undefined && String(value).trim())\n    .map((value) => compactText(value));\n\n  const productIdCompact = compactText(productId);\n\n  for (const key of explicitKeys) {\n    if (!key) continue;\n\n    if (productIdCompact === key) {\n      score += 1000;\n      reasons.push(\"exact explicit key match\");\n    } else if (candidateCompact.includes(key) || key.includes(productIdCompact)) {\n      score += 600;\n      reasons.push(\"partial explicit key match\");\n    }\n  }\n\n  if (capacityLiters && productHasCapacity(productId, product, capacityLiters)) {\n    score += 300;\n    reasons.push(\"capacity match \" + capacityLiters + \"L\");\n  }\n\n  /**\n   * Product/category hints.\n   */\n  const categoryWords = [\n    \"sunflower\",\n    \"refined\",\n    \"oil\",\n    \"زيت\",\n    \"دوار\",\n    \"الشمس\"\n  ];\n\n  for (const word of categoryWords) {\n    if (searchCompact.includes(compactText(word)) && candidateCompact.includes(compactText(word))) {\n      score += 20;\n      reasons.push(\"category word match: \" + word);\n    }\n  }\n\n  /**\n   * Prefer marketing-approved products.\n   */\n  if (product?.approved_for_marketing === true) {\n    score += 25;\n    reasons.push(\"approved for marketing\");\n  }\n\n  return {\n    productId,\n    product,\n    score,\n    reasons\n  };\n}\n\nfunction findProductAssetId(profile, payload) {\n  const products = profile.products || {};\n  const productIds = Object.keys(products);\n\n  if (!productIds.length) {\n    return {\n      product_asset_id: null,\n      reason: \"brand profile has no products\",\n      capacity_liters: null,\n      candidates: []\n    };\n  }\n\n  /**\n   * 1. Exact product_asset_id if provided.\n   */\n  const explicitProductAssetId = String(payload.product_asset_id || \"\").trim();\n\n  if (explicitProductAssetId) {\n    const normalizedExplicit = compactText(explicitProductAssetId);\n\n    const exactId = productIds.find((id) => compactText(id) === normalizedExplicit);\n\n    if (exactId) {\n      return {\n        product_asset_id: exactId,\n        reason: \"matched explicit product_asset_id\",\n        capacity_liters: extractCapacityLiters(payload),\n        candidates: [{ productId: exactId, score: 1000, reasons: [\"explicit product_asset_id\"] }]\n      };\n    }\n  }\n\n  const capacityLiters = extractCapacityLiters(payload);\n\n  const scored = productIds\n    .map((productId) => scoreProductMatch(productId, products[productId], payload, capacityLiters))\n    .filter((candidate) => candidate.score > 0)\n    .sort((a, b) => b.score - a.score);\n\n  if (!scored.length) {\n    return {\n      product_asset_id: null,\n      reason: \"no product matched payload text or capacity\",\n      capacity_liters: capacityLiters,\n      candidates: []\n    };\n  }\n\n  const best = scored[0];\n\n  return {\n    product_asset_id: best.productId,\n    reason: \"selected highest scoring product match\",\n    capacity_liters: capacityLiters,\n    candidates: scored.slice(0, 5).map((candidate) => ({\n      productId: candidate.productId,\n      score: candidate.score,\n      reasons: candidate.reasons\n    }))\n  };\n}\n\nconst logoRelative = profile.logos?.[logoId];\n\nif (!logoRelative) {\n  throw new Error(\"Requested logo asset is unavailable\");\n}\n\nconst productResolution = findProductAssetId(profile, payload);\nconst productAssetId = productResolution.product_asset_id;\nconst product = productAssetId ? profile.products?.[productAssetId] : null;\n\nif (productAssetId && !product) {\n  throw new Error(\"Requested product asset is unavailable: \" + productAssetId);\n}\n\nif (product && product.approved_for_marketing !== true) {\n  throw new Error(product.restriction || \"Requested product asset is not approved for marketing\");\n}\n\nreturn [\n  {\n    json: {\n      cp,\n      asset_contract: {\n        brand_id: brandId,\n        logo_id: logoId,\n        product_asset_id: productAssetId,\n        product_resolution: productResolution,\n        ratio,\n        profile_version: profile.schema_version,\n        brand_theme: profile.brand_theme || {},\n        layout_rules: profile.layout_rules || {},\n        logo_path: resolveAsset(logoRelative),\n        product_path: product ? resolveAsset(product.file) : null\n      }\n    }\n  }\n];"
+        },
+        "id": "resolve-brand-assets",
+        "name": "Resolve Brand Assets",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          752,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const item = $json;\n\n/**\n * Light premium background only.\n * Magnific مسؤول عن الخلفية فقط، وليس عن الإعلان.\n */\nconst prompt = [\n  \"Create an empty bright luxury abstract studio backdrop only.\",\n  \"This is not an advertisement, not a poster, and not a product mockup.\",\n  \"The image must be a clean blank background plate only.\",\n  \"Use a high-key bright composition with warm ivory, cream, soft beige, pale gold, and very subtle light olive accents.\",\n  \"The overall background must be light, airy, clean, premium, and elegant.\",\n  \"Avoid dark areas, dark green blocks, heavy shadows, black tones, brown tones, and deep olive backgrounds.\",\n  \"Use only smooth abstract curves, elegant soft gradients, gentle highlights, clean depth, and premium studio lighting.\",\n  \"Keep the central vertical area bright and clean for a large product packshot to be added later.\",\n  \"Keep the lower area bright and calm for text to be added later.\",\n  \"Absolutely no text of any kind.\",\n  \"No typography. No letters. No numbers. No words. No readable text. No fake text. No gibberish text. No handwriting. No printed marks.\",\n  \"No objects. No products. No bottles. No packages. No labels. No sunflowers. No seeds. No oil splashes.\",\n  \"No logos. No icons. No badges. No certificates. No QR codes. No signs. No posters. No UI elements.\",\n  \"No people. No faces. No portraits. No models. No hands. No body parts. No businessperson. No character.\",\n  \"Final result: an empty bright premium beige and pale gold abstract studio background only.\"\n].join(\" \");\n\nreturn [\n  {\n    json: {\n      ...item,\n      mcp_generate_args: {\n        prompt\n      },\n      requested_output: {\n        type: \"background\",\n        aspect_ratio: item.asset_contract.ratio,\n        review_required: true\n      }\n    }\n  }\n];"
+        },
+        "id": "build-background-prompt",
+        "name": "Build Background Prompt",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1008,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "endpointUrl": "https://mcp.magnific.com",
+          "authentication": "mcpOAuth2Api",
+          "tool": {
+            "__rl": true,
+            "mode": "list",
+            "value": "images_generate",
+            "cachedResultName": "images_generate"
+          },
+          "parameters": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "prompt": "={{ $json.mcp_generate_args.prompt }}"
+            },
+            "matchingColumns": [],
+            "schema": [],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          },
+          "options": {}
+        },
+        "id": "generate-image-with-magnific-mcp",
+        "name": "Generate Background With Magnific MCP",
+        "type": "@n8n/n8n-nodes-langchain.mcpClient",
+        "typeVersion": 1,
+        "position": [
+          1264,
+          0
+        ],
+        "credentials": {
+          "mcpOAuth2Api": {
+            "id": "yZUlimcfhBdzy2Ba",
+            "name": "MCP account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "function parseMaybeJson(value) {\n  if (typeof value !== \"string\") return value;\n  try { return JSON.parse(value); } catch { return value; }\n}\nfunction collectCandidates(value, output = []) {\n  const parsed = parseMaybeJson(value);\n  if (parsed && typeof parsed === \"object\") {\n    output.push(parsed);\n    if (Array.isArray(parsed.content)) {\n      for (const item of parsed.content) {\n        if (item?.type === \"text\") collectCandidates(item.text, output);\n        else collectCandidates(item, output);\n      }\n    }\n    if (parsed.structuredContent) collectCandidates(parsed.structuredContent, output);\n  }\n  return output;\n}\nfunction findByKeys(value, keys, seen = new Set()) {\n  if (!value || typeof value !== \"object\" || seen.has(value)) return undefined;\n  seen.add(value);\n  if (Array.isArray(value)) {\n    for (const item of value) {\n      const found = findByKeys(item, keys, seen);\n      if (found) return found;\n    }\n    return undefined;\n  }\n  for (const key of keys) {\n    const candidate = value[key];\n    if (typeof candidate === \"string\" && candidate.trim()) return candidate.trim();\n    if (typeof candidate === \"number\" && Number.isFinite(candidate)) return String(candidate);\n  }\n  for (const nested of Object.values(value)) {\n    const found = findByKeys(nested, keys, seen);\n    if (found) return found;\n  }\n  return undefined;\n}\nconst built = $(\"Build Background Prompt\").item.json;\nconst generationResult = $json;\nconst candidates = collectCandidates(generationResult);\nlet creationId;\nfor (const candidate of candidates) {\n  creationId = findByKeys(candidate, [\"identifier\", \"id\", \"creation_id\", \"creationId\", \"task_id\", \"taskId\", \"job_id\", \"jobId\"]);\n  if (creationId) break;\n}\nif (!creationId) {\n  throw new Error(\"Magnific MCP images_generate did not return a creation identifier. Open this execution, inspect the MCP output, and adjust Prepare Magnific Wait Input to the live tools/list schema.\");\n}\nreturn [{ json: {\n  cp: built.cp,\n  mcp_endpoint: built.mcp_endpoint,\n  generation_result: generationResult,\n  creation_id: creationId,\n  mcp_wait_args: { identifiers: [creationId] }\n} }];"
+        },
+        "id": "prepare-magnific-wait-input",
+        "name": "Prepare Magnific Wait Input",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1504,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "endpointUrl": "https://mcp.magnific.com",
+          "authentication": "mcpOAuth2Api",
+          "tool": {
+            "__rl": true,
+            "mode": "list",
+            "value": "creations_wait",
+            "cachedResultName": "creations_wait"
+          },
+          "parameters": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "identifiers": "={{ $json.mcp_wait_args.identifiers }}"
+            },
+            "matchingColumns": [],
+            "schema": [],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          },
+          "options": {}
+        },
+        "id": "wait-for-magnific-creation",
+        "name": "Wait For Magnific Creation",
+        "type": "@n8n/n8n-nodes-langchain.mcpClient",
+        "typeVersion": 1,
+        "position": [
+          1760,
+          0
+        ],
+        "credentials": {
+          "mcpOAuth2Api": {
+            "id": "yZUlimcfhBdzy2Ba",
+            "name": "MCP account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const sharp = require(\"sharp\");\nconst fs = require(\"fs\");\nconst http = require(\"http\");\nconst https = require(\"https\");\n\n/**\n * Parse JSON if a value is JSON text.\n */\nfunction parseMaybeJson(value) {\n  if (typeof value !== \"string\") return value;\n\n  try {\n    return JSON.parse(value);\n  } catch {\n    return value;\n  }\n}\n\n/**\n * Force any //domain/path URL to become https://domain/path\n */\nfunction normalizeImageUrl(value) {\n  if (value === null || value === undefined) return \"\";\n\n  let url = String(value)\n    .trim()\n    .replace(/&amp;/g, \"&\")\n    .replace(/^[\"'`]+/g, \"\")\n    .replace(/[\"'`]+$/g, \"\")\n    .replace(/[)\\],.;]+$/g, \"\");\n\n  // Sometimes the URL is inside a larger text string\n  const match = url.match(/(?:https?:)?\\/\\/[^\\s\"'<>\\\\)\\]]+/i);\n  if (match) {\n    url = match[0];\n  }\n\n  // This is the important fix for your error\n  if (url.startsWith(\"//\")) {\n    url = \"https:\" + url;\n  }\n\n  return url;\n}\n\n/**\n * Extract URLs from any nested object/string.\n */\nfunction collectImageUrls(value, urls = new Set(), seen = new Set()) {\n  const parsed = parseMaybeJson(value);\n\n  if (typeof parsed === \"string\") {\n    const matches = parsed.match(/(?:https?:)?\\/\\/[^\\s\"'<>\\\\)\\]]+/gi) || [];\n\n    for (const raw of matches) {\n      const normalized = normalizeImageUrl(raw);\n\n      if (/^https?:\\/\\//i.test(normalized)) {\n        urls.add(normalized);\n      }\n    }\n\n    return urls;\n  }\n\n  if (!parsed || typeof parsed !== \"object\" || seen.has(parsed)) {\n    return urls;\n  }\n\n  seen.add(parsed);\n\n  if (Array.isArray(parsed)) {\n    for (const item of parsed) {\n      collectImageUrls(item, urls, seen);\n    }\n\n    return urls;\n  }\n\n  for (const raw of Object.values(parsed)) {\n    collectImageUrls(raw, urls, seen);\n  }\n\n  return urls;\n}\n\n/**\n * Check if downloaded buffer looks like an image.\n */\nfunction looksLikeImageBuffer(buffer) {\n  if (!Buffer.isBuffer(buffer) || buffer.length < 12) return false;\n\n  // JPG\n  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {\n    return true;\n  }\n\n  // PNG\n  if (\n    buffer[0] === 0x89 &&\n    buffer[1] === 0x50 &&\n    buffer[2] === 0x4e &&\n    buffer[3] === 0x47\n  ) {\n    return true;\n  }\n\n  // WEBP\n  if (\n    buffer.toString(\"ascii\", 0, 4) === \"RIFF\" &&\n    buffer.toString(\"ascii\", 8, 12) === \"WEBP\"\n  ) {\n    return true;\n  }\n\n  return false;\n}\n\n/**\n * Download image as buffer.\n */\nfunction parseHttpImageUrl(rawUrl) {\n  let fixedUrl = normalizeImageUrl(rawUrl);\n\n  if (!fixedUrl) {\n    throw new Error(\"Background image URL is empty\");\n  }\n\n  if (fixedUrl.startsWith(\"//\")) {\n    fixedUrl = \"https:\" + fixedUrl;\n  }\n\n  if (!/^https?:\\/\\//i.test(fixedUrl)) {\n    throw new Error(\"Background image URL is invalid after normalization: \" + fixedUrl);\n  }\n\n  const match = fixedUrl.match(/^(https?):\\/\\/([^\\/?#:]+)(?::([0-9]+))?([^\\s]*)$/i);\n\n  if (!match) {\n    throw new Error(\"Could not parse background image URL without URL module: \" + fixedUrl);\n  }\n\n  const protocol = match[1].toLowerCase() + \":\";\n  const hostname = match[2];\n  const port = match[3] || \"\";\n  let path = match[4] || \"/\";\n\n  if (!path.startsWith(\"/\")) {\n    path = \"/\" + path;\n  }\n\n  return {\n    href: fixedUrl,\n    protocol,\n    hostname,\n    port,\n    path,\n    origin: protocol + \"//\" + hostname + (port ? \":\" + port : \"\")\n  };\n}\n\nfunction resolveRedirectLocation(location, currentParsed) {\n  let nextUrl = String(location || \"\").trim();\n\n  if (!nextUrl) {\n    return \"\";\n  }\n\n  if (nextUrl.startsWith(\"//\")) {\n    return currentParsed.protocol + nextUrl;\n  }\n\n  if (/^https?:\\/\\//i.test(nextUrl)) {\n    return nextUrl;\n  }\n\n  if (nextUrl.startsWith(\"/\")) {\n    return currentParsed.origin + nextUrl;\n  }\n\n  const currentPath = currentParsed.path.split(\"?\")[0];\n  const baseDir = currentPath.includes(\"/\")\n    ? currentPath.slice(0, currentPath.lastIndexOf(\"/\") + 1)\n    : \"/\";\n\n  return currentParsed.origin + baseDir + nextUrl;\n}\n\nfunction downloadImageBuffer(rawUrl, redirectCount = 0) {\n  if (redirectCount > 5) {\n    return Promise.reject(new Error(\"Too many redirects while downloading background image\"));\n  }\n\n  let parsed;\n\n  try {\n    parsed = parseHttpImageUrl(rawUrl);\n  } catch (error) {\n    return Promise.reject(\n      new Error(\n        \"Invalid background image URL before request. \" +\n        \"raw-url=\" + String(rawUrl).slice(0, 300) +\n        \", error=\" + error.message\n      )\n    );\n  }\n\n  const client = parsed.protocol === \"https:\" ? https : http;\n\n  const requestOptions = {\n    protocol: parsed.protocol,\n    hostname: parsed.hostname,\n    port: parsed.port || undefined,\n    path: parsed.path,\n    method: \"GET\",\n    headers: {\n      \"User-Agent\": \"Mozilla/5.0 (compatible; n8n-sharp-compositor/1.0)\",\n      \"Accept\": \"image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8\",\n      \"Cache-Control\": \"no-cache\"\n    }\n  };\n\n  return new Promise((resolve, reject) => {\n    const request = client.request(requestOptions, (response) => {\n      const status = response.statusCode || 0;\n      const location = response.headers.location;\n      const contentType = String(response.headers[\"content-type\"] || \"\");\n\n      if (status >= 300 && status < 400 && location) {\n        response.resume();\n\n        const nextUrl = resolveRedirectLocation(location, parsed);\n\n        downloadImageBuffer(nextUrl, redirectCount + 1).then(resolve, reject);\n        return;\n      }\n\n      const chunks = [];\n\n      response.on(\"data\", (chunk) => {\n        chunks.push(Buffer.from(chunk));\n      });\n\n      response.on(\"end\", () => {\n        const buffer = Buffer.concat(chunks);\n        const bodyPreview = buffer.toString(\"utf8\", 0, Math.min(buffer.length, 500));\n\n        if (status < 200 || status >= 300) {\n          reject(\n            new Error(\n              \"Could not download background image. \" +\n              \"status=\" + status +\n              \", content-type=\" + contentType +\n              \", normalized-url=\" + parsed.href +\n              \", original-url=\" + String(rawUrl).slice(0, 250) +\n              \", body-preview=\" + bodyPreview\n            )\n          );\n          return;\n        }\n\n        if (!contentType.startsWith(\"image/\") && !looksLikeImageBuffer(buffer)) {\n          reject(\n            new Error(\n              \"Downloaded background URL is not an image. \" +\n              \"status=\" + status +\n              \", content-type=\" + contentType +\n              \", normalized-url=\" + parsed.href +\n              \", original-url=\" + String(rawUrl).slice(0, 250) +\n              \", body-preview=\" + bodyPreview\n            )\n          );\n          return;\n        }\n\n        resolve({\n          buffer,\n          finalUrl: parsed.href,\n          contentType,\n          sizeBytes: buffer.length\n        });\n      });\n\n      response.on(\"error\", (error) => {\n        reject(\n          new Error(\n            \"Response error while downloading background image. \" +\n            \"message=\" + error.message +\n            \", normalized-url=\" + parsed.href\n          )\n        );\n      });\n    });\n\n    request.setTimeout(60000, () => {\n      request.destroy(\n        new Error(\"Timed out downloading background image. normalized-url=\" + parsed.href)\n      );\n    });\n\n    request.on(\"error\", (error) => {\n      reject(\n        new Error(\n          \"Network error downloading background image. \" +\n          \"message=\" + error.message +\n          \", normalized-url=\" + parsed.href +\n          \", original-url=\" + String(rawUrl).slice(0, 250)\n        )\n      );\n    });\n\n    request.end();\n  });\n}\n\n/**\n * XML escaping for SVG text.\n */\nfunction escapeXml(value) {\n  return String(value).replace(/[&<>\"']/g, (char) => ({\n    \"&\": \"&amp;\",\n    \"<\": \"&lt;\",\n    \">\": \"&gt;\",\n    '\"': \"&quot;\",\n    \"'\": \"&apos;\"\n  })[char]);\n}\n\nfunction safeColor(value, fallback) {\n  return /^#[0-9a-f]{6}$/i.test(String(value || \"\")) ? String(value) : fallback;\n}\n\nfunction clampNumber(value, fallback, min, max) {\n  const number = Number(value);\n\n  if (!Number.isFinite(number)) return fallback;\n\n  return Math.min(max, Math.max(min, number));\n}\n\nfunction wrapText(text, maxCharsPerLine = 20, maxLines = 3) {\n  const clean = String(text || \"\").trim().replace(/\\s+/g, \" \");\n\n  if (!clean) return [];\n\n  const words = clean.split(\" \");\n  const lines = [];\n  let current = \"\";\n\n  for (const word of words) {\n    const next = current ? `${current} ${word}` : word;\n\n    if (next.length <= maxCharsPerLine) {\n      current = next;\n    } else {\n      if (current) {\n        lines.push(current);\n        current = word;\n      } else {\n        lines.push(word.slice(0, maxCharsPerLine));\n        current = word.slice(maxCharsPerLine);\n      }\n    }\n\n    if (lines.length >= maxLines) break;\n  }\n\n  if (current && lines.length < maxLines) {\n    lines.push(current);\n  }\n\n  return lines;\n}\n\n/**\n * Read data from previous nodes.\n */\nconst resolved = $(\"Resolve Brand Assets\").item.json;\nconst waitInput = $(\"Prepare Magnific Wait Input\").item.json;\nconst waitResult = $(\"Wait For Magnific Creation\").item.json;\n\nconst payload = resolved.cp.payload ?? {};\nconst contract = resolved.asset_contract;\n\nif (!contract) {\n  throw new Error(\"Missing asset_contract from Resolve Brand Assets\");\n}\n\nif (!contract.logo_path) {\n  throw new Error(\"Missing logo_path from asset_contract\");\n}\n\nif (!fs.existsSync(contract.logo_path)) {\n  throw new Error(\"Logo file does not exist: \" + contract.logo_path);\n}\n\nif (contract.product_path && !fs.existsSync(contract.product_path)) {\n  throw new Error(\"Product file does not exist: \" + contract.product_path);\n}\n\n/**\n * Find background URL.\n */\nconst allUrls = [\n  ...collectImageUrls(waitResult),\n  ...collectImageUrls($json),\n  ...collectImageUrls(waitInput.generation_result)\n].map(normalizeImageUrl);\n\nconst imageUrls = allUrls.filter((url) => /^https?:\\/\\//i.test(url));\n\nconst backgroundUrl =\n  imageUrls.find((url) => /render\\.(jpg|jpeg|png|webp)(\\?|$)/i.test(url)) ||\n  imageUrls.find((url) => /\\.(jpg|jpeg|png|webp)(\\?|$)/i.test(url)) ||\n  imageUrls[0];\n\nif (!backgroundUrl) {\n  throw new Error(\n    \"No usable background image URL found in Magnific result. Found URLs: \" +\n      JSON.stringify(allUrls.slice(0, 10))\n  );\n}\n\n/**\n * Download background.\n */\nconst downloadedBackground = await downloadImageBuffer(backgroundUrl);\nconst backgroundBuffer = downloadedBackground.buffer;\n\n/**\n * Validate Sharp can read the downloaded background.\n */\ntry {\n  await sharp(backgroundBuffer).metadata();\n} catch (error) {\n  throw new Error(\n    \"Sharp could not read downloaded background image. \" +\n      \"url=\" +\n      downloadedBackground.finalUrl +\n      \", content-type=\" +\n      downloadedBackground.contentType +\n      \", size=\" +\n      downloadedBackground.sizeBytes +\n      \", sharp-error=\" +\n      error.message\n  );\n}\n\n/**\n * Canvas dimensions.\n */\nconst dimensions = {\n  \"4:5\": [1080, 1350],\n  \"1:1\": [1080, 1080],\n  \"9:16\": [1080, 1920]\n}[contract.ratio];\n\nif (!dimensions) {\n  throw new Error(\"Unsupported ratio: \" + contract.ratio);\n}\n\nconst [width, height] = dimensions;\n\n/**\n * Theme and layout.\n */\nconst theme = contract.brand_theme || {};\nconst colors = theme.colors || {};\nconst layout = contract.layout_rules || {};\n\nconst panelColor = safeColor(colors.panel, \"#F8F4EA\");\nconst headlineColor = safeColor(colors.headline, \"#2B2B2B\");\nconst ctaColor = safeColor(colors.cta_background, \"#2E4A2E\");\nconst ctaTextColor = safeColor(colors.cta_text, \"#F8F4EA\");\n\nconst logoWidthRatio = clampNumber(payload.logo_width_ratio, 0.26, 0.18, 0.34);\nconst productWidthRatio = clampNumber(payload.product_width_ratio, 0.86, 0.68, 0.96);\nconst productHeightRatio = clampNumber(payload.product_height_ratio, 0.88, 0.74, 0.96);\n\nfunction getProductCapacityLiters(contract) {\n  const fromResolution = Number(contract.product_resolution?.capacity_liters);\n\n  if (Number.isFinite(fromResolution) && fromResolution > 0) {\n    return fromResolution;\n  }\n\n  const idText = String(contract.product_asset_id || \"\");\n  const match = idText.match(/(\\d+(?:\\.\\d+)?)\\s*l/i);\n\n  if (match) {\n    return Number(match[1]);\n  }\n\n  return null;\n}\n\nfunction getProductScaleByCapacity(capacityLiters) {\n  const capacity = Number(capacityLiters);\n\n  if (capacity === 1) return 1.00;\n  if (capacity === 2) return 0.94;\n  if (capacity === 4) return 0.88;\n  if (capacity === 5) return 0.84;\n  if (capacity === 10) return 0.36;\n  if (capacity === 12) return 0.42;\n  if (capacity === 13) return 0.40;\n  if (capacity === 18) return 0.36;\n\n  return 0.82;\n}\n\nconst productCapacityLiters = getProductCapacityLiters(contract);\nconst productCapacityScale = clampNumber(\n  payload.product_capacity_scale,\n  getProductScaleByCapacity(productCapacityLiters),\n  0.45,\n  1.10\n);\n\n/**\n * Logo with compact visibility backing.\n * نقصّ الفراغ حول الشعار ثم نضع خلفه بطاقة صغيرة فقط.\n */\nconst logoTargetWidth = Math.round(width * logoWidthRatio);\n\nconst logoBuffer = await sharp(fs.readFileSync(contract.logo_path))\n  .trim({\n    threshold: 12\n  })\n  .resize({\n    width: logoTargetWidth,\n    withoutEnlargement: true\n  })\n  .png()\n  .toBuffer();\n\nconst logoMeta = await sharp(logoBuffer).metadata();\n\nconst logoLeft = Math.round(width * 0.065);\nconst logoTop = Math.round(height * 0.055);\n\nconst logoPaddingX = Math.round(width * 0.014);\nconst logoPaddingY = Math.round(height * 0.009);\n\nconst logoBackW = (logoMeta.width || logoTargetWidth) + logoPaddingX * 2;\nconst logoBackH = (logoMeta.height || Math.round(height * 0.06)) + logoPaddingY * 2;\n\nconst logoBackSvg = Buffer.from(`\n<svg width=\"${logoBackW}\" height=\"${logoBackH}\" xmlns=\"http://www.w3.org/2000/svg\">\n  <rect\n    x=\"0\"\n    y=\"0\"\n    width=\"${logoBackW}\"\n    height=\"${logoBackH}\"\n    rx=\"14\"\n    fill=\"#FFF8EA\"\n    fill-opacity=\"0.74\"\n    stroke=\"#FFFFFF\"\n    stroke-opacity=\"0.55\"\n  />\n</svg>\n`);\n\nconst composites = [\n  {\n    input: logoBackSvg,\n    left: logoLeft - logoPaddingX,\n    top: logoTop - logoPaddingY\n  },\n  {\n    input: logoBuffer,\n    left: logoLeft,\n    top: logoTop\n  }\n];\n\n/**\n/**\n * Product hero placement.\n * المنتج كبير، في الوسط، ونازل للأسفل حتى لا يبدو معلقًا.\n * صندوق النص سيغطي أسفل المنتج قليلًا، وهذا مقصود.\n */\nif (contract.product_path) {\n  const productBuffer = await sharp(fs.readFileSync(contract.product_path))\n    .resize({\n      width: Math.round(width * productWidthRatio),\n      height: Math.round(height * productHeightRatio),\n      fit: \"inside\"\n    })\n    .png()\n    .toBuffer();\n\n  const productMeta = await sharp(productBuffer).metadata();\n\n  const productWidth = productMeta.width || 0;\n  const productHeight = productMeta.height || 0;\n\n  /**\n   * ظل خفيف تحت المنتج حتى لا يبدو معلقًا.\n   */\n  const shadowSvg = Buffer.from(`\n  <svg width=\"${width}\" height=\"${height}\" xmlns=\"http://www.w3.org/2000/svg\">\n    <defs>\n      <filter id=\"blur\" x=\"-50%\" y=\"-50%\" width=\"200%\" height=\"200%\">\n        <feGaussianBlur stdDeviation=\"22\"/>\n      </filter>\n    </defs>\n    <ellipse\n      cx=\"${Math.round(width * 0.50)}\"\n      cy=\"${Math.round(height * 0.795)}\"\n      rx=\"${Math.round(width * 0.25)}\"\n      ry=\"${Math.round(height * 0.035)}\"\n      fill=\"#000000\"\n      fill-opacity=\"0.20\"\n      filter=\"url(#blur)\"\n    />\n  </svg>\n  `);\n\n  composites.push({\n    input: shadowSvg,\n    left: 0,\n    top: 0\n  });\n\n  /**\n   * المنتج ينتهي داخل منطقة النص قليلًا.\n   * هذا يعطي إحساس أنه واقف على الأرض وليس طائرًا.\n   */\n  const productCenterX = Math.round(width * 0.50);\n  const productBottomY = Math.round(height * 1.00);\n\n  composites.push({\n    input: productBuffer,\n    left: Math.round(productCenterX - productWidth / 2),\n    top: Math.round(productBottomY - productHeight)\n  });\n}\n\n/**\n * Text.\n * نص ثابت فقط، بدون زر.\n */\nfunction beautifyMarketingText(value) {\n  return String(value || \"\")\n    .replace(/\\s+/g, \" \")\n    .replace(/(\\d+)\\s*(liter|litre|liters|litres)\\b/gi, \"$1L\")\n    .replace(/(\\d+)\\s*l\\b/gi, \"$1L\")\n    .replace(/\\b1Liter\\b/gi, \"1L\")\n    .replace(/\\b5Liter\\b/gi, \"5L\")\n    .replace(/\\b10Liter\\b/gi, \"10L\")\n    .trim();\n}\n\nfunction simplifyHeadline(value) {\n  const text = beautifyMarketingText(value);\n  const lower = text.toLowerCase();\n\n  const sizeMatch = text.match(/(?:^|\\D)(1L|2L|5L|10L|12L|13L|18L)(?:\\D|$)/i);\n  const size = sizeMatch ? sizeMatch[1].toUpperCase() : \"\";\n\n  if (lower.includes(\"sunflower\") && lower.includes(\"oil\") && size) {\n    return `${size} Refined Sunflower Oil`;\n  }\n\n  if (text.length > 44) {\n    return text.slice(0, 44).trim();\n  }\n\n  return text;\n}\n\nconst headlineRaw = simplifyHeadline(String(payload.headline || \"\").slice(0, 120));\n\nconst textPanelX = Math.round(width * 0.10);\nconst textPanelY = Math.round(height * 0.835);\nconst textPanelW = Math.round(width * 0.80);\nconst textPanelH = Math.round(height * 0.095);\n\nconst textCenterX = Math.round(textPanelX + textPanelW / 2);\nconst textCenterY = Math.round(textPanelY + textPanelH * 0.62);\n\nconst headlineLines = wrapText(headlineRaw, 30, 2);\nconst headlineFontSize = headlineLines.length > 1 ? 36 : 42;\n\nconst lineGap = 44;\nconst firstLineY =\n  headlineLines.length > 1\n    ? textCenterY - Math.round(lineGap / 2)\n    : textCenterY;\n\nconst headlineSvg = headlineLines\n  .map((line, index) => {\n    const y = firstLineY + index * lineGap;\n\n    return `<text x=\"${textCenterX}\" y=\"${y}\" text-anchor=\"middle\" font-family=\"Arial, sans-serif\" font-size=\"${headlineFontSize}\" font-weight=\"700\" fill=\"${headlineColor}\">${escapeXml(line)}</text>`;\n  })\n  .join(\"\");\n\nconst textSvg = Buffer.from(`\n<svg width=\"${width}\" height=\"${height}\" xmlns=\"http://www.w3.org/2000/svg\">\n  <rect\n    x=\"${textPanelX}\"\n    y=\"${textPanelY}\"\n    width=\"${textPanelW}\"\n    height=\"${textPanelH}\"\n    rx=\"30\"\n    fill=\"${panelColor}\"\n    fill-opacity=\"0.90\"\n    stroke=\"#FFFFFF\"\n    stroke-opacity=\"0.45\"\n  />\n  ${headlineSvg}\n</svg>\n`);\n\ncomposites.push({\n  input: textSvg,\n  left: 0,\n  top: 0\n});\n\n/**\n * Compose final image.\n * Use JPEG instead of PNG because callback JSON has a body-size limit.\n */\nlet outputWidth = width;\nlet outputHeight = height;\n\nasync function renderJpeg(targetWidth, targetHeight, quality) {\n  return sharp(backgroundBuffer)\n    .resize(targetWidth, targetHeight, {\n      fit: \"cover\",\n      position: \"center\"\n    })\n    .composite(composites)\n    .flatten({\n      background: \"#ffffff\"\n    })\n    .jpeg({\n      quality,\n      mozjpeg: true\n    })\n    .toBuffer();\n}\n\nconst maxCallbackImageBytes = 650 * 1024;\n\nlet finalBuffer = null;\nlet finalQuality = null;\n\nfor (const quality of [78, 74, 70, 66, 62, 58, 54, 50, 46, 42]) {\n  const candidate = await renderJpeg(width, height, quality);\n\n  finalBuffer = candidate;\n  finalQuality = quality;\n\n  if (candidate.length <= maxCallbackImageBytes) {\n    break;\n  }\n}\n\n/**\n * If 1080x1350 is still too large, reduce dimensions slightly.\n */\nif (finalBuffer.length > maxCallbackImageBytes) {\n  outputWidth = Math.round(width * 0.85);\n  outputHeight = Math.round(height * 0.85);\n\n  for (const quality of [74, 70, 66, 62, 58, 54, 50, 46, 42]) {\n    const candidate = await renderJpeg(outputWidth, outputHeight, quality);\n\n    finalBuffer = candidate;\n    finalQuality = quality;\n\n    if (candidate.length <= maxCallbackImageBytes) {\n      break;\n    }\n  }\n}\n\nreturn [\n  {\n    json: {\n      cp: resolved.cp,\n      asset_contract: contract,\n      provider_creation_id: waitInput.creation_id,\n      composed_file: {\n        name: `creative-${resolved.cp.job_id}.jpg`,\n        mime_type: \"image/jpeg\",\n        data_base64: finalBuffer.toString(\"base64\"),\n        size_bytes: finalBuffer.length,\n        width: outputWidth,\n        height: outputHeight,\n        quality: finalQuality\n      },\n      background_url: downloadedBackground.finalUrl,\n      background_download: {\n        content_type: downloadedBackground.contentType,\n        size_bytes: downloadedBackground.sizeBytes\n      }\n    }\n  }\n];"
+        },
+        "id": "compose-brand-image",
+        "name": "Compose Brand Image With Sharp",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2000,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const crypto = require(\"crypto\");\n\nfunction removeUndefined(value) {\n  if (Array.isArray(value)) {\n    return value.map(removeUndefined);\n  }\n\n  if (value && typeof value === \"object\") {\n    const cleaned = {};\n\n    for (const [key, val] of Object.entries(value)) {\n      if (val !== undefined) {\n        cleaned[key] = removeUndefined(val);\n      }\n    }\n\n    return cleaned;\n  }\n\n  return value;\n}\n\nconst item = $json;\nconst secret = $env.PLATFORM_CALLBACK_SECRET;\n\nif (!secret) {\n  throw new Error(\"Missing PLATFORM_CALLBACK_SECRET in n8n environment\");\n}\n\nif (!item.cp?.callback_url) {\n  throw new Error(\"Missing callback_url from CP payload\");\n}\n\nif (!item.composed_file?.data_base64) {\n  throw new Error(\"Missing composed image data_base64\");\n}\n\nconst timestamp = new Date().toISOString();\n\nconst nonce =\n  \"n8n_composed_image_\" +\n  Date.now() +\n  \"_\" +\n  Math.random().toString(36).slice(2);\n\nconst file = {\n  file_id: String(item.provider_creation_id || item.cp.job_id) + \"_composed\",\n  type: \"image\",\n  name: item.composed_file.name,\n  mime_type: item.composed_file.mime_type,\n  data_base64: item.composed_file.data_base64,\n  size_bytes: item.composed_file.size_bytes,\n  width: item.composed_file.width,\n  height: item.composed_file.height,\n  source: \"n8n-sharp-compositor\"\n};\n\nconst publicFile = {\n  file_id: file.file_id,\n  type: file.type,\n  name: file.name,\n  mime_type: file.mime_type,\n  size_bytes: file.size_bytes,\n  width: file.width,\n  height: file.height,\n  source: file.source\n};\n\nconst publicAssetContract = {\n  brand_id: item.asset_contract?.brand_id || null,\n  logo_id: item.asset_contract?.logo_id || null,\n  product_asset_id: item.asset_contract?.product_asset_id || null,\n  ratio: item.asset_contract?.ratio || null,\n  profile_version: item.asset_contract?.profile_version || null\n};\n\n/**\n * نرجع شكل الـ body قريبًا من النسخة الأصلية.\n * مهم: نترك signature داخل body فارغًا أثناء حساب التوقيع.\n */\nconst callbackBody = removeUndefined({\n  job_id: item.cp.job_id,\n  correlation_id: item.cp.correlation_id,\n  idempotency_key: item.cp.idempotency_key,\n  workflow_type: \"creative_image_generation\",\n  workflow_version: \"creative-image-sharp-v1\",\n  status: \"completed\",\n  current_step: \"Branded image composed and ready for review\",\n\n  nonce,\n  signature_timestamp: timestamp,\n  signature: \"\",\n\n  outputs: {\n    provider: \"magnific-background-plus-sharp\",\n    asset_contract: publicAssetContract,\n    background_url: item.background_url,\n    files: [publicFile]\n  },\n\n  files: [file],\n  warnings: []\n});\n\nconst raw = JSON.stringify(callbackBody);\n\nconst signature = crypto\n  .createHmac(\"sha256\", secret)\n  .update(timestamp + \".\" + nonce + \".\" + raw)\n  .digest(\"hex\");\n\nreturn [\n  {\n    json: {\n      callback_url: item.cp.callback_url,\n      callback_headers: {\n        signature,\n        timestamp,\n        nonce\n      },\n      callback_body: callbackBody,\n      callback_debug: {\n        body_size_bytes: Buffer.byteLength(raw, \"utf8\"),\n        file_size_bytes: item.composed_file.size_bytes,\n        file_mime_type: item.composed_file.mime_type,\n        file_name: item.composed_file.name,\n        has_body_nonce: true,\n        has_body_signature_timestamp: true,\n        has_body_signature_field: true\n      }\n    }\n  }\n];"
+        },
+        "id": "prepare-completed-callback",
+        "name": "Prepare Completed CP Callback",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2256,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $json.callback_url }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "content-type",
+                "value": "application/json"
+              },
+              {
+                "name": "x-ff-signature",
+                "value": "={{ $json.callback_headers.signature }}"
+              },
+              {
+                "name": "x-ff-timestamp",
+                "value": "={{ $json.callback_headers.timestamp }}"
+              },
+              {
+                "name": "x-ff-nonce",
+                "value": "={{ $json.callback_headers.nonce }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json.callback_body }}",
+          "options": {}
+        },
+        "id": "send-completed-callback",
+        "name": "Send Signed Callback To CP",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4,
+        "position": [
+          2512,
+          0
+        ]
+      }
+    ],
+    "connections": {
+      "CP Creative Image Request Webhook": {
+        "main": [
+          [
+            {
+              "node": "Validate Signed CP Request",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Validate Signed CP Request": {
+        "main": [
+          [
+            {
+              "node": "Acknowledge CP Request",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Acknowledge CP Request": {
+        "main": [
+          [
+            {
+              "node": "Resolve Brand Assets",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resolve Brand Assets": {
+        "main": [
+          [
+            {
+              "node": "Build Background Prompt",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Background Prompt": {
+        "main": [
+          [
+            {
+              "node": "Generate Background With Magnific MCP",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Generate Background With Magnific MCP": {
+        "main": [
+          [
+            {
+              "node": "Prepare Magnific Wait Input",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Magnific Wait Input": {
+        "main": [
+          [
+            {
+              "node": "Wait For Magnific Creation",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Wait For Magnific Creation": {
+        "main": [
+          [
+            {
+              "node": "Compose Brand Image With Sharp",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Compose Brand Image With Sharp": {
+        "main": [
+          [
+            {
+              "node": "Prepare Completed CP Callback",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Completed CP Callback": {
+        "main": [
+          [
+            {
+              "node": "Send Signed Callback To CP",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Future Foresight Technology",
+    "name": "Version 29e5d4c8",
+    "description": "",
+    "autosaved": true,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-07-08T13:08:07.111Z",
+        "id": 393,
+        "workflowId": "rWQZP7saIkXUXDUD",
+        "versionId": "29e5d4c8-e52a-4ad4-b34c-90e6835c09cc",
+        "event": "activated",
+        "userId": "2dab960c-7788-4018-9b2b-32d0a1877db9"
+      }
+    ]
+  }
+}
