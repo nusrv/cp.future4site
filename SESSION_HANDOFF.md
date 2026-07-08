@@ -4,6 +4,27 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-08 live Sharp creative workflow activation
+
+Completed after the n8n runtime was reported to have the Sharp-enabled image:
+
+- Updated `scripts/deploy-creative-image-workflows.mjs` so deployment preserves the existing live `mcpOAuth2Api` credential binding for MCP client nodes. The first activation attempt failed because n8n rejected the generated workflow without credentials on `Generate Background With Magnific MCP` and `Wait For Magnific Creation`.
+- Deployed and activated `FF Admin - Creative Image Generation` on live n8n.
+- Workflow ID: `rWQZP7saIkXUXDUD`.
+- Live n8n `updatedAt`: `2026-07-08T08:47:44.233Z`.
+- Read-only live export after deployment confirmed:
+  - active: `true`
+  - 11 nodes
+  - 2 MCP client nodes
+  - both MCP client nodes have `mcpOAuth2Api` credentials
+  - includes `Resolve Brand Assets`, `Build Background Prompt`, `Generate Background With Magnific MCP`, `Wait For Magnific Creation`, and `Compose Brand Image With Sharp`
+  - includes `brand_theme`, `layout_rules`, and `n8n-sharp-compositor`
+  - no obsolete `Build Magnific MCP Request` reference remains
+
+Not completed in this checkpoint:
+
+- A direct signed webhook test from the local workstation could not run because local `1.env` contains n8n API credentials but not `N8N_WEBHOOK_SECRET`. This is expected because webhook secrets should remain in production env, not local handoff files.
+- The next real test should be started from CP by creating/dispatching one image request for an approved product, preferably `10L Sunflower Oil`, then confirming the CP receives a composed `n8n-sharp-compositor` PNG and the Media/creative review image shows the exact real product/logo and brand styling.
 ## 2026-07-08 image-composition workflow status
 
 Source update completed for the deterministic image-generation plan:

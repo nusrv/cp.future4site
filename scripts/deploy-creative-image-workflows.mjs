@@ -50,6 +50,19 @@ async function listWorkflows() {
   return all;
 }
 
+function preserveMcpCredentials(workflow, currentWorkflow) {
+  const credential = currentWorkflow?.nodes
+    ?.map((node) => node.credentials?.mcpOAuth2Api)
+    .find(Boolean) ?? { id: "yZUlimcfhBdzy2Ba", name: "MCP account" };
+  if (!credential) return workflow;
+  const copy = structuredClone(workflow);
+  for (const node of copy.nodes ?? []) {
+    if (node.type === "@n8n/n8n-nodes-langchain.mcpClient" && node.parameters?.authentication === "mcpOAuth2Api") {
+      node.credentials = { ...(node.credentials ?? {}), mcpOAuth2Api: credential };
+    }
+  }
+  return copy;
+}
 function forApi(workflow) {
   const copy = structuredClone(workflow);
   for (const key of ["id", "versionId", "createdAt", "updatedAt", "shared", "active", "tags"]) delete copy[key];
@@ -59,8 +72,10 @@ function forApi(workflow) {
 const existing = await listWorkflows();
 const deployed = [];
 for (const [file, name] of definitions) {
-  const workflow = JSON.parse(fs.readFileSync(path.join(dir, file), "utf8"));
+  let workflow = JSON.parse(fs.readFileSync(path.join(dir, file), "utf8"));
   const current = existing.find((item) => item.name === name);
+  const currentWorkflow = current ? await n8n(`/workflows/${current.id}`) : undefined;
+  workflow = preserveMcpCredentials(workflow, currentWorkflow);
   let id;
   if (current) {
     const updated = await n8n(`/workflows/${current.id}`, { method: "PUT", body: JSON.stringify(forApi(workflow)) });
