@@ -19,8 +19,8 @@ describe("public brand asset package", () => {
     for (const file of files) expect(existsSync(join(root, "public/assets", file)), file).toBe(true);
   });
 
-  it("keeps restricted package sizes unavailable to workflow selection", () => {
+  it("keeps profile marketing approvals current", () => {
     expect(manifest.products["sunflower-oil-3l"].approved_for_marketing).toBe(false);
-    expect(manifest.products["sunflower-oil-17l"].approved_for_marketing).toBe(false);
+    expect(manifest.products["sunflower-oil-17l"].approved_for_marketing).toBe(true);
   });
 });

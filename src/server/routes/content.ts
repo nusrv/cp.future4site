@@ -345,7 +345,10 @@ async function requestCreativeProduction(contentRequestId: string, requestedByUs
   const workflowName = creativeType === "creative_video_generation"
     ? config.N8N_CREATIVE_VIDEO_WEBHOOK_PATH
     : config.N8N_CREATIVE_IMAGE_WEBHOOK_PATH;
-  const productAssetIds = resolveProductAssetIds(content.product);
+  const productAssetIds = resolveProductAssetIds([
+    content.product,
+    content.topic,
+  ].filter(Boolean).join(" "));
   const job = await createAutomationJob({
     jobType: creativeType,
     title: `${creativeType === "creative_video_generation" ? "Generate video" : "Generate image"}: ${content.topic.slice(0, 80)}`,
@@ -362,6 +365,7 @@ async function requestCreativeProduction(contentRequestId: string, requestedByUs
       brand: content.brand,
       business_line: content.businessLine,
       product: content.product,
+      topic: content.topic,
       brand_id: resolveBrandId(content.brand),
       logo_id: "primary",
       product_asset_id: productAssetIds[0] ?? null,
@@ -422,10 +426,15 @@ function resolveBrandId(brand: string) {
 
 function resolveProductAssetIds(product?: string | null) {
   if (!product) return [];
-  const normalized = product.toLowerCase().replace(/\s+/g, "");
+  const source = product.toLowerCase();
+  const compact = source.replace(/\s+/g, "");
   const ids: string[] = [];
   for (const size of ["18l", "17l", "10l", "5l", "4l", "3l", "1l"]) {
-    if (normalized.includes(size)) ids.push(`sunflower-oil-${size}`);
+    const liters = size.slice(0, -1);
+    const standaloneCapacity = new RegExp(`(^|[^0-9])${liters}([^0-9]|$)`, "i");
+    if (compact.includes(size) || standaloneCapacity.test(source)) {
+      ids.push(`sunflower-oil-${size}`);
+    }
   }
   return [...new Set(ids)];
 }
