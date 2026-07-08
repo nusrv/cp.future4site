@@ -4,6 +4,30 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-08 fixed-template larger product fit-area update
+
+Completed after syncing from current live n8n first:
+
+- Exported current live `FF Admin - Creative Image Generation` (`rWQZP7saIkXUXDUD`) before editing.
+- Saved restore backup at `workflows/n8n/backups/creative-image-generation-backup-2026-07-08-17-01.json`.
+- Used the provided `fit-area.png` reference image in the workspace root. Detected black guide bbox on the 1122x1402 image: left=234, top=221, right=994, bottom=1228, w=761, h=1008.
+- Updated `Compose Brand Image With Sharp` product frame to make products larger while preserving bottom/left alignment:
+  - `x = Math.round(width * 0.2086)`
+  - `y = Math.round(height * 0.1576)`
+  - `w = Math.round(width * 0.6783)`
+  - `h = Math.round(height * 0.7190)`
+- For 1080x1350 output, final frame is x=225, y=213, w=733, h=971.
+- Product remains resized with `fit: "inside"`, `withoutEnlargement: false`, horizontally centered, and bottom-aligned to `productFrame.y + productFrame.h - productHeight`.
+- Confirmed no vertical centering, no product trim, no product ratio knobs, no extra logo/headline/CTA/button/text panel/frame rectangle.
+- Rebuilt and contract-checked locally. Deployed and activated live workflow `rWQZP7saIkXUXDUD`. Live n8n `updatedAt`: `2026-07-08T14:02:28.212Z`.
+- Re-exported live workflow after deploy and confirmed active=true, 7 nodes, new frame constants present, bottom alignment present, no vertical centering, no trim, and no Magnific nodes.
+
+Testing status:
+
+- Static workflow/source verification passed.
+- End-to-end CP tests still need to be run from CP for 1L, 5L, and 10L because local env does not contain webhook signing secret or CP auth credentials.
+- Expected operator test: dispatch CP image requests for 1L, 5L, and 10L; confirm each product is larger, fits inside the new virtual frame, is horizontally centered, touches the frame bottom, no black rectangle is visible, callback succeeds, CP receives JPEG, and callback body size remains under limit.
+
 ## 2026-07-08 fixed-template product bottom-alignment update
 
 Completed after syncing from current live n8n first:

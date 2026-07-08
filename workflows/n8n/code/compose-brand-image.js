@@ -66,9 +66,9 @@ try {
 async function buildProductComposite(targetWidth, targetHeight) {
   const productFrame = {
     x: Math.round(targetWidth * 0.2086),
-    y: Math.round(targetHeight * 0.2247),
-    w: Math.round(targetWidth * 0.5294),
-    h: Math.round(targetHeight * 0.6355)
+    y: Math.round(targetHeight * 0.1576),
+    w: Math.round(targetWidth * 0.6783),
+    h: Math.round(targetHeight * 0.7190)
   };
 
   const productBuffer = await sharp(productSourceBuffer)
@@ -177,4 +177,5 @@ return [
     }
   }
 ];
+
 

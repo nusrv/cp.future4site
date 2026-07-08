@@ -1,0 +1,475 @@
+{
+  "updatedAt": "2026-07-08T13:53:00.774Z",
+  "createdAt": "2026-06-29T09:08:54.729Z",
+  "id": "rWQZP7saIkXUXDUD",
+  "name": "FF Admin - Creative Image Generation",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "creative-image-webhook",
+      "name": "CP Creative Image Request Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "path": "future-foresight/creative-image-generation",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "ce62ca94-f33b-4d29-928b-c44998c54d81"
+    },
+    {
+      "id": "validate-cp-request",
+      "name": "Validate Signed CP Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        250,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const crypto = require(\"crypto\");\nconst envelope = $json;\nconst body = envelope.body ?? envelope;\nconst headers = envelope.headers ?? {};\nconst signature = String(headers[\"x-ff-signature\"] ?? \"\");\nconst timestamp = String(headers[\"x-ff-timestamp\"] ?? \"\");\nconst nonce = String(headers[\"x-ff-nonce\"] ?? \"\");\nconst secret = $env.N8N_WEBHOOK_SECRET;\nif (!secret) throw new Error(\"Missing N8N_WEBHOOK_SECRET in n8n environment\");\nif (!signature || !timestamp || !nonce) throw new Error(\"Missing CP request signature headers\");\nif (!body.job_id || !body.correlation_id || !body.callback_url) throw new Error(\"Missing job_id, correlation_id, or callback_url\");\nif (body.workflow_type !== \"creative_image_generation\") throw new Error(\"Unexpected workflow_type\");\nconst drift = Math.abs(Date.now() - Date.parse(timestamp));\nif (!Number.isFinite(drift) || drift > 5 * 60 * 1000) throw new Error(\"CP request timestamp rejected\");\nconst raw = JSON.stringify(body);\nconst expected = crypto.createHmac(\"sha256\", secret).update(timestamp + \".\" + nonce + \".\" + raw).digest(\"hex\");\nconst supplied = Buffer.from(signature, \"hex\");\nconst calculated = Buffer.from(expected, \"hex\");\nif (supplied.length !== calculated.length || !crypto.timingSafeEqual(supplied, calculated)) throw new Error(\"Invalid CP request signature\");\nreturn [{ json: { cp: body, accepted: true, received_at: new Date().toISOString() } }];"
+      }
+    },
+    {
+      "id": "respond-cp",
+      "name": "Acknowledge CP Request",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        500,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: true, job_id: $json.cp.job_id, workflow_type: \"creative_image_generation\" } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "resolve-brand-assets",
+      "name": "Resolve Brand Assets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        750,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const fs = require(\"fs\");\nconst path = require(\"path\");\n\nconst cp = $json.cp;\nconst payload = cp.payload ?? {};\n\nconst baseDir = path.resolve(String($env.BRAND_ASSETS_BASE_DIR || \"/data/brand-assets\"));\n\nconst idPattern = /^[a-z0-9][a-z0-9-]{0,63}$/;\n\nconst brandId = String(payload.brand_id || \"future-oils\");\nconst logoId = String(payload.logo_id || \"primary\");\nconst ratio = String(payload.ratio || \"4:5\");\n\nif (!idPattern.test(brandId) || !idPattern.test(logoId)) {\n  throw new Error(\"Invalid brand asset identifier\");\n}\n\nif (!new Set([\"4:5\", \"1:1\", \"9:16\"]).has(ratio)) {\n  throw new Error(\"Unsupported creative ratio\");\n}\n\nconst profilePath = path.resolve(baseDir, \"brand-profile.json\");\n\nif (!profilePath.startsWith(baseDir + path.sep)) {\n  throw new Error(\"Brand profile path escaped asset root\");\n}\n\nconst profile = JSON.parse(fs.readFileSync(profilePath, \"utf8\"));\n\nif (profile.brand_id !== brandId) {\n  throw new Error(\"Requested brand profile is unavailable\");\n}\n\nfunction resolveAsset(relative) {\n  if (!relative || typeof relative !== \"string\") {\n    throw new Error(\"Brand asset is missing from profile\");\n  }\n\n  const absolute = path.resolve(baseDir, relative);\n\n  if (!absolute.startsWith(baseDir + path.sep)) {\n    throw new Error(\"Brand asset path escaped asset root\");\n  }\n\n  if (!fs.statSync(absolute).isFile()) {\n    throw new Error(\"Brand asset file is unavailable: \" + absolute);\n  }\n\n  return absolute;\n}\n\nfunction normalizeArabicDigits(value) {\n  const arabicIndic = \"٠١٢٣٤٥٦٧٨٩\";\n  const easternArabicIndic = \"۰۱۲۳۴۵۶۷۸۹\";\n\n  return String(value || \"\").replace(/[٠-٩۰-۹]/g, (digit) => {\n    const a = arabicIndic.indexOf(digit);\n    if (a >= 0) return String(a);\n\n    const e = easternArabicIndic.indexOf(digit);\n    if (e >= 0) return String(e);\n\n    return digit;\n  });\n}\n\nfunction normalizeText(value) {\n  return normalizeArabicDigits(value)\n    .toLowerCase()\n    .replace(/&/g, \" and \")\n    .replace(/[._/\\\\]+/g, \" \")\n    .replace(/[-]+/g, \" \")\n    .replace(/\\s+/g, \" \")\n    .trim();\n}\n\nfunction compactText(value) {\n  return normalizeText(value).replace(/\\s+/g, \"\");\n}\n\nfunction getPayloadSearchText(payload) {\n  return [\n    payload.product_asset_id,\n    payload.product_key,\n    payload.product_code,\n    payload.product_id,\n    payload.sku,\n    payload.product_sku,\n    payload.product,\n    payload.product_name,\n    payload.title,\n    payload.headline,\n    payload.description,\n    payload.size,\n    payload.capacity,\n    payload.volume,\n    payload.package_size,\n    payload.pack_size\n  ]\n    .filter((value) => value !== null && value !== undefined && String(value).trim())\n    .map(String)\n    .join(\" \");\n}\n\n/**\n * Extract liter capacity from payload.\n * Supports:\n * 5L\n * 5 L\n * 5-liter\n * 5 liter\n * 5 litres\n * 5 ltr\n * 5 لتر\n * ٥ لتر\n */\nfunction extractCapacityLiters(payload) {\n  const explicitFields = [\n    payload.capacity_liters,\n    payload.capacity_litre,\n    payload.volume_liters,\n    payload.volume_litre,\n    payload.liters,\n    payload.litres,\n    payload.size_liters,\n    payload.size_litre,\n    payload.pack_size_liters,\n    payload.pack_size_litre\n  ];\n\n  for (const value of explicitFields) {\n    const number = Number(normalizeArabicDigits(value));\n\n    if (Number.isFinite(number) && number > 0 && number <= 100) {\n      return number;\n    }\n  }\n\n  const text = normalizeText(getPayloadSearchText(payload));\n\n  const patterns = [\n    /(?:^|\\D)(\\d+(?:\\.\\d+)?)\\s*(?:l|lt|ltr|liter|liters|litre|litres|لتر|ليتر)(?:\\D|$)/i,\n    /(?:^|\\D)(\\d+(?:\\.\\d+)?)\\s*[- ]?\\s*(?:l|lt|ltr)(?:\\D|$)/i\n  ];\n\n  for (const pattern of patterns) {\n    const match = text.match(pattern);\n\n    if (match) {\n      const number = Number(match[1]);\n\n      if (Number.isFinite(number) && number > 0 && number <= 100) {\n        return number;\n      }\n    }\n  }\n\n  /**\n   * Fallback:\n   * لو لم نجد وحدة L/لتر، نبحث عن رقم واضح من السعات المعروفة.\n   * رتبنا 18 و13 و12 و10 قبل 1 و2 حتى لا يلتقط رقم 1 من 10 أو 12.\n   */\n  const knownSizes = [18, 13, 12, 10, 5, 4, 3, 2, 1];\n\n  for (const size of knownSizes) {\n    const re = new RegExp(\"(^|\\\\D)\" + size + \"(\\\\D|$)\", \"i\");\n\n    if (re.test(text)) {\n      return size;\n    }\n  }\n\n  return null;\n}\n\nfunction productCandidateText(productId, product) {\n  return [\n    productId,\n    product?.id,\n    product?.key,\n    product?.sku,\n    product?.code,\n    product?.name,\n    product?.title,\n    product?.label,\n    product?.description,\n    product?.size,\n    product?.capacity,\n    product?.volume,\n    product?.package_size,\n    product?.pack_size,\n    product?.file\n  ]\n    .filter((value) => value !== null && value !== undefined && String(value).trim())\n    .map(String)\n    .join(\" \");\n}\n\nfunction productHasCapacity(productId, product, capacityLiters) {\n  if (!capacityLiters) return false;\n\n  const numericFields = [\n    product?.capacity_liters,\n    product?.capacity_litre,\n    product?.volume_liters,\n    product?.volume_litre,\n    product?.liters,\n    product?.litres,\n    product?.size_liters,\n    product?.size_litre,\n    product?.pack_size_liters,\n    product?.pack_size_litre\n  ];\n\n  for (const value of numericFields) {\n    const number = Number(normalizeArabicDigits(value));\n\n    if (Number.isFinite(number) && number === capacityLiters) {\n      return true;\n    }\n  }\n\n  const text = normalizeText(productCandidateText(productId, product));\n  const compact = compactText(productCandidateText(productId, product));\n\n  const size = String(capacityLiters).replace(/\\.0+$/, \"\");\n\n  const capacityPatterns = [\n    new RegExp(\"(^|\\\\D)\" + size + \"\\\\s*(l|lt|ltr|liter|liters|litre|litres|لتر|ليتر)(\\\\D|$)\", \"i\"),\n    new RegExp(\"(^|\\\\D)\" + size + \"\\\\s*[- ]?\\\\s*(l|lt|ltr)(\\\\D|$)\", \"i\"),\n    new RegExp(\"(^|\\\\D)\" + size + \"\\\\s*لتر(\\\\D|$)\", \"i\")\n  ];\n\n  if (capacityPatterns.some((pattern) => pattern.test(text))) {\n    return true;\n  }\n\n  const compactPatterns = [\n    size + \"l\",\n    size + \"lt\",\n    size + \"ltr\",\n    size + \"liter\",\n    size + \"litre\",\n    size + \"liters\",\n    size + \"litres\",\n    size + \"لتر\",\n    size + \"ليتر\"\n  ];\n\n  if (compactPatterns.some((token) => compact.includes(token))) {\n    return true;\n  }\n\n  /**\n   * Fallback مضبوط:\n   * يطابق الرقم كجزء مستقل في product id أو اسم الملف أو الاسم.\n   */\n  const standaloneNumber = new RegExp(\"(^|\\\\D)\" + size + \"(\\\\D|$)\", \"i\");\n\n  return standaloneNumber.test(text);\n}\n\nfunction scoreProductMatch(productId, product, payload, capacityLiters) {\n  const searchText = normalizeText(getPayloadSearchText(payload));\n  const searchCompact = compactText(getPayloadSearchText(payload));\n\n  const candidateText = normalizeText(productCandidateText(productId, product));\n  const candidateCompact = compactText(productCandidateText(productId, product));\n\n  let score = 0;\n  const reasons = [];\n\n  const explicitKeys = [\n    payload.product_asset_id,\n    payload.product_key,\n    payload.product_code,\n    payload.product_id,\n    payload.sku,\n    payload.product_sku\n  ]\n    .filter((value) => value !== null && value !== undefined && String(value).trim())\n    .map((value) => compactText(value));\n\n  const productIdCompact = compactText(productId);\n\n  for (const key of explicitKeys) {\n    if (!key) continue;\n\n    if (productIdCompact === key) {\n      score += 1000;\n      reasons.push(\"exact explicit key match\");\n    } else if (candidateCompact.includes(key) || key.includes(productIdCompact)) {\n      score += 600;\n      reasons.push(\"partial explicit key match\");\n    }\n  }\n\n  if (capacityLiters && productHasCapacity(productId, product, capacityLiters)) {\n    score += 300;\n    reasons.push(\"capacity match \" + capacityLiters + \"L\");\n  }\n\n  /**\n   * Product/category hints.\n   */\n  const categoryWords = [\n    \"sunflower\",\n    \"refined\",\n    \"oil\",\n    \"زيت\",\n    \"دوار\",\n    \"الشمس\"\n  ];\n\n  for (const word of categoryWords) {\n    if (searchCompact.includes(compactText(word)) && candidateCompact.includes(compactText(word))) {\n      score += 20;\n      reasons.push(\"category word match: \" + word);\n    }\n  }\n\n  /**\n   * Prefer marketing-approved products.\n   */\n  if (product?.approved_for_marketing === true) {\n    score += 25;\n    reasons.push(\"approved for marketing\");\n  }\n\n  return {\n    productId,\n    product,\n    score,\n    reasons\n  };\n}\n\nfunction findProductAssetId(profile, payload) {\n  const products = profile.products || {};\n  const productIds = Object.keys(products);\n\n  if (!productIds.length) {\n    return {\n      product_asset_id: null,\n      reason: \"brand profile has no products\",\n      capacity_liters: null,\n      candidates: []\n    };\n  }\n\n  /**\n   * 1. Exact product_asset_id if provided.\n   */\n  const explicitProductAssetId = String(payload.product_asset_id || \"\").trim();\n\n  if (explicitProductAssetId) {\n    const normalizedExplicit = compactText(explicitProductAssetId);\n\n    const exactId = productIds.find((id) => compactText(id) === normalizedExplicit);\n\n    if (exactId) {\n      return {\n        product_asset_id: exactId,\n        reason: \"matched explicit product_asset_id\",\n        capacity_liters: extractCapacityLiters(payload),\n        candidates: [{ productId: exactId, score: 1000, reasons: [\"explicit product_asset_id\"] }]\n      };\n    }\n  }\n\n  const capacityLiters = extractCapacityLiters(payload);\n\n  const scored = productIds\n    .map((productId) => scoreProductMatch(productId, products[productId], payload, capacityLiters))\n    .filter((candidate) => candidate.score > 0)\n    .sort((a, b) => b.score - a.score);\n\n  if (!scored.length) {\n    return {\n      product_asset_id: null,\n      reason: \"no product matched payload text or capacity\",\n      capacity_liters: capacityLiters,\n      candidates: []\n    };\n  }\n\n  const best = scored[0];\n\n  return {\n    product_asset_id: best.productId,\n    reason: \"selected highest scoring product match\",\n    capacity_liters: capacityLiters,\n    candidates: scored.slice(0, 5).map((candidate) => ({\n      productId: candidate.productId,\n      score: candidate.score,\n      reasons: candidate.reasons\n    }))\n  };\n}\n\nconst logoRelative = profile.logos?.[logoId];\n\nif (!logoRelative) {\n  throw new Error(\"Requested logo asset is unavailable\");\n}\n\nconst templateBackgroundRelative = String(profile.template_background || \"logo/background.png\");\nlet templateBackgroundPath;\n\ntry {\n  templateBackgroundPath = resolveAsset(templateBackgroundRelative);\n} catch {\n  throw new Error(\"Fixed template background is unavailable\");\n}\n\nconst productResolution = findProductAssetId(profile, payload);\nconst productAssetId = productResolution.product_asset_id;\nconst product = productAssetId ? profile.products?.[productAssetId] : null;\n\nif (productAssetId && !product) {\n  throw new Error(\"Requested product asset is unavailable: \" + productAssetId);\n}\n\nif (product && product.approved_for_marketing !== true) {\n  throw new Error(product.restriction || \"Requested product asset is not approved for marketing\");\n}\n\nreturn [\n  {\n    json: {\n      cp,\n      asset_contract: {\n        brand_id: brandId,\n        logo_id: logoId,\n        product_asset_id: productAssetId,\n        product_resolution: productResolution,\n        ratio,\n        profile_version: profile.schema_version,\n        brand_theme: profile.brand_theme || {},\n        layout_rules: profile.layout_rules || {},\n        logo_path: resolveAsset(logoRelative),\n        product_path: product ? resolveAsset(product.file) : null,\n        template_background_path: templateBackgroundPath\n      }\n    }\n  }\n];\n"
+      }
+    },
+    {
+      "id": "compose-brand-image",
+      "name": "Compose Brand Image With Sharp",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const sharp = require(\"sharp\");\nconst fs = require(\"fs\");\nconst path = require(\"path\");\n\nfunction clampNumber(value, fallback, min, max) {\n  const number = Number(value);\n\n  if (!Number.isFinite(number)) return fallback;\n\n  return Math.min(max, Math.max(min, number));\n}\n\n/**\n * Read data from previous node.\n */\nconst resolved = $(\"Resolve Brand Assets\").item.json;\nconst payload = resolved.cp?.payload ?? {};\nconst contract = resolved.asset_contract;\n\nif (!contract) {\n  throw new Error(\"Missing asset_contract from Resolve Brand Assets\");\n}\n\nif (!contract.template_background_path) {\n  throw new Error(\"Fixed template background is unavailable\");\n}\n\nif (!fs.existsSync(contract.template_background_path)) {\n  throw new Error(\"Fixed template background is unavailable\");\n}\n\nif (!contract.product_path) {\n  throw new Error(\"Product image is required for fixed template composition\");\n}\n\nif (!fs.existsSync(contract.product_path)) {\n  throw new Error(\"Product file does not exist: \" + contract.product_path);\n}\n\nconst dimensions = {\n  \"4:5\": [1080, 1350],\n  \"1:1\": [1080, 1080],\n  \"9:16\": [1080, 1920]\n}[contract.ratio];\n\nif (!dimensions) {\n  throw new Error(\"Unsupported ratio: \" + contract.ratio);\n}\n\nconst [width, height] = dimensions;\nconst backgroundBuffer = fs.readFileSync(contract.template_background_path);\nconst productSourceBuffer = fs.readFileSync(contract.product_path);\n\ntry {\n  await sharp(backgroundBuffer).metadata();\n} catch (error) {\n  throw new Error(\"Sharp could not read fixed template background: \" + error.message);\n}\n\ntry {\n  await sharp(productSourceBuffer).metadata();\n} catch (error) {\n  throw new Error(\"Sharp could not read product image: \" + error.message);\n}\n\nasync function buildProductComposite(targetWidth, targetHeight) {\n  const productFrame = {\n    x: Math.round(targetWidth * 0.2086),\n    y: Math.round(targetHeight * 0.2247),\n    w: Math.round(targetWidth * 0.5294),\n    h: Math.round(targetHeight * 0.6355)\n  };\n\n  const productBuffer = await sharp(productSourceBuffer)\n    .resize({\n      width: productFrame.w,\n      height: productFrame.h,\n      fit: \"inside\",\n      withoutEnlargement: false\n    })\n    .png()\n    .toBuffer();\n\n  const productMeta = await sharp(productBuffer).metadata();\n  const productWidth = productMeta.width || 0;\n  const productHeight = productMeta.height || 0;\n\n  const productLeft = Math.round(\n    productFrame.x + (productFrame.w - productWidth) / 2\n  );\n\n  const productTop = Math.round(\n    productFrame.y + productFrame.h - productHeight\n  );\n\n  return {\n    input: productBuffer,\n    left: productLeft,\n    top: productTop\n  };\n}\n\nasync function renderJpeg(targetWidth, targetHeight, quality) {\n  const productComposite = await buildProductComposite(targetWidth, targetHeight);\n\n  return sharp(backgroundBuffer)\n    .resize(targetWidth, targetHeight, {\n      fit: \"cover\",\n      position: \"center\"\n    })\n    .composite([productComposite])\n    .flatten({\n      background: \"#ffffff\"\n    })\n    .jpeg({\n      quality,\n      mozjpeg: true\n    })\n    .toBuffer();\n}\n\nconst maxCallbackImageBytes = clampNumber(\n  payload.max_callback_image_bytes,\n  650 * 1024,\n  220 * 1024,\n  2 * 1024 * 1024\n);\n\nlet outputWidth = width;\nlet outputHeight = height;\nlet finalBuffer = null;\nlet finalQuality = null;\n\nfor (const quality of [82, 78, 74, 70, 66, 62, 58, 54, 50, 46, 42]) {\n  const candidate = await renderJpeg(width, height, quality);\n\n  finalBuffer = candidate;\n  finalQuality = quality;\n\n  if (candidate.length <= maxCallbackImageBytes) {\n    break;\n  }\n}\n\nif (finalBuffer.length > maxCallbackImageBytes) {\n  outputWidth = Math.round(width * 0.85);\n  outputHeight = Math.round(height * 0.85);\n\n  for (const quality of [78, 74, 70, 66, 62, 58, 54, 50, 46, 42]) {\n    const candidate = await renderJpeg(outputWidth, outputHeight, quality);\n\n    finalBuffer = candidate;\n    finalQuality = quality;\n\n    if (candidate.length <= maxCallbackImageBytes) {\n      break;\n    }\n  }\n}\n\nreturn [\n  {\n    json: {\n      cp: resolved.cp,\n      asset_contract: contract,\n      provider_creation_id: String(resolved.cp.job_id) + \"_fixed_template\",\n      composed_file: {\n        name: \"creative-\" + resolved.cp.job_id + \".jpg\",\n        mime_type: \"image/jpeg\",\n        data_base64: finalBuffer.toString(\"base64\"),\n        size_bytes: finalBuffer.length,\n        width: outputWidth,\n        height: outputHeight,\n        quality: finalQuality\n      },\n      template_background_source: path.basename(contract.template_background_path)\n    }\n  }\n];\n\n"
+      }
+    },
+    {
+      "id": "prepare-completed-callback",
+      "name": "Prepare Completed CP Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const crypto = require(\"crypto\");\n\nfunction removeUndefined(value) {\n  if (Array.isArray(value)) {\n    return value.map(removeUndefined);\n  }\n\n  if (value && typeof value === \"object\") {\n    const cleaned = {};\n\n    for (const [key, val] of Object.entries(value)) {\n      if (val !== undefined) {\n        cleaned[key] = removeUndefined(val);\n      }\n    }\n\n    return cleaned;\n  }\n\n  return value;\n}\n\nconst item = $json;\nconst secret = $env.PLATFORM_CALLBACK_SECRET;\n\nif (!secret) {\n  throw new Error(\"Missing PLATFORM_CALLBACK_SECRET in n8n environment\");\n}\n\nif (!item.cp?.callback_url) {\n  throw new Error(\"Missing callback_url from CP payload\");\n}\n\nif (!item.composed_file?.data_base64) {\n  throw new Error(\"Missing composed image data_base64\");\n}\n\nconst timestamp = new Date().toISOString();\n\nconst nonce =\n  \"n8n_composed_image_\" +\n  Date.now() +\n  \"_\" +\n  Math.random().toString(36).slice(2);\n\nconst file = {\n  file_id: String(item.provider_creation_id || item.cp.job_id) + \"_composed\",\n  type: \"image\",\n  name: item.composed_file.name,\n  mime_type: item.composed_file.mime_type,\n  data_base64: item.composed_file.data_base64,\n  size_bytes: item.composed_file.size_bytes,\n  width: item.composed_file.width,\n  height: item.composed_file.height,\n  source: \"n8n-sharp-compositor\"\n};\n\nconst publicFile = {\n  file_id: file.file_id,\n  type: file.type,\n  name: file.name,\n  mime_type: file.mime_type,\n  size_bytes: file.size_bytes,\n  width: file.width,\n  height: file.height,\n  source: file.source\n};\n\nconst publicAssetContract = {\n  brand_id: item.asset_contract?.brand_id || null,\n  logo_id: item.asset_contract?.logo_id || null,\n  product_asset_id: item.asset_contract?.product_asset_id || null,\n  ratio: item.asset_contract?.ratio || null,\n  profile_version: item.asset_contract?.profile_version || null,\n  template_background_source: item.template_background_source || null\n};\n\n/**\n * نرجع شكل الـ body قريبًا من النسخة الأصلية.\n * مهم: نترك signature داخل body فارغًا أثناء حساب التوقيع.\n */\nconst callbackBody = removeUndefined({\n  job_id: item.cp.job_id,\n  correlation_id: item.cp.correlation_id,\n  idempotency_key: item.cp.idempotency_key,\n  workflow_type: \"creative_image_generation\",\n  workflow_version: \"creative-image-sharp-v1\",\n  status: \"completed\",\n  current_step: \"Branded image composed and ready for review\",\n\n  nonce,\n  signature_timestamp: timestamp,\n  signature: \"\",\n\n  outputs: {\n    provider: \"fixed-template-sharp\",\n    asset_contract: publicAssetContract,\n    files: [publicFile]\n  },\n\n  files: [file],\n  warnings: []\n});\n\nconst raw = JSON.stringify(callbackBody);\n\nconst signature = crypto\n  .createHmac(\"sha256\", secret)\n  .update(timestamp + \".\" + nonce + \".\" + raw)\n  .digest(\"hex\");\n\nreturn [\n  {\n    json: {\n      callback_url: item.cp.callback_url,\n      callback_headers: {\n        signature,\n        timestamp,\n        nonce\n      },\n      callback_body: callbackBody,\n      callback_debug: {\n        body_size_bytes: Buffer.byteLength(raw, \"utf8\"),\n        file_size_bytes: item.composed_file.size_bytes,\n        file_mime_type: item.composed_file.mime_type,\n        file_name: item.composed_file.name,\n        has_body_nonce: true,\n        has_body_signature_timestamp: true,\n        has_body_signature_field: true\n      }\n    }\n  }\n];\n"
+      }
+    },
+    {
+      "id": "send-completed-callback",
+      "name": "Send Signed Callback To CP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1500,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-ff-signature",
+              "value": "={{ $json.callback_headers.signature }}"
+            },
+            {
+              "name": "x-ff-timestamp",
+              "value": "={{ $json.callback_headers.timestamp }}"
+            },
+            {
+              "name": "x-ff-nonce",
+              "value": "={{ $json.callback_headers.nonce }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.callback_body }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "CP Creative Image Request Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Signed CP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Signed CP Request": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge CP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acknowledge CP Request": {
+      "main": [
+        [
+          {
+            "node": "Resolve Brand Assets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Brand Assets": {
+      "main": [
+        [
+          {
+            "node": "Compose Brand Image With Sharp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compose Brand Image With Sharp": {
+      "main": [
+        [
+          {
+            "node": "Prepare Completed CP Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Completed CP Callback": {
+      "main": [
+        [
+          {
+            "node": "Send Signed Callback To CP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "f390c45d-9f56-4d19-a11a-a907e116981e",
+  "activeVersionId": "f390c45d-9f56-4d19-a11a-a907e116981e",
+  "versionCounter": 226,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-06-29T09:08:54.733Z",
+      "createdAt": "2026-06-29T09:08:54.733Z",
+      "role": "workflow:owner",
+      "workflowId": "rWQZP7saIkXUXDUD",
+      "projectId": "n0ZLPIbmhtqRy4wY",
+      "project": {
+        "updatedAt": "2026-06-22T09:54:55.745Z",
+        "createdAt": "2026-06-22T09:54:21.172Z",
+        "id": "n0ZLPIbmhtqRy4wY",
+        "name": "Future Foresight Technology <info@future4site.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "2dab960c-7788-4018-9b2b-32d0a1877db9"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-07-08T13:53:00.776Z",
+    "createdAt": "2026-07-08T13:53:00.776Z",
+    "versionId": "f390c45d-9f56-4d19-a11a-a907e116981e",
+    "workflowId": "rWQZP7saIkXUXDUD",
+    "nodes": [
+      {
+        "id": "creative-image-webhook",
+        "name": "CP Creative Image Request Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          0,
+          0
+        ],
+        "parameters": {
+          "path": "future-foresight/creative-image-generation",
+          "httpMethod": "POST",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "webhookId": "ce62ca94-f33b-4d29-928b-c44998c54d81"
+      },
+      {
+        "id": "validate-cp-request",
+        "name": "Validate Signed CP Request",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          250,
+          0
+        ],
+        "parameters": {
+          "jsCode": "const crypto = require(\"crypto\");\nconst envelope = $json;\nconst body = envelope.body ?? envelope;\nconst headers = envelope.headers ?? {};\nconst signature = String(headers[\"x-ff-signature\"] ?? \"\");\nconst timestamp = String(headers[\"x-ff-timestamp\"] ?? \"\");\nconst nonce = String(headers[\"x-ff-nonce\"] ?? \"\");\nconst secret = $env.N8N_WEBHOOK_SECRET;\nif (!secret) throw new Error(\"Missing N8N_WEBHOOK_SECRET in n8n environment\");\nif (!signature || !timestamp || !nonce) throw new Error(\"Missing CP request signature headers\");\nif (!body.job_id || !body.correlation_id || !body.callback_url) throw new Error(\"Missing job_id, correlation_id, or callback_url\");\nif (body.workflow_type !== \"creative_image_generation\") throw new Error(\"Unexpected workflow_type\");\nconst drift = Math.abs(Date.now() - Date.parse(timestamp));\nif (!Number.isFinite(drift) || drift > 5 * 60 * 1000) throw new Error(\"CP request timestamp rejected\");\nconst raw = JSON.stringify(body);\nconst expected = crypto.createHmac(\"sha256\", secret).update(timestamp + \".\" + nonce + \".\" + raw).digest(\"hex\");\nconst supplied = Buffer.from(signature, \"hex\");\nconst calculated = Buffer.from(expected, \"hex\");\nif (supplied.length !== calculated.length || !crypto.timingSafeEqual(supplied, calculated)) throw new Error(\"Invalid CP request signature\");\nreturn [{ json: { cp: body, accepted: true, received_at: new Date().toISOString() } }];"
+        }
+      },
+      {
+        "id": "respond-cp",
+        "name": "Acknowledge CP Request",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [
+          500,
+          0
+        ],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ { accepted: true, job_id: $json.cp.job_id, workflow_type: \"creative_image_generation\" } }}",
+          "options": {}
+        }
+      },
+      {
+        "id": "resolve-brand-assets",
+        "name": "Resolve Brand Assets",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          750,
+          0
+        ],
+        "parameters": {
+          "jsCode": "const fs = require(\"fs\");\nconst path = require(\"path\");\n\nconst cp = $json.cp;\nconst payload = cp.payload ?? {};\n\nconst baseDir = path.resolve(String($env.BRAND_ASSETS_BASE_DIR || \"/data/brand-assets\"));\n\nconst idPattern = /^[a-z0-9][a-z0-9-]{0,63}$/;\n\nconst brandId = String(payload.brand_id || \"future-oils\");\nconst logoId = String(payload.logo_id || \"primary\");\nconst ratio = String(payload.ratio || \"4:5\");\n\nif (!idPattern.test(brandId) || !idPattern.test(logoId)) {\n  throw new Error(\"Invalid brand asset identifier\");\n}\n\nif (!new Set([\"4:5\", \"1:1\", \"9:16\"]).has(ratio)) {\n  throw new Error(\"Unsupported creative ratio\");\n}\n\nconst profilePath = path.resolve(baseDir, \"brand-profile.json\");\n\nif (!profilePath.startsWith(baseDir + path.sep)) {\n  throw new Error(\"Brand profile path escaped asset root\");\n}\n\nconst profile = JSON.parse(fs.readFileSync(profilePath, \"utf8\"));\n\nif (profile.brand_id !== brandId) {\n  throw new Error(\"Requested brand profile is unavailable\");\n}\n\nfunction resolveAsset(relative) {\n  if (!relative || typeof relative !== \"string\") {\n    throw new Error(\"Brand asset is missing from profile\");\n  }\n\n  const absolute = path.resolve(baseDir, relative);\n\n  if (!absolute.startsWith(baseDir + path.sep)) {\n    throw new Error(\"Brand asset path escaped asset root\");\n  }\n\n  if (!fs.statSync(absolute).isFile()) {\n    throw new Error(\"Brand asset file is unavailable: \" + absolute);\n  }\n\n  return absolute;\n}\n\nfunction normalizeArabicDigits(value) {\n  const arabicIndic = \"٠١٢٣٤٥٦٧٨٩\";\n  const easternArabicIndic = \"۰۱۲۳۴۵۶۷۸۹\";\n\n  return String(value || \"\").replace(/[٠-٩۰-۹]/g, (digit) => {\n    const a = arabicIndic.indexOf(digit);\n    if (a >= 0) return String(a);\n\n    const e = easternArabicIndic.indexOf(digit);\n    if (e >= 0) return String(e);\n\n    return digit;\n  });\n}\n\nfunction normalizeText(value) {\n  return normalizeArabicDigits(value)\n    .toLowerCase()\n    .replace(/&/g, \" and \")\n    .replace(/[._/\\\\]+/g, \" \")\n    .replace(/[-]+/g, \" \")\n    .replace(/\\s+/g, \" \")\n    .trim();\n}\n\nfunction compactText(value) {\n  return normalizeText(value).replace(/\\s+/g, \"\");\n}\n\nfunction getPayloadSearchText(payload) {\n  return [\n    payload.product_asset_id,\n    payload.product_key,\n    payload.product_code,\n    payload.product_id,\n    payload.sku,\n    payload.product_sku,\n    payload.product,\n    payload.product_name,\n    payload.title,\n    payload.headline,\n    payload.description,\n    payload.size,\n    payload.capacity,\n    payload.volume,\n    payload.package_size,\n    payload.pack_size\n  ]\n    .filter((value) => value !== null && value !== undefined && String(value).trim())\n    .map(String)\n    .join(\" \");\n}\n\n/**\n * Extract liter capacity from payload.\n * Supports:\n * 5L\n * 5 L\n * 5-liter\n * 5 liter\n * 5 litres\n * 5 ltr\n * 5 لتر\n * ٥ لتر\n */\nfunction extractCapacityLiters(payload) {\n  const explicitFields = [\n    payload.capacity_liters,\n    payload.capacity_litre,\n    payload.volume_liters,\n    payload.volume_litre,\n    payload.liters,\n    payload.litres,\n    payload.size_liters,\n    payload.size_litre,\n    payload.pack_size_liters,\n    payload.pack_size_litre\n  ];\n\n  for (const value of explicitFields) {\n    const number = Number(normalizeArabicDigits(value));\n\n    if (Number.isFinite(number) && number > 0 && number <= 100) {\n      return number;\n    }\n  }\n\n  const text = normalizeText(getPayloadSearchText(payload));\n\n  const patterns = [\n    /(?:^|\\D)(\\d+(?:\\.\\d+)?)\\s*(?:l|lt|ltr|liter|liters|litre|litres|لتر|ليتر)(?:\\D|$)/i,\n    /(?:^|\\D)(\\d+(?:\\.\\d+)?)\\s*[- ]?\\s*(?:l|lt|ltr)(?:\\D|$)/i\n  ];\n\n  for (const pattern of patterns) {\n    const match = text.match(pattern);\n\n    if (match) {\n      const number = Number(match[1]);\n\n      if (Number.isFinite(number) && number > 0 && number <= 100) {\n        return number;\n      }\n    }\n  }\n\n  /**\n   * Fallback:\n   * لو لم نجد وحدة L/لتر، نبحث عن رقم واضح من السعات المعروفة.\n   * رتبنا 18 و13 و12 و10 قبل 1 و2 حتى لا يلتقط رقم 1 من 10 أو 12.\n   */\n  const knownSizes = [18, 13, 12, 10, 5, 4, 3, 2, 1];\n\n  for (const size of knownSizes) {\n    const re = new RegExp(\"(^|\\\\D)\" + size + \"(\\\\D|$)\", \"i\");\n\n    if (re.test(text)) {\n      return size;\n    }\n  }\n\n  return null;\n}\n\nfunction productCandidateText(productId, product) {\n  return [\n    productId,\n    product?.id,\n    product?.key,\n    product?.sku,\n    product?.code,\n    product?.name,\n    product?.title,\n    product?.label,\n    product?.description,\n    product?.size,\n    product?.capacity,\n    product?.volume,\n    product?.package_size,\n    product?.pack_size,\n    product?.file\n  ]\n    .filter((value) => value !== null && value !== undefined && String(value).trim())\n    .map(String)\n    .join(\" \");\n}\n\nfunction productHasCapacity(productId, product, capacityLiters) {\n  if (!capacityLiters) return false;\n\n  const numericFields = [\n    product?.capacity_liters,\n    product?.capacity_litre,\n    product?.volume_liters,\n    product?.volume_litre,\n    product?.liters,\n    product?.litres,\n    product?.size_liters,\n    product?.size_litre,\n    product?.pack_size_liters,\n    product?.pack_size_litre\n  ];\n\n  for (const value of numericFields) {\n    const number = Number(normalizeArabicDigits(value));\n\n    if (Number.isFinite(number) && number === capacityLiters) {\n      return true;\n    }\n  }\n\n  const text = normalizeText(productCandidateText(productId, product));\n  const compact = compactText(productCandidateText(productId, product));\n\n  const size = String(capacityLiters).replace(/\\.0+$/, \"\");\n\n  const capacityPatterns = [\n    new RegExp(\"(^|\\\\D)\" + size + \"\\\\s*(l|lt|ltr|liter|liters|litre|litres|لتر|ليتر)(\\\\D|$)\", \"i\"),\n    new RegExp(\"(^|\\\\D)\" + size + \"\\\\s*[- ]?\\\\s*(l|lt|ltr)(\\\\D|$)\", \"i\"),\n    new RegExp(\"(^|\\\\D)\" + size + \"\\\\s*لتر(\\\\D|$)\", \"i\")\n  ];\n\n  if (capacityPatterns.some((pattern) => pattern.test(text))) {\n    return true;\n  }\n\n  const compactPatterns = [\n    size + \"l\",\n    size + \"lt\",\n    size + \"ltr\",\n    size + \"liter\",\n    size + \"litre\",\n    size + \"liters\",\n    size + \"litres\",\n    size + \"لتر\",\n    size + \"ليتر\"\n  ];\n\n  if (compactPatterns.some((token) => compact.includes(token))) {\n    return true;\n  }\n\n  /**\n   * Fallback مضبوط:\n   * يطابق الرقم كجزء مستقل في product id أو اسم الملف أو الاسم.\n   */\n  const standaloneNumber = new RegExp(\"(^|\\\\D)\" + size + \"(\\\\D|$)\", \"i\");\n\n  return standaloneNumber.test(text);\n}\n\nfunction scoreProductMatch(productId, product, payload, capacityLiters) {\n  const searchText = normalizeText(getPayloadSearchText(payload));\n  const searchCompact = compactText(getPayloadSearchText(payload));\n\n  const candidateText = normalizeText(productCandidateText(productId, product));\n  const candidateCompact = compactText(productCandidateText(productId, product));\n\n  let score = 0;\n  const reasons = [];\n\n  const explicitKeys = [\n    payload.product_asset_id,\n    payload.product_key,\n    payload.product_code,\n    payload.product_id,\n    payload.sku,\n    payload.product_sku\n  ]\n    .filter((value) => value !== null && value !== undefined && String(value).trim())\n    .map((value) => compactText(value));\n\n  const productIdCompact = compactText(productId);\n\n  for (const key of explicitKeys) {\n    if (!key) continue;\n\n    if (productIdCompact === key) {\n      score += 1000;\n      reasons.push(\"exact explicit key match\");\n    } else if (candidateCompact.includes(key) || key.includes(productIdCompact)) {\n      score += 600;\n      reasons.push(\"partial explicit key match\");\n    }\n  }\n\n  if (capacityLiters && productHasCapacity(productId, product, capacityLiters)) {\n    score += 300;\n    reasons.push(\"capacity match \" + capacityLiters + \"L\");\n  }\n\n  /**\n   * Product/category hints.\n   */\n  const categoryWords = [\n    \"sunflower\",\n    \"refined\",\n    \"oil\",\n    \"زيت\",\n    \"دوار\",\n    \"الشمس\"\n  ];\n\n  for (const word of categoryWords) {\n    if (searchCompact.includes(compactText(word)) && candidateCompact.includes(compactText(word))) {\n      score += 20;\n      reasons.push(\"category word match: \" + word);\n    }\n  }\n\n  /**\n   * Prefer marketing-approved products.\n   */\n  if (product?.approved_for_marketing === true) {\n    score += 25;\n    reasons.push(\"approved for marketing\");\n  }\n\n  return {\n    productId,\n    product,\n    score,\n    reasons\n  };\n}\n\nfunction findProductAssetId(profile, payload) {\n  const products = profile.products || {};\n  const productIds = Object.keys(products);\n\n  if (!productIds.length) {\n    return {\n      product_asset_id: null,\n      reason: \"brand profile has no products\",\n      capacity_liters: null,\n      candidates: []\n    };\n  }\n\n  /**\n   * 1. Exact product_asset_id if provided.\n   */\n  const explicitProductAssetId = String(payload.product_asset_id || \"\").trim();\n\n  if (explicitProductAssetId) {\n    const normalizedExplicit = compactText(explicitProductAssetId);\n\n    const exactId = productIds.find((id) => compactText(id) === normalizedExplicit);\n\n    if (exactId) {\n      return {\n        product_asset_id: exactId,\n        reason: \"matched explicit product_asset_id\",\n        capacity_liters: extractCapacityLiters(payload),\n        candidates: [{ productId: exactId, score: 1000, reasons: [\"explicit product_asset_id\"] }]\n      };\n    }\n  }\n\n  const capacityLiters = extractCapacityLiters(payload);\n\n  const scored = productIds\n    .map((productId) => scoreProductMatch(productId, products[productId], payload, capacityLiters))\n    .filter((candidate) => candidate.score > 0)\n    .sort((a, b) => b.score - a.score);\n\n  if (!scored.length) {\n    return {\n      product_asset_id: null,\n      reason: \"no product matched payload text or capacity\",\n      capacity_liters: capacityLiters,\n      candidates: []\n    };\n  }\n\n  const best = scored[0];\n\n  return {\n    product_asset_id: best.productId,\n    reason: \"selected highest scoring product match\",\n    capacity_liters: capacityLiters,\n    candidates: scored.slice(0, 5).map((candidate) => ({\n      productId: candidate.productId,\n      score: candidate.score,\n      reasons: candidate.reasons\n    }))\n  };\n}\n\nconst logoRelative = profile.logos?.[logoId];\n\nif (!logoRelative) {\n  throw new Error(\"Requested logo asset is unavailable\");\n}\n\nconst templateBackgroundRelative = String(profile.template_background || \"logo/background.png\");\nlet templateBackgroundPath;\n\ntry {\n  templateBackgroundPath = resolveAsset(templateBackgroundRelative);\n} catch {\n  throw new Error(\"Fixed template background is unavailable\");\n}\n\nconst productResolution = findProductAssetId(profile, payload);\nconst productAssetId = productResolution.product_asset_id;\nconst product = productAssetId ? profile.products?.[productAssetId] : null;\n\nif (productAssetId && !product) {\n  throw new Error(\"Requested product asset is unavailable: \" + productAssetId);\n}\n\nif (product && product.approved_for_marketing !== true) {\n  throw new Error(product.restriction || \"Requested product asset is not approved for marketing\");\n}\n\nreturn [\n  {\n    json: {\n      cp,\n      asset_contract: {\n        brand_id: brandId,\n        logo_id: logoId,\n        product_asset_id: productAssetId,\n        product_resolution: productResolution,\n        ratio,\n        profile_version: profile.schema_version,\n        brand_theme: profile.brand_theme || {},\n        layout_rules: profile.layout_rules || {},\n        logo_path: resolveAsset(logoRelative),\n        product_path: product ? resolveAsset(product.file) : null,\n        template_background_path: templateBackgroundPath\n      }\n    }\n  }\n];\n"
+        }
+      },
+      {
+        "id": "compose-brand-image",
+        "name": "Compose Brand Image With Sharp",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1000,
+          0
+        ],
+        "parameters": {
+          "jsCode": "const sharp = require(\"sharp\");\nconst fs = require(\"fs\");\nconst path = require(\"path\");\n\nfunction clampNumber(value, fallback, min, max) {\n  const number = Number(value);\n\n  if (!Number.isFinite(number)) return fallback;\n\n  return Math.min(max, Math.max(min, number));\n}\n\n/**\n * Read data from previous node.\n */\nconst resolved = $(\"Resolve Brand Assets\").item.json;\nconst payload = resolved.cp?.payload ?? {};\nconst contract = resolved.asset_contract;\n\nif (!contract) {\n  throw new Error(\"Missing asset_contract from Resolve Brand Assets\");\n}\n\nif (!contract.template_background_path) {\n  throw new Error(\"Fixed template background is unavailable\");\n}\n\nif (!fs.existsSync(contract.template_background_path)) {\n  throw new Error(\"Fixed template background is unavailable\");\n}\n\nif (!contract.product_path) {\n  throw new Error(\"Product image is required for fixed template composition\");\n}\n\nif (!fs.existsSync(contract.product_path)) {\n  throw new Error(\"Product file does not exist: \" + contract.product_path);\n}\n\nconst dimensions = {\n  \"4:5\": [1080, 1350],\n  \"1:1\": [1080, 1080],\n  \"9:16\": [1080, 1920]\n}[contract.ratio];\n\nif (!dimensions) {\n  throw new Error(\"Unsupported ratio: \" + contract.ratio);\n}\n\nconst [width, height] = dimensions;\nconst backgroundBuffer = fs.readFileSync(contract.template_background_path);\nconst productSourceBuffer = fs.readFileSync(contract.product_path);\n\ntry {\n  await sharp(backgroundBuffer).metadata();\n} catch (error) {\n  throw new Error(\"Sharp could not read fixed template background: \" + error.message);\n}\n\ntry {\n  await sharp(productSourceBuffer).metadata();\n} catch (error) {\n  throw new Error(\"Sharp could not read product image: \" + error.message);\n}\n\nasync function buildProductComposite(targetWidth, targetHeight) {\n  const productFrame = {\n    x: Math.round(targetWidth * 0.2086),\n    y: Math.round(targetHeight * 0.2247),\n    w: Math.round(targetWidth * 0.5294),\n    h: Math.round(targetHeight * 0.6355)\n  };\n\n  const productBuffer = await sharp(productSourceBuffer)\n    .resize({\n      width: productFrame.w,\n      height: productFrame.h,\n      fit: \"inside\",\n      withoutEnlargement: false\n    })\n    .png()\n    .toBuffer();\n\n  const productMeta = await sharp(productBuffer).metadata();\n  const productWidth = productMeta.width || 0;\n  const productHeight = productMeta.height || 0;\n\n  const productLeft = Math.round(\n    productFrame.x + (productFrame.w - productWidth) / 2\n  );\n\n  const productTop = Math.round(\n    productFrame.y + productFrame.h - productHeight\n  );\n\n  return {\n    input: productBuffer,\n    left: productLeft,\n    top: productTop\n  };\n}\n\nasync function renderJpeg(targetWidth, targetHeight, quality) {\n  const productComposite = await buildProductComposite(targetWidth, targetHeight);\n\n  return sharp(backgroundBuffer)\n    .resize(targetWidth, targetHeight, {\n      fit: \"cover\",\n      position: \"center\"\n    })\n    .composite([productComposite])\n    .flatten({\n      background: \"#ffffff\"\n    })\n    .jpeg({\n      quality,\n      mozjpeg: true\n    })\n    .toBuffer();\n}\n\nconst maxCallbackImageBytes = clampNumber(\n  payload.max_callback_image_bytes,\n  650 * 1024,\n  220 * 1024,\n  2 * 1024 * 1024\n);\n\nlet outputWidth = width;\nlet outputHeight = height;\nlet finalBuffer = null;\nlet finalQuality = null;\n\nfor (const quality of [82, 78, 74, 70, 66, 62, 58, 54, 50, 46, 42]) {\n  const candidate = await renderJpeg(width, height, quality);\n\n  finalBuffer = candidate;\n  finalQuality = quality;\n\n  if (candidate.length <= maxCallbackImageBytes) {\n    break;\n  }\n}\n\nif (finalBuffer.length > maxCallbackImageBytes) {\n  outputWidth = Math.round(width * 0.85);\n  outputHeight = Math.round(height * 0.85);\n\n  for (const quality of [78, 74, 70, 66, 62, 58, 54, 50, 46, 42]) {\n    const candidate = await renderJpeg(outputWidth, outputHeight, quality);\n\n    finalBuffer = candidate;\n    finalQuality = quality;\n\n    if (candidate.length <= maxCallbackImageBytes) {\n      break;\n    }\n  }\n}\n\nreturn [\n  {\n    json: {\n      cp: resolved.cp,\n      asset_contract: contract,\n      provider_creation_id: String(resolved.cp.job_id) + \"_fixed_template\",\n      composed_file: {\n        name: \"creative-\" + resolved.cp.job_id + \".jpg\",\n        mime_type: \"image/jpeg\",\n        data_base64: finalBuffer.toString(\"base64\"),\n        size_bytes: finalBuffer.length,\n        width: outputWidth,\n        height: outputHeight,\n        quality: finalQuality\n      },\n      template_background_source: path.basename(contract.template_background_path)\n    }\n  }\n];\n\n"
+        }
+      },
+      {
+        "id": "prepare-completed-callback",
+        "name": "Prepare Completed CP Callback",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1250,
+          0
+        ],
+        "parameters": {
+          "jsCode": "const crypto = require(\"crypto\");\n\nfunction removeUndefined(value) {\n  if (Array.isArray(value)) {\n    return value.map(removeUndefined);\n  }\n\n  if (value && typeof value === \"object\") {\n    const cleaned = {};\n\n    for (const [key, val] of Object.entries(value)) {\n      if (val !== undefined) {\n        cleaned[key] = removeUndefined(val);\n      }\n    }\n\n    return cleaned;\n  }\n\n  return value;\n}\n\nconst item = $json;\nconst secret = $env.PLATFORM_CALLBACK_SECRET;\n\nif (!secret) {\n  throw new Error(\"Missing PLATFORM_CALLBACK_SECRET in n8n environment\");\n}\n\nif (!item.cp?.callback_url) {\n  throw new Error(\"Missing callback_url from CP payload\");\n}\n\nif (!item.composed_file?.data_base64) {\n  throw new Error(\"Missing composed image data_base64\");\n}\n\nconst timestamp = new Date().toISOString();\n\nconst nonce =\n  \"n8n_composed_image_\" +\n  Date.now() +\n  \"_\" +\n  Math.random().toString(36).slice(2);\n\nconst file = {\n  file_id: String(item.provider_creation_id || item.cp.job_id) + \"_composed\",\n  type: \"image\",\n  name: item.composed_file.name,\n  mime_type: item.composed_file.mime_type,\n  data_base64: item.composed_file.data_base64,\n  size_bytes: item.composed_file.size_bytes,\n  width: item.composed_file.width,\n  height: item.composed_file.height,\n  source: \"n8n-sharp-compositor\"\n};\n\nconst publicFile = {\n  file_id: file.file_id,\n  type: file.type,\n  name: file.name,\n  mime_type: file.mime_type,\n  size_bytes: file.size_bytes,\n  width: file.width,\n  height: file.height,\n  source: file.source\n};\n\nconst publicAssetContract = {\n  brand_id: item.asset_contract?.brand_id || null,\n  logo_id: item.asset_contract?.logo_id || null,\n  product_asset_id: item.asset_contract?.product_asset_id || null,\n  ratio: item.asset_contract?.ratio || null,\n  profile_version: item.asset_contract?.profile_version || null,\n  template_background_source: item.template_background_source || null\n};\n\n/**\n * نرجع شكل الـ body قريبًا من النسخة الأصلية.\n * مهم: نترك signature داخل body فارغًا أثناء حساب التوقيع.\n */\nconst callbackBody = removeUndefined({\n  job_id: item.cp.job_id,\n  correlation_id: item.cp.correlation_id,\n  idempotency_key: item.cp.idempotency_key,\n  workflow_type: \"creative_image_generation\",\n  workflow_version: \"creative-image-sharp-v1\",\n  status: \"completed\",\n  current_step: \"Branded image composed and ready for review\",\n\n  nonce,\n  signature_timestamp: timestamp,\n  signature: \"\",\n\n  outputs: {\n    provider: \"fixed-template-sharp\",\n    asset_contract: publicAssetContract,\n    files: [publicFile]\n  },\n\n  files: [file],\n  warnings: []\n});\n\nconst raw = JSON.stringify(callbackBody);\n\nconst signature = crypto\n  .createHmac(\"sha256\", secret)\n  .update(timestamp + \".\" + nonce + \".\" + raw)\n  .digest(\"hex\");\n\nreturn [\n  {\n    json: {\n      callback_url: item.cp.callback_url,\n      callback_headers: {\n        signature,\n        timestamp,\n        nonce\n      },\n      callback_body: callbackBody,\n      callback_debug: {\n        body_size_bytes: Buffer.byteLength(raw, \"utf8\"),\n        file_size_bytes: item.composed_file.size_bytes,\n        file_mime_type: item.composed_file.mime_type,\n        file_name: item.composed_file.name,\n        has_body_nonce: true,\n        has_body_signature_timestamp: true,\n        has_body_signature_field: true\n      }\n    }\n  }\n];\n"
+        }
+      },
+      {
+        "id": "send-completed-callback",
+        "name": "Send Signed Callback To CP",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4,
+        "position": [
+          1500,
+          0
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $json.callback_url }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "content-type",
+                "value": "application/json"
+              },
+              {
+                "name": "x-ff-signature",
+                "value": "={{ $json.callback_headers.signature }}"
+              },
+              {
+                "name": "x-ff-timestamp",
+                "value": "={{ $json.callback_headers.timestamp }}"
+              },
+              {
+                "name": "x-ff-nonce",
+                "value": "={{ $json.callback_headers.nonce }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json.callback_body }}",
+          "options": {}
+        }
+      }
+    ],
+    "connections": {
+      "CP Creative Image Request Webhook": {
+        "main": [
+          [
+            {
+              "node": "Validate Signed CP Request",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Validate Signed CP Request": {
+        "main": [
+          [
+            {
+              "node": "Acknowledge CP Request",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Acknowledge CP Request": {
+        "main": [
+          [
+            {
+              "node": "Resolve Brand Assets",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resolve Brand Assets": {
+        "main": [
+          [
+            {
+              "node": "Compose Brand Image With Sharp",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Compose Brand Image With Sharp": {
+        "main": [
+          [
+            {
+              "node": "Prepare Completed CP Callback",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Completed CP Callback": {
+        "main": [
+          [
+            {
+              "node": "Send Signed Callback To CP",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Future Foresight Technology",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-07-08T13:53:00.899Z",
+        "id": 403,
+        "workflowId": "rWQZP7saIkXUXDUD",
+        "versionId": "f390c45d-9f56-4d19-a11a-a907e116981e",
+        "event": "activated",
+        "userId": "2dab960c-7788-4018-9b2b-32d0a1877db9"
+      },
+      {
+        "createdAt": "2026-07-08T13:53:01.136Z",
+        "id": 405,
+        "workflowId": "rWQZP7saIkXUXDUD",
+        "versionId": "f390c45d-9f56-4d19-a11a-a907e116981e",
+        "event": "activated",
+        "userId": "2dab960c-7788-4018-9b2b-32d0a1877db9"
+      },
+      {
+        "createdAt": "2026-07-08T13:53:00.852Z",
+        "id": 402,
+        "workflowId": "rWQZP7saIkXUXDUD",
+        "versionId": "f390c45d-9f56-4d19-a11a-a907e116981e",
+        "event": "deactivated",
+        "userId": "2dab960c-7788-4018-9b2b-32d0a1877db9"
+      },
+      {
+        "createdAt": "2026-07-08T13:53:01.085Z",
+        "id": 404,
+        "workflowId": "rWQZP7saIkXUXDUD",
+        "versionId": "f390c45d-9f56-4d19-a11a-a907e116981e",
+        "event": "deactivated",
+        "userId": "2dab960c-7788-4018-9b2b-32d0a1877db9"
+      }
+    ]
+  }
+}
