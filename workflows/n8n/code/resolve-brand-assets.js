@@ -6,7 +6,16 @@ const baseDir = path.resolve(String($env.BRAND_ASSETS_BASE_DIR || "/data/brand-a
 const idPattern = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const brandId = String(payload.brand_id || "future-oils");
 const logoId = String(payload.logo_id || "primary");
-const productAssetId = payload.product_asset_id ? String(payload.product_asset_id) : null;
+function inferProductAssetId(payload) {
+  if (payload.product_asset_id) return String(payload.product_asset_id);
+  const product = String(payload.product || "").toLowerCase().replace(/\s+/g, "");
+  if (!product.includes("sunflower") && !product.includes("refinedoil") && !product.includes("refinedsunfloweroil")) return null;
+  for (const size of ["18l", "10l", "5l", "4l", "1l"]) {
+    if (product.includes(size)) return `sunflower-oil-${size}`;
+  }
+  return "sunflower-oil-10l";
+}
+const productAssetId = inferProductAssetId(payload);
 const ratio = String(payload.ratio || "4:5");
 if (!idPattern.test(brandId) || !idPattern.test(logoId) || (productAssetId && !idPattern.test(productAssetId))) throw new Error("Invalid brand asset identifier");
 if (!new Set(["4:5", "1:1", "9:16"]).has(ratio)) throw new Error("Unsupported creative ratio");

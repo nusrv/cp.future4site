@@ -78,7 +78,19 @@ function downloadBuffer(url, redirectCount = 0) {
 const resolved = $("Resolve Brand Assets").item.json;
 const waitInput = $("Prepare Magnific Wait Input").item.json;
 const waitResult = $("Wait For Magnific Creation").item.json;
+let directBackgroundUrl;
+for (const contentItem of Array.isArray(waitResult?.content) ? waitResult.content : []) {
+  const results = contentItem?.text?.results;
+  if (!Array.isArray(results)) continue;
+  for (const result of results) {
+    const asset = result?.results || {};
+    directBackgroundUrl = asset.url || asset.imageUrl || asset.outputUrl || asset.downloadUrl || asset.thumbnailUrl;
+    if (directBackgroundUrl) break;
+  }
+  if (directBackgroundUrl) break;
+}
 const urls = [
+  ...(directBackgroundUrl ? [directBackgroundUrl] : []),
   ...collectMagnificAssetUrls(waitResult),
   ...collectUrls(waitResult),
   ...collectUrls($json),

@@ -4,6 +4,23 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-08 direct Magnific URL and default product asset fix
+
+A later retry failed with `content [line 88]`. Read-only execution inspection showed the wait node had a valid URL at `content[0].text.results[0].results.url`, but the generic extraction still failed in the n8n Code node.
+
+Live workflow fix completed:
+
+- Composer now directly reads the known Magnific MCP shape from `Wait For Magnific Creation`: `content[].text.results[].results.url` before falling back to generic extraction.
+- Resolver now infers a default product asset for generic sunflower-oil requests. If CP sends `Refined Sunflower Oil` without `product_asset_id`, n8n uses approved `sunflower-oil-10l`.
+- Regenerated and redeployed `FF Admin - Creative Image Generation` (`rWQZP7saIkXUXDUD`).
+- Live n8n `updatedAt`: `2026-07-08T09:24:14.919Z`.
+
+Asset connection status:
+
+- n8n asset base path is `/data/brand-assets`.
+- This should be mounted from Plesk host path `/var/www/vhosts/future4site.com/cp.future4site.com/public/assets`.
+- Latest executions prove n8n can read at least `/data/brand-assets/brand-profile.json` and `/data/brand-assets/logo/future-oils-logo.png`.
+- However execution output showed `brand_theme: {}` and `layout_rules: {}`, while repo `public/assets/brand-profile.json` contains those keys. This means the Plesk-mounted asset folder is likely not pulled/updated to the latest repo assets, or n8n is mounted to an older copy. Pull latest CP repo/build on Plesk or replace the mounted `brand-profile.json` before judging final styling accuracy.
 ## 2026-07-08 explicit Magnific results URL extraction
 
 A later retry failed at `Compose Brand Image With Sharp` with `Magnific result did not contain a background URL`, but read-only execution inspection showed `Wait For Magnific Creation` did return a usable asset URL at `content[].text.results[].results.url`.
