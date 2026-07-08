@@ -4,6 +4,20 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-08 protocol-relative image URL and topic-relevance fixes
+
+Follow-up fixes after live testing:
+
+- `Compose Brand Image With Sharp` received a protocol-relative Magnific URL like `//pikaso.cdnpk.net/...`. The composer now normalizes protocol-relative URLs to `https://...` before validation/download and extracts both `https://...` and `//...` candidates.
+- Removed the temporary default that mapped generic sunflower-oil requests to `sunflower-oil-10l`. Product imagery is no longer guessed. n8n only uses a product asset when CP sends `product_asset_id` or the product string includes an explicit known size such as `10L`, `5L`, etc.
+- Redeployed `FF Admin - Creative Image Generation` (`rWQZP7saIkXUXDUD`). Live n8n `updatedAt`: `2026-07-08T09:40:21.033Z`.
+- Patched the active content-generation workflow so the requested topic/angle, objective, audience, channel, and CTA drive the post. The selected product remains authoritative product context but must not replace the requested topic with generic product copy.
+- Patched `FF Admin - Content Request Intake - Draft` (`JgGTeTGe6CrP85b2`). Live n8n `updatedAt`: `2026-07-08T09:37:41.075Z`.
+
+Operator notes:
+
+- If an image request should include an exact product PNG, the CP request should send `product_asset_id` or the selected product should include a recognized package size. Generic `Refined Sunflower Oil` will not force a random package render.
+- If content copy still misses the requested topic, inspect the latest content workflow execution payload and generated output; the live prompt now explicitly requires topic relevance.
 ## 2026-07-08 direct Magnific URL and default product asset fix
 
 A later retry failed with `content [line 88]`. Read-only execution inspection showed the wait node had a valid URL at `content[0].text.results[0].results.url`, but the generic extraction still failed in the n8n Code node.

@@ -13,7 +13,7 @@ function inferProductAssetId(payload) {
   for (const size of ["18l", "10l", "5l", "4l", "1l"]) {
     if (product.includes(size)) return `sunflower-oil-${size}`;
   }
-  return "sunflower-oil-10l";
+  return null;
 }
 const productAssetId = inferProductAssetId(payload);
 const ratio = String(payload.ratio || "4:5");

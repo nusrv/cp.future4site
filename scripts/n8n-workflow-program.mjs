@@ -157,6 +157,9 @@ const cp = $json.cp ?? $json.body ?? $json;
 const payload = cp.payload ?? {};
 const product = String(payload.product ?? "").trim() || "the selected product";
 const brand = String(payload.brand ?? "Future Foresight").trim() || "Future Foresight";
+const topic = String(payload.topic ?? "").trim();
+const objective = String(payload.objective ?? "").trim();
+const audience = String(payload.audience ?? "").trim();
 
 const evidence = [
   {
@@ -171,6 +174,9 @@ const evidence = [
     source_section: "Selected brand",
     public_use: true
   },
+  ...(topic ? [{ claim: "The operator requested this specific topic/angle: " + topic + ".", source_file: "Control Panel content request", source_section: "Requested topic", public_use: true }] : []),
+  ...(objective ? [{ claim: "The operator selected this objective: " + objective + ".", source_file: "Control Panel content request", source_section: "Objective", public_use: true }] : []),
+  ...(audience ? [{ claim: "The intended audience is: " + audience + ".", source_file: "Control Panel content request", source_section: "Audience", public_use: true }] : []),
   {
     claim: "CTA channels approved for public content include quote/LOI form, WhatsApp, and info@future4site.com.",
     source_file: "Projects/Marketing/content/evidence-ledger.md",
@@ -192,13 +198,16 @@ const prohibited = [
 ];
 
 const prompt = [
-  "Create English-only B2B social media copy for the selected brand and product.",
-  "The selected product is authoritative. Write specifically about: " + product + ".",
+  "Create English-only B2B social media copy for the selected brand, selected product, and requested topic.",
+  "The requested topic/angle is authoritative and must be the main subject: " + (topic || "the supplied content request") + ".",
+  "The selected objective is: " + (objective || "not specified") + ". The intended audience is: " + (audience || "B2B buyers") + ".",
+  "The selected product is authoritative product context. Write specifically about: " + product + ", but do not replace the requested topic with generic product copy.",
   "The selected brand is: " + brand + ".",
   "Return JSON only with fields: headline, caption, cta, hashtags, evidence_references, warnings.",
   "Use only the approved evidence provided.",
   "Do not invent prices, availability, guarantees, origins, shipping terms, certifications, nutrition, or health claims.",
   "Do not substitute edible oil or any other product for the selected product.",
+  "Do not ignore the requested topic, objective, audience, or channel. If topic and product differ, connect them directly instead of writing generic product copy.",
   "Do not invent product specifications, grades, packaging, standards, or certifications that are not supplied in the request.",
   "Keep the tone premium, direct, and suitable for importers/distributors.",
   "",
@@ -212,8 +221,7 @@ const prompt = [
   JSON.stringify(prohibited, null, 2)
 ].join("\\n");
 
-return [{ json: { cp, payload, evidence, prohibited, prompt } }];
-`.trim(), [780, 0], "Builds approved evidence, restrictions, and a strict JSON-only prompt."),
+return [{ json: { cp, payload, evidence, prohibited, prompt } }];`.trim(), [780, 0], "Builds approved evidence, restrictions, and a strict JSON-only prompt."),
     codeNode("generate", "Generate Text Output", `
 const item = $json;
 const payload = item.payload ?? {};
