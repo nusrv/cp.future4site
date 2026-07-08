@@ -4,6 +4,25 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-08 unavailable 12L/13L no-fallback resolver fix
+
+Completed after user reported request `new products are here 12 & 13 Liter tin` produced a 1L image.
+
+- Exported current live `FF Admin - Creative Image Generation` before editing.
+- Saved restore backup at `workflows/n8n/backups/creative-image-generation-backup-2026-07-08-17-47.json`.
+- Reproduced locally: resolver detected capacity 13L but no matching 13L approved asset existed, then fallback scoring selected first approved product, 1L.
+- Also fixed capacity extraction so `12 & 13 Liter` detects both 12L and 13L.
+- New rule: if the request names explicit capacities and none of those capacities match approved product assets, resolver returns no product with reason `requested product capacities are unavailable: 12L, 13L` instead of guessing another product.
+- Composer now surfaces `contract.product_resolution.reason` as the error when no product path exists.
+- Local verification:
+  - `new products are here 12 & 13 Liter tin` -> no product, reason unavailable 12L/13L.
+  - `10L Refined Sunflower Oil` -> `sunflower-oil-10l`.
+- Deployed and activated live workflow `rWQZP7saIkXUXDUD`. Live n8n `updatedAt`: `2026-07-08T14:48:46.371Z`.
+- Re-exported live workflow and confirmed no-fallback rule is present.
+- Verification passed: workflow check, secret scan, TypeScript check.
+
+Important: repo asset folder currently has no 12L or 13L product PNG/profile entries. To generate 12L/13L images, add approved 12L/13L product assets to `public/assets/products` and `public/assets/brand-profile.json`, then pull those assets to Plesk.
+
 ## 2026-07-08 Resolve Brand Assets regex regression fix
 
 Completed after user reported live n8n error: `Problem in node ?Resolve Brand Assets? - Nothing to repeat`.

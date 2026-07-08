@@ -218,7 +218,7 @@ function extractAllCapacityLiters(payload) {
 
   const knownSizes = [18, 13, 12, 10, 5, 4, 3, 2, 1];
   for (const size of knownSizes) {
-    const re = new RegExp("(^|\\D)" + size + "(\\D|$)", "i");
+    const re = new RegExp("(^|[^0-9])" + size + "([^0-9]|$)", "i");
     if (re.test(text)) found.add(size);
   }
 
@@ -553,6 +553,15 @@ function findProductAssetIds(profile, payload) {
     return {
       product_asset_ids: sortProductIdsByCapacity(selected),
       reason: selected.length > 1 ? "selected multiple product assets" : "selected single product asset",
+      capacity_liters: capacities,
+      candidates
+    };
+  }
+
+  if (capacities.length) {
+    return {
+      product_asset_ids: [],
+      reason: "requested product capacities are unavailable: " + capacities.map((size) => size + "L").join(", "),
       capacity_liters: capacities,
       candidates
     };

@@ -29,7 +29,7 @@ const productPaths = Array.isArray(contract.product_paths) && contract.product_p
     : [];
 
 if (!productPaths.length) {
-  throw new Error("Product image is required for fixed template composition");
+  throw new Error(contract.product_resolution?.reason || "Product image is required for fixed template composition");
 }
 
 for (const productPath of productPaths) {
