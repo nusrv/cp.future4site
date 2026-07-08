@@ -2,8 +2,40 @@
 
 Canonical restart point after any interrupted or completed session. Read this file first before changing the CP or its n8n workflows.
 
-Last verified: **2026-07-07 (Asia/Amman)**
+Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-08 image-composition workflow status
+
+Source update completed for the deterministic image-generation plan:
+
+- Fixed the creative workflow builder so `Prepare Magnific Wait Input` reads from the actual `Build Background Prompt` node. The previous source referenced obsolete `Build Magnific MCP Request` naming and would break execution after Magnific returned.
+- Added explicit `brand_theme` and `layout_rules` to `public/assets/brand-profile.json`.
+- Extended the n8n asset resolver to pass `brand_theme` and `layout_rules` from `brand-profile.json` into the asset contract.
+- Updated the Sharp composer to consume brand profile colors and layout ratios with safe fallbacks while still using the real logo and product PNG files.
+- Strengthened the creative workflow contract check so obsolete node references fail validation.
+- Regenerated `workflows/n8n/generated/10-creative-image-generation.json` only for the Sharp creative workflow.
+
+Verification completed without npm because this workspace is on Google Drive and dependency installs are not reliable here:
+
+- `node scripts/check-creative-image-workflows.mjs` passed: Sharp creative workflow contract passed with 11 nodes.
+- Dependency-free local Node validation passed: `brand_id=future-oils`, 2 logos, 7 product entries, 11 workflow nodes, generated workflow inactive, no obsolete `Build Magnific MCP Request` reference, and all declared asset files exist.
+- Read-only live n8n export on 2026-07-08 confirmed `FF Admin - Creative Image Generation` (`rWQZP7saIkXUXDUD`) is active but still the older Magnific-only URL callback workflow. It does not yet use `/data/brand-assets`, Sharp composition, or `n8n-sharp-compositor` callbacks.
+
+Not completed yet:
+
+- No live workflow replacement/activation was performed in this checkpoint. Replacing the active workflow must wait until the actual `n8n-newest` runtime proves Sharp can load and `/data/brand-assets/brand-profile.json` is readable.
+- No real paid Magnific generation was triggered.
+- No final live output image was verified because local Sharp testing is blocked by the Google Drive workspace dependency limitation, and the active live workflow is not yet the Sharp workflow.
+
+Required next live preflight on Plesk before activation:
+
+```bash
+docker exec n8n-newest node -e "const fs=require('fs'); const sharp=require('sharp'); console.log(sharp.versions); console.log(fs.existsSync('/data/brand-assets/brand-profile.json'))"
+```
+
+Expected: Sharp version output and `true`.
+
+After that passes, deploy/activate the generated Sharp workflow with the confirmation flags, run one CP image request end-to-end, visually inspect the final composed PNG, then update this handoff again with the live workflow version and output result.
 ## 2026-07-07 credential-file convention
 
 

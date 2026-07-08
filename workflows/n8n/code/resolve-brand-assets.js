@@ -33,6 +33,8 @@ return [{ json: {
     product_asset_id: productAssetId,
     ratio,
     profile_version: profile.schema_version,
+    brand_theme: profile.brand_theme || {},
+    layout_rules: profile.layout_rules || {},
     logo_path: resolveAsset(logoRelative),
     product_path: product ? resolveAsset(product.file) : null
   }

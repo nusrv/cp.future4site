@@ -145,7 +145,7 @@ function findByKeys(value, keys, seen = new Set()) {
   }
   return undefined;
 }
-const built = $("Build Magnific MCP Request").item.json;
+const built = $("Build Background Prompt").item.json;
 const generationResult = $json;
 const candidates = collectCandidates(generationResult);
 let creationId;

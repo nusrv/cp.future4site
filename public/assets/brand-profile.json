@@ -37,5 +37,26 @@
                                                "file":  "products/18L-sunflower-oil.png",
                                                "approved_for_marketing":  true
                                            }
-                 }
+                 },
+    "brand_theme":  {
+                        "colors":  {
+                                       "panel":  "#F8F4EA",
+                                       "headline":  "#2B2B2B",
+                                       "cta_background":  "#2E4A2E",
+                                       "cta_text":  "#F8F4EA",
+                                       "accent":  "#E0A51B"
+                                   },
+                        "fonts":  {
+                                      "heading":  "Poppins",
+                                      "body":  "Inter"
+                                  }
+                    },
+    "layout_rules":  {
+                         "logo_width_ratio":  0.22,
+                         "product_width_ratio":  0.46,
+                         "product_height_ratio":  0.68,
+                         "logo_position":  "top-left",
+                         "product_position":  "bottom-right",
+                         "text_panel_position":  "left-middle"
+                     }
 }

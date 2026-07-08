@@ -25,16 +25,31 @@ const payload = resolved.cp.payload ?? {};
 const contract = resolved.asset_contract;
 const dimensions = { "4:5": [1080, 1350], "1:1": [1080, 1080], "9:16": [1080, 1920] }[contract.ratio];
 const [width, height] = dimensions;
-const logo = await sharp(fs.readFileSync(contract.logo_path)).resize({ width: Math.round(width * 0.22), withoutEnlargement: true }).png().toBuffer();
+const theme = contract.brand_theme || {};
+const colors = theme.colors || {};
+const layout = contract.layout_rules || {};
+const safeColor = (value, fallback) => /^#[0-9a-f]{6}$/i.test(String(value || "")) ? String(value) : fallback;
+const clampNumber = (value, fallback, min, max) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
+};
+const panelColor = safeColor(colors.panel, "#F8F4EA");
+const headlineColor = safeColor(colors.headline, "#2B2B2B");
+const ctaColor = safeColor(colors.cta_background, "#2E4A2E");
+const ctaTextColor = safeColor(colors.cta_text, "#F8F4EA");
+const logoWidthRatio = clampNumber(layout.logo_width_ratio, 0.22, 0.08, 0.4);
+const productWidthRatio = clampNumber(layout.product_width_ratio, 0.46, 0.2, 0.7);
+const productHeightRatio = clampNumber(layout.product_height_ratio, 0.68, 0.3, 0.85);
+const logo = await sharp(fs.readFileSync(contract.logo_path)).resize({ width: Math.round(width * logoWidthRatio), withoutEnlargement: true }).png().toBuffer();
 const composites = [{ input: logo, left: Math.round(width * 0.065), top: Math.round(height * 0.055) }];
 if (contract.product_path) {
-  const product = await sharp(fs.readFileSync(contract.product_path)).resize({ width: Math.round(width * 0.46), height: Math.round(height * 0.68), fit: "inside", withoutEnlargement: true }).png().toBuffer();
+  const product = await sharp(fs.readFileSync(contract.product_path)).resize({ width: Math.round(width * productWidthRatio), height: Math.round(height * productHeightRatio), fit: "inside", withoutEnlargement: true }).png().toBuffer();
   const meta = await sharp(product).metadata();
   composites.push({ input: product, left: width - (meta.width || 0) - Math.round(width * 0.055), top: height - (meta.height || 0) - Math.round(height * 0.045) });
 }
 const headline = escapeXml(String(payload.headline || "").slice(0, 90));
 const cta = escapeXml(String(payload.cta || "").slice(0, 40));
-const textSvg = Buffer.from(`<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><rect x="${Math.round(width*0.055)}" y="${Math.round(height*0.23)}" width="${Math.round(width*0.55)}" height="${Math.round(height*0.34)}" rx="24" fill="#F8F4EA" fill-opacity="0.90"/><text x="${Math.round(width*0.085)}" y="${Math.round(height*0.32)}" font-family="Arial, sans-serif" font-size="58" font-weight="700" fill="#2B2B2B"><tspan>${headline}</tspan></text><rect x="${Math.round(width*0.085)}" y="${Math.round(height*0.43)}" width="${Math.max(220, cta.length*24)}" height="74" rx="37" fill="#2E4A2E"/><text x="${Math.round(width*0.11)}" y="${Math.round(height*0.472)}" font-family="Arial, sans-serif" font-size="30" font-weight="700" fill="#F8F4EA">${cta}</text></svg>`);
+const textSvg = Buffer.from(`<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><rect x="${Math.round(width*0.055)}" y="${Math.round(height*0.23)}" width="${Math.round(width*0.55)}" height="${Math.round(height*0.34)}" rx="24" fill="${panelColor}" fill-opacity="0.90"/><text x="${Math.round(width*0.085)}" y="${Math.round(height*0.32)}" font-family="Arial, sans-serif" font-size="58" font-weight="700" fill="${headlineColor}"><tspan>${headline}</tspan></text><rect x="${Math.round(width*0.085)}" y="${Math.round(height*0.43)}" width="${Math.max(220, cta.length*24)}" height="74" rx="37" fill="${ctaColor}"/><text x="${Math.round(width*0.11)}" y="${Math.round(height*0.472)}" font-family="Arial, sans-serif" font-size="30" font-weight="700" fill="${ctaTextColor}">${cta}</text></svg>`);
 composites.push({ input: textSvg, left: 0, top: 0 });
 const finalBuffer = await sharp(background).resize(width, height, { fit: "cover" }).composite(composites).png({ compressionLevel: 9 }).toBuffer();
 return [{ json: {

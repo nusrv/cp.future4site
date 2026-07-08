@@ -12,6 +12,8 @@ describe("branded image composition pipeline", () => {
     const resolver = read("workflows/n8n/code/resolve-brand-assets.js");
     expect(resolver).toContain("BRAND_ASSETS_BASE_DIR");
     expect(resolver).toContain("approved_for_marketing");
+    expect(resolver).toContain("brand_theme");
+    expect(resolver).toContain("layout_rules");
     expect(resolver).toContain("escaped asset root");
   });
   it("uses Sharp and returns a composed PNG payload", () => {
@@ -19,6 +21,8 @@ describe("branded image composition pipeline", () => {
     expect(composer).toContain('require("sharp")');
     expect(composer).toContain('mime_type: "image/png"');
     expect(composer).toContain("data_base64");
+    expect(composer).toContain("brand_theme");
+    expect(composer).toContain("layout_rules");
   });
   it("stores composed callback images as private files", () => {
     const route = read("src/server/routes/automation.ts");
