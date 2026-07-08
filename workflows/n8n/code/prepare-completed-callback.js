@@ -70,6 +70,7 @@ const publicAssetContract = {
   brand_id: item.asset_contract?.brand_id || null,
   logo_id: item.asset_contract?.logo_id || null,
   product_asset_id: item.asset_contract?.product_asset_id || null,
+  product_asset_ids: item.asset_contract?.product_asset_ids || [],
   ratio: item.asset_contract?.ratio || null,
   profile_version: item.asset_contract?.profile_version || null,
   template_background_source: item.template_background_source || null
@@ -95,6 +96,7 @@ const callbackBody = removeUndefined({
   outputs: {
     provider: "fixed-template-sharp",
     asset_contract: publicAssetContract,
+    product_layout: item.product_layout,
     files: [publicFile]
   },
 

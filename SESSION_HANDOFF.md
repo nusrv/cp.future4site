@@ -4,6 +4,40 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-08 multi-product fixed-template composition update
+
+Completed after syncing from current live n8n first:
+
+- Exported current live `FF Admin - Creative Image Generation` (`rWQZP7saIkXUXDUD`) before editing.
+- Saved restore backup at `workflows/n8n/backups/creative-image-generation-backup-2026-07-08-17-24.json`.
+- Updated CP creative image payload creation in `src/server/routes/content.ts` so requests include both legacy `product_asset_id` and new `product_asset_ids` when the product text contains multiple known sizes.
+- Updated `Resolve Brand Assets` to support:
+  - legacy single `product_asset_id`
+  - explicit `product_asset_ids` arrays/lists
+  - multiple capacities inferred from product text such as `1L, 5L and 10L`
+  - all approved products via `layout_mode: "all"`, `product_selection: "all"`, or `product_asset_ids: ["all"]`
+- Resolver now returns backward-compatible `product_asset_id` and `product_path`, plus multi-product `product_asset_ids`, `product_paths`, and `products[]`.
+- Updated `Compose Brand Image With Sharp` with deterministic multi-product layouts:
+  - 1 product: current single product fit-frame behavior
+  - 2 products: overlapping side-by-side slots, shared bottom baseline
+  - 3 products: center hero product with two smaller side products, shared bottom baseline
+  - 4+ products: lineup layout sorted by capacity, shared bottom baseline
+- Products are still real PNG assets, transparent-trimmed before resize, resized with `fit: "inside"`, and bottom-aligned. No logo/headline/CTA/button/text panel/frame rectangle is added.
+- Updated callback metadata to include `product_asset_ids` and `product_layout`.
+- Updated `scripts/check-creative-image-workflows.mjs` to enforce multi-product resolver/composer fields.
+- Rebuilt and contract-checked locally. Deployed and activated live workflow `rWQZP7saIkXUXDUD`. Live n8n `updatedAt`: `2026-07-08T14:29:42.801Z`.
+- Re-exported live workflow after deploy and confirmed active=true, 7 nodes, multi-product resolver fields present, multi-product layout composer present, transparent trim present, bottom alignment present, and no Magnific nodes.
+- Verification passed: `node scripts/check-creative-image-workflows.mjs`, `node scripts/secret-scan.mjs`, and `node node_modules\typescript\bin\tsc --noEmit`.
+
+Testing status:
+
+- End-to-end CP tests still need to be run from CP because local env does not contain CP/webhook signing credentials.
+- Recommended test requests:
+  - `1L and 5L Refined Sunflower Oil`
+  - `5L and 10L Refined Sunflower Oil`
+  - `1L, 5L and 10L Refined Sunflower Oil`
+  - all approved products via explicit payload `product_asset_ids: ["all"]` or future UI support.
+
 ## 2026-07-08 fixed-template left-shift and transparent-trim update
 
 Completed after syncing from current live n8n first:

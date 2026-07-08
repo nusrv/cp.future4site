@@ -36,9 +36,11 @@ if (
   !resolver.includes("BRAND_ASSETS_BASE_DIR") ||
   !resolver.includes("approved_for_marketing") ||
   !resolver.includes("template_background_path") ||
-  !resolver.includes("Fixed template background is unavailable")
+  !resolver.includes("Fixed template background is unavailable") ||
+  !resolver.includes("product_asset_ids") ||
+  !resolver.includes("product_paths")
 ) {
-  throw new Error("Brand resolver fixed-template contract missing");
+  throw new Error("Brand resolver fixed-template/multi-product contract missing");
 }
 
 if (
@@ -50,7 +52,10 @@ if (
   !composer.includes("Product image is required for fixed template composition") ||
   !composer.includes("image/jpeg") ||
   !composer.includes("maxCallbackImageBytes") ||
-  !composer.includes("template_background_source")
+  !composer.includes("template_background_source") ||
+  !composer.includes("getLayoutSlots") ||
+  !composer.includes("productPaths") ||
+  !composer.includes("product_layout")
 ) {
   throw new Error("Sharp fixed-template composition contract missing");
 }

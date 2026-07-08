@@ -174,6 +174,89 @@ function extractCapacityLiters(payload) {
   return null;
 }
 
+function extractAllCapacityLiters(payload) {
+  const found = new Set();
+
+  const add = (value) => {
+    const number = Number(normalizeArabicDigits(value));
+    if (Number.isFinite(number) && number > 0 && number <= 100) {
+      found.add(number);
+    }
+  };
+
+  for (const value of [
+    payload.capacity_liters,
+    payload.capacity_litre,
+    payload.volume_liters,
+    payload.volume_litre,
+    payload.liters,
+    payload.litres,
+    payload.size_liters,
+    payload.size_litre,
+    payload.pack_size_liters,
+    payload.pack_size_litre
+  ]) {
+    if (Array.isArray(value)) {
+      for (const item of value) add(item);
+    } else {
+      add(value);
+    }
+  }
+
+  const text = normalizeText(getPayloadSearchText(payload));
+  const patterns = [
+    /(?:^|\D)(\d+(?:\.\d+)?)\s*(?:l|lt|ltr|liter|liters|litre|litres|??????|????????)(?:\D|$)/gi,
+    /(?:^|\D)(\d+(?:\.\d+)?)\s*[- ]?\s*(?:l|lt|ltr)(?:\D|$)/gi
+  ];
+
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(text))) {
+      add(match[1]);
+    }
+  }
+
+  const knownSizes = [18, 13, 12, 10, 5, 4, 3, 2, 1];
+  for (const size of knownSizes) {
+    const re = new RegExp("(^|\\D)" + size + "(\\D|$)", "i");
+    if (re.test(text)) found.add(size);
+  }
+
+  return [...found].sort((a, b) => a - b);
+}
+
+function normalizeProductAssetList(value) {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => normalizeProductAssetList(item));
+  }
+
+  if (value === null || value === undefined) return [];
+
+  return String(value)
+    .split(/[;,|]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getExplicitProductAssetIds(payload) {
+  return [
+    ...normalizeProductAssetList(payload.product_asset_ids),
+    ...normalizeProductAssetList(payload.product_assets),
+    ...normalizeProductAssetList(payload.product_ids),
+    ...normalizeProductAssetList(payload.products)
+  ];
+}
+
+function sortProductIdsByCapacity(productIds) {
+  return [...productIds].sort((a, b) => {
+    const am = String(a).match(/(\d+(?:\.\d+)?)/);
+    const bm = String(b).match(/(\d+(?:\.\d+)?)/);
+    const an = am ? Number(am[1]) : Number.MAX_SAFE_INTEGER;
+    const bn = bm ? Number(bm[1]) : Number.MAX_SAFE_INTEGER;
+    return an - bn || String(a).localeCompare(String(b));
+  });
+}
+
 function productCandidateText(productId, product) {
   return [
     productId,
@@ -414,17 +497,99 @@ try {
   throw new Error("Fixed template background is unavailable");
 }
 
-const productResolution = findProductAssetId(profile, payload);
-const productAssetId = productResolution.product_asset_id;
-const product = productAssetId ? profile.products?.[productAssetId] : null;
+function findProductAssetIds(profile, payload) {
+  const products = profile.products || {};
+  const productIds = Object.keys(products);
+  const explicitIds = getExplicitProductAssetIds(payload);
+  const wantsAll =
+    String(payload.layout_mode || "").toLowerCase() === "all" ||
+    String(payload.product_selection || "").toLowerCase() === "all" ||
+    explicitIds.some((id) => ["all", "all-products", "all_products"].includes(compactText(id)));
 
-if (productAssetId && !product) {
-  throw new Error("Requested product asset is unavailable: " + productAssetId);
+  if (wantsAll) {
+    const approvedIds = sortProductIdsByCapacity(
+      productIds.filter((id) => products[id]?.approved_for_marketing === true)
+    );
+
+    return {
+      product_asset_ids: approvedIds,
+      reason: "selected all approved marketing products",
+      capacity_liters: approvedIds.map((id) => {
+        const match = String(id).match(/(\d+(?:\.\d+)?)/);
+        return match ? Number(match[1]) : null;
+      }).filter((value) => value !== null),
+      candidates: approvedIds.map((productId) => ({ productId, score: 1000, reasons: ["all approved products"] }))
+    };
+  }
+
+  const selected = [];
+  const candidates = [];
+
+  for (const explicitId of explicitIds) {
+    const normalized = compactText(explicitId);
+    const exactId = productIds.find((id) => compactText(id) === normalized);
+
+    if (exactId && !selected.includes(exactId)) {
+      selected.push(exactId);
+      candidates.push({ productId: exactId, score: 1000, reasons: ["explicit product_asset_ids"] });
+    }
+  }
+
+  const capacities = extractAllCapacityLiters(payload);
+
+  for (const capacityLiters of capacities) {
+    const scored = productIds
+      .map((productId) => scoreProductMatch(productId, products[productId], payload, capacityLiters))
+      .filter((candidate) => candidate.score > 0 && productHasCapacity(candidate.productId, candidate.product, capacityLiters))
+      .sort((a, b) => b.score - a.score);
+
+    const best = scored[0];
+    if (best && !selected.includes(best.productId)) {
+      selected.push(best.productId);
+      candidates.push({ productId: best.productId, score: best.score, reasons: best.reasons });
+    }
+  }
+
+  if (selected.length) {
+    return {
+      product_asset_ids: sortProductIdsByCapacity(selected),
+      reason: selected.length > 1 ? "selected multiple product assets" : "selected single product asset",
+      capacity_liters: capacities,
+      candidates
+    };
+  }
+
+  const single = findProductAssetId(profile, payload);
+
+  return {
+    product_asset_ids: single.product_asset_id ? [single.product_asset_id] : [],
+    reason: single.reason,
+    capacity_liters: single.capacity_liters ? [single.capacity_liters] : [],
+    candidates: single.candidates || []
+  };
 }
 
-if (product && product.approved_for_marketing !== true) {
-  throw new Error(product.restriction || "Requested product asset is not approved for marketing");
-}
+const productResolution = findProductAssetIds(profile, payload);
+const productAssetIds = productResolution.product_asset_ids || [];
+const productAssets = productAssetIds.map((productAssetId) => {
+  const product = profile.products?.[productAssetId];
+
+  if (!product) {
+    throw new Error("Requested product asset is unavailable: " + productAssetId);
+  }
+
+  if (product.approved_for_marketing !== true) {
+    throw new Error(product.restriction || "Requested product asset is not approved for marketing: " + productAssetId);
+  }
+
+  return {
+    product_asset_id: productAssetId,
+    product_path: resolveAsset(product.file),
+    file: product.file
+  };
+});
+
+const primaryProduct = productAssets[0] || null;
 
 return [
   {
@@ -433,14 +598,17 @@ return [
       asset_contract: {
         brand_id: brandId,
         logo_id: logoId,
-        product_asset_id: productAssetId,
+        product_asset_id: primaryProduct ? primaryProduct.product_asset_id : null,
+        product_asset_ids: productAssets.map((product) => product.product_asset_id),
         product_resolution: productResolution,
         ratio,
         profile_version: profile.schema_version,
         brand_theme: profile.brand_theme || {},
         layout_rules: profile.layout_rules || {},
         logo_path: resolveAsset(logoRelative),
-        product_path: product ? resolveAsset(product.file) : null,
+        product_path: primaryProduct ? primaryProduct.product_path : null,
+        product_paths: productAssets.map((product) => product.product_path),
+        products: productAssets,
         template_background_path: templateBackgroundPath
       }
     }
