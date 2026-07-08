@@ -4,6 +4,25 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-08 17L approval and 17L/18L CP product-selection fix
+
+Completed after a `17 & 18 Liter Sunflower oil` request first failed approval and then generated only the 1L image.
+
+- Approved `sunflower-oil-17l` for marketing in `public/assets/brand-profile.json`; 18L was already approved. Commit: `c03f9fc`.
+- User confirmed the request passed after pulling the approval change, but the resulting image contained only 1L.
+- Read-only inspected live successful n8n execution `18321` for workflow `rWQZP7saIkXUXDUD`.
+- Verified live input had `product: Refined Sunflower Oil`, empty `product_asset_id`/`product_asset_ids`, and no topic; resolver therefore selected `sunflower-oil-1l` via generic fallback scoring.
+- Root cause was CP resolving product assets only from `content.product`, while the capacities existed in `content.topic`.
+- Updated CP creative dispatch to resolve product IDs from `content.product + content.topic`, include `topic` in the n8n payload, and recognize standalone paired capacities such as `17 & 18 Liter`.
+- Direct parser verification: the reported request resolves `sunflower-oil-18l,sunflower-oil-17l`.
+- TypeScript validation passed with `node node_modules\typescript\bin\tsc --noEmit`; diff validation passed. The focused Vitest runner was unavailable in local `node_modules`, so that test was not executed.
+- Updated the stale public asset test expectation to record 17L as approved.
+- CP fix commit: `b6d6d2d`. Both commits are pushed to `origin/develop`.
+- No n8n workflow change, deployment, backup, or restart was required for this fix.
+
+Deployment status: the CP fix requires pulling `develop` and rebuilding/restarting CP. After deployment, retry the same 17L + 18L request and verify that the image contains both products.
+
+
 ## 2026-07-08 unavailable 12L/13L no-fallback resolver fix
 
 Completed after user reported request `new products are here 12 & 13 Liter tin` produced a 1L image.
