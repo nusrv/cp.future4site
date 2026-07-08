@@ -4,6 +4,30 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-08 fixed-template left-shift and transparent-trim update
+
+Completed after syncing from current live n8n first:
+
+- Exported current live `FF Admin - Creative Image Generation` (`rWQZP7saIkXUXDUD`) before editing.
+- Saved restore backup at `workflows/n8n/backups/creative-image-generation-backup-2026-07-08-17-17.json`.
+- 10L fit size was good but needed to move left; 5L looked small because product PNG padding was being included in resize bounds.
+- Updated `Compose Brand Image With Sharp` frame to shift left while preserving the safe width/height:
+  - `x = Math.round(width * 0.2086)`
+  - `y = Math.round(height * 0.2290)`
+  - `w = Math.round(width * 0.6105)`
+  - `h = Math.round(height * 0.6469)`
+- For 1080x1350 output, final frame is x=225, y=309, w=659, h=873.
+- Product PNG is now transparent-trimmed before resize using Sharp `.trim({ threshold: 10, background: { r: 0, g: 0, b: 0, alpha: 0 } })`, then resized with `fit: "inside"` and `withoutEnlargement: false`.
+- Product remains horizontally centered and bottom-aligned to `productFrame.y + productFrame.h - productHeight`.
+- Updated workflow checker so transparent trimming is required and vertical centering is rejected.
+- Rebuilt and contract-checked locally. Deployed and activated live workflow `rWQZP7saIkXUXDUD`. Live n8n `updatedAt`: `2026-07-08T14:17:53.949Z`.
+- Re-exported live workflow after deploy and confirmed active=true, 7 nodes, new frame constants present, transparent trim present, bottom alignment present, no vertical centering, and no Magnific nodes.
+
+Testing status:
+
+- Static workflow/source verification passed.
+- End-to-end CP test should be rerun with 10L to confirm the left shift, and 5L to confirm trimming makes it fill the fit area better. Then recheck 1L.
+
 ## 2026-07-08 fixed-template smaller safe fit-area update
 
 Completed after syncing from current live n8n first:

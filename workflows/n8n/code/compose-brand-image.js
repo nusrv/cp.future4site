@@ -65,13 +65,17 @@ try {
 
 async function buildProductComposite(targetWidth, targetHeight) {
   const productFrame = {
-    x: Math.round(targetWidth * 0.2424),
+    x: Math.round(targetWidth * 0.2086),
     y: Math.round(targetHeight * 0.2290),
     w: Math.round(targetWidth * 0.6105),
     h: Math.round(targetHeight * 0.6469)
   };
 
   const productBuffer = await sharp(productSourceBuffer)
+    .trim({
+      threshold: 10,
+      background: { r: 0, g: 0, b: 0, alpha: 0 }
+    })
     .resize({
       width: productFrame.w,
       height: productFrame.h,
@@ -177,6 +181,7 @@ return [
     }
   }
 ];
+
 
 
 

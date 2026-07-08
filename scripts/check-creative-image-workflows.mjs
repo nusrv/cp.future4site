@@ -65,6 +65,14 @@ if (
   throw new Error("Fixed-template composer must not add logo, headline, CTA, or text panel");
 }
 
+if (!composer.includes(".trim(") || !composer.includes("background: { r: 0, g: 0, b: 0, alpha: 0 }")) {
+  throw new Error("Fixed-template composer must trim transparent product padding before resize");
+}
+
+if (composer.includes("(productFrame.h - productHeight) / 2")) {
+  throw new Error("Fixed-template composer must bottom-align product, not vertically center it");
+}
+
 if (!callback.includes("n8n-sharp-compositor") || !callback.includes("data_base64")) {
   throw new Error("Composed callback contract missing");
 }
