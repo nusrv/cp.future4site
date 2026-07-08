@@ -20,7 +20,7 @@ docker build \
 ```yaml
 environment:
   BRAND_ASSETS_BASE_DIR: /data/brand-assets
-  NODE_FUNCTION_ALLOW_BUILTIN: fs,path,crypto
+  NODE_FUNCTION_ALLOW_BUILTIN: fs,path,crypto,http,https
   NODE_FUNCTION_ALLOW_EXTERNAL: sharp
 volumes:
   - /ABSOLUTE-PLESK-CHECKOUT/public/assets:/data/brand-assets:ro

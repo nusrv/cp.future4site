@@ -1,5 +1,7 @@
 const sharp = require("sharp");
 const fs = require("fs");
+const http = require("http");
+const https = require("https");
 function parseMaybeJson(value) { if (typeof value !== "string") return value; try { return JSON.parse(value); } catch { return value; } }
 function collectUrls(value, urls = new Set(), seen = new Set()) {
   const parsed = parseMaybeJson(value);
@@ -13,14 +15,41 @@ function collectUrls(value, urls = new Set(), seen = new Set()) {
   return urls;
 }
 function escapeXml(value) { return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[char]); }
+function downloadBuffer(url, redirectCount = 0) {
+  if (redirectCount > 5) return Promise.reject(new Error("Too many redirects while downloading Magnific background"));
+  return new Promise((resolve, reject) => {
+    let parsed;
+    try { parsed = new URL(url); } catch (error) { reject(new Error("Invalid Magnific background URL")); return; }
+    const client = parsed.protocol === "https:" ? https : parsed.protocol === "http:" ? http : null;
+    if (!client) { reject(new Error("Unsupported Magnific background URL protocol")); return; }
+    const request = client.get(parsed, (response) => {
+      const status = response.statusCode || 0;
+      const location = response.headers.location;
+      if (status >= 300 && status < 400 && location) {
+        response.resume();
+        const nextUrl = new URL(location, parsed).toString();
+        downloadBuffer(nextUrl, redirectCount + 1).then(resolve, reject);
+        return;
+      }
+      if (status < 200 || status >= 300) {
+        response.resume();
+        reject(new Error("Could not download Magnific background: " + status));
+        return;
+      }
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+      response.on("end", () => resolve(Buffer.concat(chunks)));
+    });
+    request.setTimeout(60000, () => request.destroy(new Error("Timed out downloading Magnific background")));
+    request.on("error", reject);
+  });
+}
 const resolved = $("Resolve Brand Assets").item.json;
 const waitInput = $("Prepare Magnific Wait Input").item.json;
 const urls = [...collectUrls($json), ...collectUrls(waitInput.generation_result)];
 const backgroundUrl = urls[0];
 if (!backgroundUrl) throw new Error("Magnific result did not contain a background URL");
-const response = await fetch(backgroundUrl);
-if (!response.ok) throw new Error("Could not download Magnific background: " + response.status);
-const background = Buffer.from(await response.arrayBuffer());
+const background = await downloadBuffer(backgroundUrl);
 const payload = resolved.cp.payload ?? {};
 const contract = resolved.asset_contract;
 const dimensions = { "4:5": [1080, 1350], "1:1": [1080, 1080], "9:16": [1080, 1920] }[contract.ratio];

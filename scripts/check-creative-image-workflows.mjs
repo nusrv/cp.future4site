@@ -13,7 +13,7 @@ if (!resolver.includes("BRAND_ASSETS_BASE_DIR") || !resolver.includes("approved_
 if (!prompt.includes("background scene only") || !prompt.includes("Do not show any product")) throw new Error("Background-only prompt contract missing");
 if (!waitInput.includes('$("Build Background Prompt").item.json')) throw new Error("Magnific wait input must read from the actual background prompt node");
 if (waitInput.includes("Build Magnific MCP Request")) throw new Error("Magnific wait input references an obsolete node");
-if (!composer.includes('require("sharp")') || !composer.includes("composite(composites)") || !composer.includes("brand_theme") || !composer.includes("layout_rules")) throw new Error("Sharp composition contract missing");
+if (!composer.includes('require("sharp")') || !composer.includes('require("http")') || !composer.includes('require("https")') || composer.includes("fetch(") || !composer.includes("composite(composites)") || !composer.includes("brand_theme") || !composer.includes("layout_rules")) throw new Error("Sharp composition contract missing");
 if (!callback.includes("n8n-sharp-compositor") || !callback.includes("data_base64")) throw new Error("Composed callback contract missing");
 if (workflow.active !== false) throw new Error("Generated workflow must remain inactive until Sharp container preflight passes");
 console.log(`Sharp creative workflow contract passed (${workflow.nodes.length} nodes).`);

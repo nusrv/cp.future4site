@@ -19,6 +19,9 @@ describe("branded image composition pipeline", () => {
   it("uses Sharp and returns a composed PNG payload", () => {
     const composer = read("workflows/n8n/code/compose-brand-image.js");
     expect(composer).toContain('require("sharp")');
+    expect(composer).toContain('require("http")');
+    expect(composer).toContain('require("https")');
+    expect(composer).not.toContain("fetch(");
     expect(composer).toContain('mime_type: "image/png"');
     expect(composer).toContain("data_base64");
     expect(composer).toContain("brand_theme");

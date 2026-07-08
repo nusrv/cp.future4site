@@ -4,6 +4,20 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-08 Sharp composer fetch runtime fix
+
+A live CP image-generation test reached `Compose Brand Image With Sharp` and failed with `fetch is not defined`. The n8n Code node runtime did not expose global `fetch`.
+
+Source fix completed:
+
+- Replaced `fetch(backgroundUrl)` in `workflows/n8n/code/compose-brand-image.js` with a deterministic `downloadBuffer()` helper using built-in `http` and `https` modules.
+- Regenerated `workflows/n8n/generated/10-creative-image-generation.json`.
+- Updated `.env.example` and `docs/N8N_SHARP_COMPOSITION.md`: `NODE_FUNCTION_ALLOW_BUILTIN` must be `fs,path,crypto,http,https` for this workflow.
+- Updated the creative workflow contract check so future generated workflows must not contain `fetch(` and must include `http`/`https` imports.
+
+Operational requirement before retrying the live image request:
+
+- In the Plesk n8n container environment, update `NODE_FUNCTION_ALLOW_BUILTIN` from `fs,path,crypto` to `fs,path,crypto,http,https`, then restart/recreate the n8n container if Plesk does not apply env changes live.
 ## 2026-07-08 live Sharp creative workflow activation
 
 Completed after the n8n runtime was reported to have the Sharp-enabled image:
