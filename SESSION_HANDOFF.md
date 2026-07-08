@@ -18,12 +18,11 @@ Implemented after the combined multi-product image was judged too crowded and pr
 - Marketing Studio shows all current images in an ordered responsive grid and approves them together.
 - Publishing job payload now includes legacy single-asset fields plus ordered `creative_asset_ids` and `creative_assets`. Actual Meta multi-photo/carousel publishing remains a later publishing-workflow concern; the current repository still keeps live Meta publishing blocked.
 - Validation passed: creative workflow build/check, secret scan, TypeScript check, diff check, and a two-file callback/HMAC execution test. Local Sharp rendering was not run because Sharp is installed only in the production n8n image.
-- Live n8n was intentionally not changed yet. Deployment order is mandatory: pull/build/restart CP first, then deploy and activate the generated n8n workflow, then run a real two-product request.
+- User confirmed CP was pulled, built, and restarted. Deployed and activated live workflow `rWQZP7saIkXUXDUD`; live `updatedAt`: `2026-07-08T16:43:37.367Z`.
+- Re-export verification passed: active=true, 7 nodes, separate-image mode present, `composed_files` present, multi-file callback present, and zero Magnific nodes.
 
-Pending coordinated deployment and test:
-1. Pull the new commit on Plesk, run `npm run build`, and restart CP.
-2. Deploy/activate workflow `rWQZP7saIkXUXDUD` from this synchronized repo.
-3. Test 17L + 18L and confirm two full-size JPEGs arrive, both appear in CP, approval selects both, and callback body stays under the configured limit.
+Pending real test:
+1. Test 17L + 18L and confirm two full-size JPEGs arrive, both appear in CP, approval selects both, and callback body stays under the configured limit.
 
 
 ## 2026-07-08 17L approval and 17L/18L CP product-selection fix
