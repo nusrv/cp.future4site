@@ -4,6 +4,19 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-08 explicit Magnific results URL extraction
+
+A later retry failed at `Compose Brand Image With Sharp` with `Magnific result did not contain a background URL`, but read-only execution inspection showed `Wait For Magnific Creation` did return a usable asset URL at `content[].text.results[].results.url`.
+
+Source and live workflow fix completed:
+
+- Added `collectMagnificAssetUrls()` to explicitly read Magnific MCP result fields including `results.url`, `results.imageUrl`, `results.outputUrl`, `results.downloadUrl`, and `results.thumbnailUrl`.
+- Composer now reads from the named `Wait For Magnific Creation` node output and prioritizes render image URLs before falling back to generic recursive extraction.
+- Regenerated and redeployed `FF Admin - Creative Image Generation` (`rWQZP7saIkXUXDUD`).
+- Live workflow remained active and was verified by read-only export.
+- Live n8n `updatedAt`: `2026-07-08T09:15:05.251Z`.
+
+Observation from failed execution `18251`: CP payload for `Refined Sunflower Oil` did not include a `product_asset_id`, so the resolver produced `product_path: null`. After the URL fix is verified, improve CP product asset resolution so generic sunflower-oil requests choose a default approved package asset instead of composing without product.
 ## 2026-07-08 Magnific background URL normalization fix
 
 A retry reached `Compose Brand Image With Sharp` and failed with `Invalid Magnific background URL`. The composer was using the first raw URL candidate returned from the MCP result without enough normalization.

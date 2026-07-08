@@ -26,6 +26,25 @@ function collectUrls(value, urls = new Set(), seen = new Set()) {
   }
   return urls;
 }
+function collectMagnificAssetUrls(value, urls = new Set(), seen = new Set()) {
+  const parsed = parseMaybeJson(value);
+  if (!parsed || typeof parsed !== "object" || seen.has(parsed)) return urls;
+  seen.add(parsed);
+  if (Array.isArray(parsed)) { for (const item of parsed) collectMagnificAssetUrls(item, urls, seen); return urls; }
+  if (parsed.results && typeof parsed.results === "object") {
+    addUrlCandidate(parsed.results.url, urls);
+    addUrlCandidate(parsed.results.imageUrl, urls);
+    addUrlCandidate(parsed.results.outputUrl, urls);
+    addUrlCandidate(parsed.results.downloadUrl, urls);
+    addUrlCandidate(parsed.results.thumbnailUrl, urls);
+  }
+  addUrlCandidate(parsed.url, urls);
+  addUrlCandidate(parsed.imageUrl, urls);
+  addUrlCandidate(parsed.outputUrl, urls);
+  addUrlCandidate(parsed.downloadUrl, urls);
+  for (const nested of Object.values(parsed)) collectMagnificAssetUrls(nested, urls, seen);
+  return urls;
+}
 function escapeXml(value) { return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[char]); }
 function downloadBuffer(url, redirectCount = 0) {
   if (redirectCount > 5) return Promise.reject(new Error("Too many redirects while downloading Magnific background"));
@@ -58,9 +77,15 @@ function downloadBuffer(url, redirectCount = 0) {
 }
 const resolved = $("Resolve Brand Assets").item.json;
 const waitInput = $("Prepare Magnific Wait Input").item.json;
-const urls = [...collectUrls($json), ...collectUrls(waitInput.generation_result)];
-const backgroundUrl = urls[0];
-if (!backgroundUrl) throw new Error("Magnific result did not contain a background URL");
+const waitResult = $("Wait For Magnific Creation").item.json;
+const urls = [
+  ...collectMagnificAssetUrls(waitResult),
+  ...collectUrls(waitResult),
+  ...collectUrls($json),
+  ...collectUrls(waitInput.generation_result)
+];
+const backgroundUrl = urls.find((url) => /render\.(jpg|jpeg|png|webp)(\?|$)/i.test(url)) || urls[0];
+if (!backgroundUrl) throw new Error("Magnific result did not contain a background URL; wait output keys: " + Object.keys(waitResult || {}).join(","));
 const background = await downloadBuffer(backgroundUrl);
 const payload = resolved.cp.payload ?? {};
 const contract = resolved.asset_contract;
