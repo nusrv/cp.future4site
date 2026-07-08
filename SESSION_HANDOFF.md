@@ -4,6 +4,24 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-08 Resolve Brand Assets regex regression fix
+
+Completed after user reported live n8n error: `Problem in node ?Resolve Brand Assets? - Nothing to repeat`.
+
+- Exported current live `FF Admin - Creative Image Generation` (`rWQZP7saIkXUXDUD`) before editing.
+- Saved restore backup at `workflows/n8n/backups/creative-image-generation-backup-2026-07-08-17-40.json`.
+- Reproduced locally by executing the live-synced `Resolve Brand Assets` code with a 10L payload.
+- Root cause: Arabic unit alternatives in the new multi-capacity regex were corrupted into question marks in the n8n Code node source, producing an invalid regex and JavaScript `Nothing to repeat` error.
+- Fixed resolver by removing Arabic alternatives from regex literals and keeping English capacity matching paths stable: L, lt, ltr, liter/liters, litre/litres.
+- Rebuilt workflow, verified resolver locally with:
+  - single `10L Refined Sunflower Oil` -> `sunflower-oil-10l`
+  - multi `1L, 5L and 10L Refined Sunflower Oil` -> `sunflower-oil-1l`, `sunflower-oil-5l`, `sunflower-oil-10l`
+- Deployed and activated live workflow `rWQZP7saIkXUXDUD`. Live n8n `updatedAt`: `2026-07-08T14:42:01.024Z`.
+- Re-exported live workflow after deploy and confirmed active=true, 7 nodes, no corrupted question-mark regex remains, and multi-product fields are still present.
+- Verification passed: `node scripts/check-creative-image-workflows.mjs`, `node scripts/secret-scan.mjs`, and `node node_modules\typescript\bin\tsc --noEmit`.
+
+Next operator test: retry the single 10L request first. Then retry multi-product text requests.
+
 ## 2026-07-08 multi-product fixed-template composition update
 
 Completed after syncing from current live n8n first:

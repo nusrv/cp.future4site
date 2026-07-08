@@ -140,7 +140,7 @@ function extractCapacityLiters(payload) {
   const text = normalizeText(getPayloadSearchText(payload));
 
   const patterns = [
-    /(?:^|\D)(\d+(?:\.\d+)?)\s*(?:l|lt|ltr|liter|liters|litre|litres|لتر|ليتر)(?:\D|$)/i,
+    /(?:^|\D)(\d+(?:\.\d+)?)\s*(?:l|lt|ltr|liter|liters|litre|litres)(?:\D|$)/i,
     /(?:^|\D)(\d+(?:\.\d+)?)\s*[- ]?\s*(?:l|lt|ltr)(?:\D|$)/i
   ];
 
@@ -205,7 +205,7 @@ function extractAllCapacityLiters(payload) {
 
   const text = normalizeText(getPayloadSearchText(payload));
   const patterns = [
-    /(?:^|\D)(\d+(?:\.\d+)?)\s*(?:l|lt|ltr|liter|liters|litre|litres|??????|????????)(?:\D|$)/gi,
+    /(?:^|\D)(\d+(?:\.\d+)?)\s*(?:l|lt|ltr|liter|liters|litre|litres)(?:\D|$)/gi,
     /(?:^|\D)(\d+(?:\.\d+)?)\s*[- ]?\s*(?:l|lt|ltr)(?:\D|$)/gi
   ];
 
@@ -310,8 +310,7 @@ function productHasCapacity(productId, product, capacityLiters) {
   const size = String(capacityLiters).replace(/\.0+$/, "");
 
   const capacityPatterns = [
-    new RegExp("(^|\\D)" + size + "\\s*(l|lt|ltr|liter|liters|litre|litres|لتر|ليتر)(\\D|$)", "i"),
-    new RegExp("(^|\\D)" + size + "\\s*[- ]?\\s*(l|lt|ltr)(\\D|$)", "i"),
+    new RegExp("(^|\\D)" + size + "\\s*(l|lt|ltr|liter|liters|litre|litres)(\\D|$)", "i"),
     new RegExp("(^|\\D)" + size + "\\s*لتر(\\D|$)", "i")
   ];
 
@@ -614,3 +613,4 @@ return [
     }
   }
 ];
+
