@@ -4,6 +4,17 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-09 Facebook publishing credential convention
+
+Agreed naming for the first live Facebook publishing integration:
+
+- n8n Docker env must use `FUTURE_OILS_FACEBOOK_PAGE_ID` for the Future Oils Facebook Page ID.
+- n8n Docker env must use `FUTURE_OILS_FACEBOOK_ACCESS_TOKEN` for the Future Oils Page access token.
+- API version can use `META_GRAPH_API_VERSION`, currently expected as `v23.0`.
+- Do not use generic `FACEBOOK_PAGE_ID` / `FACEBOOK_PAGE_ACCESS_TOKEN` in the new workflow.
+- Do not commit real Facebook tokens to Git. These values belong in the n8n Docker/Plesk environment only.
+- Future multi-page support should follow the same brand-specific pattern, e.g. `<BRAND_KEY>_FACEBOOK_PAGE_ID` and `<BRAND_KEY>_FACEBOOK_ACCESS_TOKEN`.
+
 ## 2026-07-08 separate image per product implementation
 
 Implemented after the combined multi-product image was judged too crowded and products appeared too small.
