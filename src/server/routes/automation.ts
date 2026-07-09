@@ -6,7 +6,7 @@ import { prisma } from "../db.js";
 import { requirePermission } from "../security/auth.js";
 import { signPayload, timingSafeEqual } from "../security/crypto.js";
 import { addJobEvent, dispatchJob, transitionJob } from "../services/automation.js";
-import { deleteFile, saveFile } from "../services/storage.js";
+import { deleteFile, readFile, saveFile } from "../services/storage.js";
 import { automationCallbackSchema } from "../../shared/contracts.js";
 
 const completedContentStatuses = new Set(["completed", "completed_with_warnings"]);
@@ -52,6 +52,56 @@ export async function automationRoutes(app: FastifyInstance) {
     const params = z.object({ id: z.string() }).parse(request.params);
     await transitionJob(params.id, "CANCELLED", "Cancelled by user");
     return { ok: true };
+  });
+
+  app.get("/api/automation/publishing-assets/:assetId/file", async (request, reply) => {
+    const params = z.object({ assetId: z.string() }).parse(request.params);
+    const query = z.object({
+      job_id: z.string(),
+      expires: z.coerce.number().int().positive(),
+      nonce: z.string().min(8),
+      signature: z.string().regex(/^[a-f0-9]{64}$/i)
+    }).parse(request.query);
+
+    if (Date.now() > query.expires) {
+      reply.code(401);
+      return { error: "Publishing asset URL expired" };
+    }
+
+    const expected = signPayload(config.PLATFORM_CALLBACK_SECRET, String(query.expires), query.nonce, `${query.job_id}.${params.assetId}`);
+    if (!timingSafeEqual(query.signature, expected)) {
+      reply.code(401);
+      return { error: "Invalid publishing asset signature" };
+    }
+
+    const job = await prisma.automationJob.findUniqueOrThrow({ where: { id: query.job_id } });
+    if (!job.jobType.startsWith("publish_")) {
+      reply.code(403);
+      return { error: "Publishing asset URL is not linked to a publish job" };
+    }
+
+    const asset = await prisma.creativeAsset.findUniqueOrThrow({ where: { id: params.assetId } });
+    if (asset.approvalStatus !== "approved" || !asset.fileId) {
+      reply.code(403);
+      return { error: "Creative asset is not approved for publishing" };
+    }
+
+    const input = job.inputPayload && typeof job.inputPayload === "object" && !Array.isArray(job.inputPayload)
+      ? job.inputPayload as Record<string, unknown>
+      : {};
+    const allowedAssetIds = Array.isArray(input.creative_asset_ids) ? input.creative_asset_ids.map(String) : [];
+    if (!allowedAssetIds.includes(asset.id)) {
+      reply.code(403);
+      return { error: "Creative asset is not included in this publishing job" };
+    }
+
+    const file = await prisma.fileObject.findUniqueOrThrow({ where: { id: asset.fileId } });
+    const buffer = await readFile(file.storageKey);
+    return reply
+      .type(file.mimeType)
+      .header("Cache-Control", "private, max-age=60")
+      .header("Content-Disposition", `inline; filename="${file.originalName.replace(/"/g, "_")}"`)
+      .send(buffer);
   });
 
   app.post("/api/automation/callback", { bodyLimit: 10 * 1024 * 1024 }, async (request, reply) => {

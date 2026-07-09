@@ -119,7 +119,7 @@ if (dryRun) {
 return mediaFiles
   .sort((a, b) => Number(a.position || 1) - Number(b.position || 1))
   .map((file, index) => {
-    if (!file.data_base64) throw new Error("Approved media file is missing data_base64");
+    if (!file.download_url) throw new Error("Approved media file is missing download_url");
     return {
       json: {
         cp,
@@ -130,15 +130,9 @@ return mediaFiles
         caption,
         media_count: mediaFiles.length,
         media_index: index + 1,
+        media_download_url: String(file.download_url),
         publish_immediately: mediaFiles.length === 1,
         facebook_upload_url: "https://graph.facebook.com/" + graphVersion + "/" + pageId + "/photos"
-      },
-      binary: {
-        data: {
-          data: String(file.data_base64),
-          mimeType: String(file.mime_type || "image/jpeg"),
-          fileName: String(file.name || "facebook-photo-" + (index + 1) + ".jpg")
-        }
       }
     };
   });`;
@@ -262,7 +256,7 @@ const workflow = {
         sendBody: true,
         contentType: "multipart-form-data",
         bodyParameters: { parameters: [
-          { parameterType: "formBinaryData", name: "source", inputDataFieldName: "data" },
+          { name: "url", value: "={{ $json.media_download_url }}" },
           { name: "published", value: "={{ $json.publish_immediately ? 'true' : 'false' }}" },
           { name: "caption", value: "={{ $json.publish_immediately ? $json.caption : '' }}" }
         ] },

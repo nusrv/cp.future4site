@@ -4,6 +4,35 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-09 Facebook publishing 502 fix
+
+Fixed the first CP Publishing test failure where `/api/content/items/:id/publish` returned 502 and live n8n showed zero executions.
+
+Diagnosis:
+- n8n workflow `FF Admin - Facebook Publishing` was active with the correct path, but had zero executions.
+- The likely failure point was CP -> n8n webhook submission before n8n execution creation.
+- Root cause risk: CP was sending approved images as base64 in `payload.media_files[]`, making the webhook body too large for the CP/n8n proxy path.
+
+Fix implemented:
+- CP no longer sends base64 image bytes in the publish webhook payload.
+- Added signed expiring media endpoint: `GET /api/automation/publishing-assets/:assetId/file`.
+- CP publish payload now sends small `download_url` values in `payload.media_files[]`.
+- The signed URL is tied to the publish job ID and creative asset ID, expires after 10 minutes, and requires `PLATFORM_CALLBACK_SECRET` HMAC validation.
+- The endpoint verifies the job is a publish job, the creative asset is approved, has a file, and is included in that publishing job payload.
+- Updated `FF Admin - Facebook Publishing` so the Facebook `/photos` upload uses the signed media URL field instead of binary/base64 upload.
+- Redeployed and activated live n8n workflow `9DSImxhIAF5PENgg`; live `updatedAt`: `2026-07-09T12:58:18.481Z`.
+
+Validation passed locally:
+- Facebook workflow JSON parse.
+- Build/deploy script syntax checks.
+- Secret scan.
+- TypeScript check.
+- `rg` confirmed Facebook publishing now uses `download_url` / `media_download_url`; remaining `data_base64` references are only for creative-image callback handling.
+
+Required deployment now:
+1. Pull latest `develop` on Plesk.
+2. Rebuild/restart CP.
+3. Retest CP Publishing check, then live Facebook publish.
 ## 2026-07-09 Facebook publishing preparation
 
 Prepared the first real Facebook publishing path for CP + n8n testing.

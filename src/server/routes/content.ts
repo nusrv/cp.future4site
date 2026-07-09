@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../db.js";
 import { config } from "../config.js";
 import { requirePermission } from "../security/auth.js";
+import { signPayload } from "../security/crypto.js";
 import { audit } from "../services/audit.js";
 import { createAutomationJob, dispatchJob } from "../services/automation.js";
 import { readFile, saveFile } from "../services/storage.js";
@@ -311,11 +312,10 @@ export async function contentRoutes(app: FastifyInstance) {
       const unchecked = input.platforms.filter((platform) => !checked.has(platform));
       if (unchecked.length) throw new Error(`Run the publishing check for ${unchecked.join(", ")} first`);
     }
-    const mediaFiles = await Promise.all(approvedAssets.map(async (asset) => {
+    const mediaFileDescriptors = await Promise.all(approvedAssets.map(async (asset) => {
       if (!asset.fileId) return null;
       const file = await prisma.fileObject.findUnique({ where: { id: asset.fileId } });
       if (!file) return null;
-      const buffer = await readFile(file.storageKey);
       const metadata = asset.metadata && typeof asset.metadata === "object" && !Array.isArray(asset.metadata) ? asset.metadata as Record<string, unknown> : {};
       return {
         creative_asset_id: asset.id,
@@ -323,15 +323,27 @@ export async function contentRoutes(app: FastifyInstance) {
         name: file.originalName,
         mime_type: file.mimeType,
         size_bytes: file.sizeBytes,
-        data_base64: buffer.toString("base64"),
         position: Number(metadata.imageSetPosition ?? 1)
       };
     }));
-    const publishMediaFiles = mediaFiles.filter((file): file is NonNullable<typeof file> => file !== null);
-    if (getCreativeWorkflowType(item.request.format) && !publishMediaFiles.length) throw new Error("Approved media file is unavailable for publishing");
+    const publishMediaFileDescriptors = mediaFileDescriptors.filter((file): file is NonNullable<typeof file> => file !== null);
+    if (getCreativeWorkflowType(item.request.format) && !publishMediaFileDescriptors.length) throw new Error("Approved media file is unavailable for publishing");
 
     const records = [];
     for (const platform of input.platforms) {
+      const idempotencyKey = `publish:${platform}:${item.id}:${input.dryRun ? "dry" : "live"}`;
+      const basePayload = {
+        platform,
+        dryRun: input.dryRun,
+        caption: item.caption,
+        headline: item.headline,
+        cta: item.cta,
+        destination_key: "FUTURE_OILS",
+        creative_asset_id: approvedAsset?.id ?? null,
+        creative_asset: approvedAsset?.metadata ?? null,
+        creative_asset_ids: approvedAssets.map((asset) => asset.id),
+        creative_assets: approvedAssets.map((asset) => ({ id: asset.id, file_id: asset.fileId, metadata: asset.metadata }))
+      };
       const job = await createAutomationJob({
         jobType: `publish_${platform}`,
         title: `${input.dryRun ? "Dry-run" : "Publish"} ${platform}`,
@@ -339,31 +351,33 @@ export async function contentRoutes(app: FastifyInstance) {
         relatedEntityType: "content_item",
         relatedEntityId: item.id,
         requestedByUserId: current.user.id,
-        idempotencyKey: `publish:${platform}:${item.id}:${input.dryRun ? "dry" : "live"}`,
-        inputPayload: {
-          platform,
-          dryRun: input.dryRun,
-          caption: item.caption,
-          headline: item.headline,
-          cta: item.cta,
-          destination_key: "FUTURE_OILS",
-          creative_asset_id: approvedAsset?.id ?? null,
-          creative_asset: approvedAsset?.metadata ?? null,
-          creative_asset_ids: approvedAssets.map((asset) => asset.id),
-          creative_assets: approvedAssets.map((asset) => ({ id: asset.id, file_id: asset.fileId, metadata: asset.metadata })),
-          media_files: publishMediaFiles
-        }
+        idempotencyKey,
+        inputPayload: { ...basePayload, media_files: publishMediaFileDescriptors }
+      });
+      const mediaFilesWithUrls = publishMediaFileDescriptors.map((file) => {
+        const expires = Date.now() + 10 * 60 * 1000;
+        const nonce = `${job.id}_${file.creative_asset_id}_${Math.random().toString(36).slice(2)}`;
+        const signature = signPayload(config.PLATFORM_CALLBACK_SECRET, String(expires), nonce, `${job.id}.${file.creative_asset_id}`);
+        const params = new URLSearchParams({ job_id: job.id, expires: String(expires), nonce, signature });
+        return {
+          ...file,
+          download_url: `${config.APP_BASE_URL.replace(/\/$/, "")}/api/automation/publishing-assets/${file.creative_asset_id}/file?${params.toString()}`
+        };
+      });
+      await prisma.automationJob.update({
+        where: { id: job.id },
+        data: { inputPayload: { ...basePayload, media_files: mediaFilesWithUrls } }
       });
       await dispatchJob(job.id);
       const record = await prisma.publishingRecord.upsert({
-        where: { idempotencyKey: `publish:${platform}:${item.id}:${input.dryRun ? "dry" : "live"}` },
+        where: { idempotencyKey },
         update: { status: input.dryRun ? "DRY_RUN" : "QUEUED", automationJobId: job.id },
         create: {
           contentItemId: item.id,
           platform: platform.toUpperCase() as any,
           status: input.dryRun ? "DRY_RUN" : "QUEUED",
           mode: input.dryRun ? "DRY_RUN" : "LIVE",
-          idempotencyKey: `publish:${platform}:${item.id}:${input.dryRun ? "dry" : "live"}`,
+          idempotencyKey,
           automationJobId: job.id,
           requestedByUserId: current.user.id
         }
