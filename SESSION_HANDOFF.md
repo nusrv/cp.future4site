@@ -4,6 +4,18 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-09 Facebook publishing dispatch-error surfacing
+
+After the signed-URL fix was deployed, the user still saw a Cloudflare 502 on `POST /api/content/items/:id/publish`. Live n8n check showed workflow `9DSImxhIAF5PENgg` was active but still had zero executions, confirming the request still did not reach n8n.
+
+Additional CP hardening:
+- CP publish route now catches `dispatchJob(job.id)` errors per platform instead of letting them surface as a generic 502.
+- If CP cannot submit the job to n8n, it creates/updates the `PublishingRecord` with `status: FAILED` and stores the exact dispatch error in `errors.message`.
+- This should make the next CP test return a normal JSON response and expose the real CP -> n8n failure in CP data/logs.
+
+Validation passed: TypeScript, secret scan, and diff check.
+
+Required deployment: pull latest `develop`, rebuild/restart CP, then retry Publishing check and inspect the failed publishing record / automation job error if n8n executions are still zero.
 ## 2026-07-09 Facebook publishing 502 fix
 
 Fixed the first CP Publishing test failure where `/api/content/items/:id/publish` returned 502 and live n8n showed zero executions.

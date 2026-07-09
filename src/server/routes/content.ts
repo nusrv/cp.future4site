@@ -368,18 +368,29 @@ export async function contentRoutes(app: FastifyInstance) {
         where: { id: job.id },
         data: { inputPayload: { ...basePayload, media_files: mediaFilesWithUrls } }
       });
-      await dispatchJob(job.id);
+      let dispatchError: string | null = null;
+      try {
+        await dispatchJob(job.id);
+      } catch (error) {
+        dispatchError = error instanceof Error ? error.message : "Publishing workflow dispatch failed";
+      }
+      const recordStatus = dispatchError ? "FAILED" : input.dryRun ? "DRY_RUN" : "QUEUED";
       const record = await prisma.publishingRecord.upsert({
         where: { idempotencyKey },
-        update: { status: input.dryRun ? "DRY_RUN" : "QUEUED", automationJobId: job.id },
+        update: {
+          status: recordStatus,
+          automationJobId: job.id,
+          errors: dispatchError ? { message: dispatchError } : undefined
+        },
         create: {
           contentItemId: item.id,
           platform: platform.toUpperCase() as any,
-          status: input.dryRun ? "DRY_RUN" : "QUEUED",
+          status: recordStatus,
           mode: input.dryRun ? "DRY_RUN" : "LIVE",
           idempotencyKey,
           automationJobId: job.id,
-          requestedByUserId: current.user.id
+          requestedByUserId: current.user.id,
+          errors: dispatchError ? { message: dispatchError } : undefined
         }
       });
       records.push(record);
