@@ -4,6 +4,37 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-09 Facebook publishing preparation
+
+Prepared the first real Facebook publishing path for CP + n8n testing.
+
+- Added generated workflow `workflows/n8n/generated/13-facebook-publishing.json` named `FF Admin - Facebook Publishing`.
+- Added builder script `scripts/build-facebook-publishing-workflow.mjs`; `n8n:build-workflows` now regenerates it.
+- Added safe single-workflow deploy script `scripts/deploy-facebook-publishing-workflow.mjs`; use this instead of the generic push-all script for this workflow.
+- Deployed the workflow to live n8n as inactive. Live workflow ID: `9DSImxhIAF5PENgg`; live `updatedAt`: `2026-07-09T12:35:40.906Z`.
+- Workflow webhook path: `future-foresight/facebook-publishing`.
+- CP default `N8N_PUBLISH_WEBHOOK_PATH` now points to `future-foresight/facebook-publishing`.
+- CP publish payload now includes ordered approved media bytes in `payload.media_files[]`, so n8n can upload binaries directly to Facebook without exposing private media URLs.
+- CP publishing callback handling now updates `PublishingRecord` for `publish_*` jobs: dry-run callbacks remain `DRY_RUN`; successful live callbacks become `PUBLISHED`; failed callbacks become `FAILED`.
+- Live publish records now use mode `LIVE` instead of `MOCK`.
+- Facebook workflow behavior:
+  - validates signed CP request using `N8N_WEBHOOK_SECRET`;
+  - acknowledges CP immediately;
+  - dry-run sends a signed callback and does not call Meta;
+  - one image publishes via `/{page-id}/photos` with `published=true`;
+  - multiple images upload unpublished photos and create one `/feed` post with `attached_media`;
+  - final callback is signed with `PLATFORM_CALLBACK_SECRET`.
+- Required n8n Docker env before activation: `META_GRAPH_API_VERSION`, `FUTURE_OILS_FACEBOOK_PAGE_ID`, and `FUTURE_OILS_FACEBOOK_ACCESS_TOKEN`.
+- Activation command after n8n env is configured/restarted: `node scripts/deploy-facebook-publishing-workflow.mjs --activate --confirm-live --confirm-facebook-env`.
+- Validation passed locally: Facebook workflow JSON parse, build script syntax, deploy script syntax, secret scan, TypeScript check, and diff check.
+
+Pending test:
+1. Add/restart n8n Docker env for the Future Oils Facebook credentials.
+2. Activate workflow `9DSImxhIAF5PENgg` with the command above.
+3. Pull/rebuild/restart CP so the new publish payload/callback logic is live.
+4. Run Publishing check from CP, confirm `DRY_RUN` record updates.
+5. Publish one approved image post to Facebook and confirm CP records `PUBLISHED` with platform post ID/URL.
+6. Test a multi-image approved request and confirm it creates one Facebook post with attached media.
 ## 2026-07-09 Facebook publishing credential convention
 
 Agreed naming for the first live Facebook publishing integration:

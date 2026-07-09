@@ -248,6 +248,36 @@ export async function automationRoutes(app: FastifyInstance) {
         }
       }
 
+      if (currentJob.jobType.startsWith("publish_")) {
+        const output = input.outputs && typeof input.outputs === "object" && !Array.isArray(input.outputs)
+          ? input.outputs as Record<string, unknown>
+          : {};
+        const isDryRun = output.dry_run === true;
+        const platformPostId = optionalString(output.platform_post_id) || optionalString(output.platformPostId) || optionalString(output.post_id) || optionalString(output.id);
+        const platformUrl = optionalString(output.platform_url) || optionalString(output.platformUrl) || optionalString(output.permalink_url);
+
+        await tx.publishingRecord.updateMany({
+          where: { automationJobId: currentJob.id },
+          data: completedContentStatuses.has(input.status)
+            ? {
+                status: isDryRun ? "DRY_RUN" : "PUBLISHED",
+                platformPostId,
+                platformUrl,
+                publishedAt: isDryRun ? undefined : new Date(),
+                warnings: input.warnings as Prisma.InputJsonValue | undefined,
+                errors: undefined
+              }
+            : input.status === "failed"
+              ? {
+                  status: "FAILED",
+                  warnings: input.warnings as Prisma.InputJsonValue | undefined,
+                  errors: (input.error ? { error: input.error } : { message: input.current_step ?? "Publishing failed" }) as Prisma.InputJsonValue
+                }
+              : {
+                  warnings: input.warnings as Prisma.InputJsonValue | undefined
+                }
+        });
+      }
       return { duplicate: false, contentItemId, creativeAssetId, creativeAssetIds };
       });
     } catch (error) {

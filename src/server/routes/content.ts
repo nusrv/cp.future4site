@@ -311,6 +311,25 @@ export async function contentRoutes(app: FastifyInstance) {
       const unchecked = input.platforms.filter((platform) => !checked.has(platform));
       if (unchecked.length) throw new Error(`Run the publishing check for ${unchecked.join(", ")} first`);
     }
+    const mediaFiles = await Promise.all(approvedAssets.map(async (asset) => {
+      if (!asset.fileId) return null;
+      const file = await prisma.fileObject.findUnique({ where: { id: asset.fileId } });
+      if (!file) return null;
+      const buffer = await readFile(file.storageKey);
+      const metadata = asset.metadata && typeof asset.metadata === "object" && !Array.isArray(asset.metadata) ? asset.metadata as Record<string, unknown> : {};
+      return {
+        creative_asset_id: asset.id,
+        file_id: file.id,
+        name: file.originalName,
+        mime_type: file.mimeType,
+        size_bytes: file.sizeBytes,
+        data_base64: buffer.toString("base64"),
+        position: Number(metadata.imageSetPosition ?? 1)
+      };
+    }));
+    const publishMediaFiles = mediaFiles.filter((file): file is NonNullable<typeof file> => file !== null);
+    if (getCreativeWorkflowType(item.request.format) && !publishMediaFiles.length) throw new Error("Approved media file is unavailable for publishing");
+
     const records = [];
     for (const platform of input.platforms) {
       const job = await createAutomationJob({
@@ -327,10 +346,12 @@ export async function contentRoutes(app: FastifyInstance) {
           caption: item.caption,
           headline: item.headline,
           cta: item.cta,
+          destination_key: "FUTURE_OILS",
           creative_asset_id: approvedAsset?.id ?? null,
           creative_asset: approvedAsset?.metadata ?? null,
           creative_asset_ids: approvedAssets.map((asset) => asset.id),
-          creative_assets: approvedAssets.map((asset) => ({ id: asset.id, file_id: asset.fileId, metadata: asset.metadata }))
+          creative_assets: approvedAssets.map((asset) => ({ id: asset.id, file_id: asset.fileId, metadata: asset.metadata })),
+          media_files: publishMediaFiles
         }
       });
       await dispatchJob(job.id);
@@ -341,7 +362,7 @@ export async function contentRoutes(app: FastifyInstance) {
           contentItemId: item.id,
           platform: platform.toUpperCase() as any,
           status: input.dryRun ? "DRY_RUN" : "QUEUED",
-          mode: input.dryRun ? "DRY_RUN" : "MOCK",
+          mode: input.dryRun ? "DRY_RUN" : "LIVE",
           idempotencyKey: `publish:${platform}:${item.id}:${input.dryRun ? "dry" : "live"}`,
           automationJobId: job.id,
           requestedByUserId: current.user.id
