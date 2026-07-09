@@ -10,9 +10,10 @@ const idPattern = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 const brandId = String(payload.brand_id || "future-oils");
 const logoId = String(payload.logo_id || "primary");
+const templateBackgroundId = String(payload.template_background_id || payload.background_id || "future-oils-classic");
 const ratio = String(payload.ratio || "4:5");
 
-if (!idPattern.test(brandId) || !idPattern.test(logoId)) {
+if (!idPattern.test(brandId) || !idPattern.test(logoId) || !idPattern.test(templateBackgroundId)) {
   throw new Error("Invalid brand asset identifier");
 }
 
@@ -405,7 +406,7 @@ function scoreProductMatch(productId, product, payload, capacityLiters) {
   /**
    * Prefer marketing-approved products.
    */
-  if (product?.approved_for_marketing === true) {
+  if (score > 0 && product?.approved_for_marketing === true) {
     score += 25;
     reasons.push("approved for marketing");
   }
@@ -487,7 +488,12 @@ if (!logoRelative) {
   throw new Error("Requested logo asset is unavailable");
 }
 
-const templateBackgroundRelative = String(profile.template_background || "logo/background.png");
+const templateBackgroundEntry = profile.template_backgrounds?.[templateBackgroundId];
+const templateBackgroundRelative = String(
+  typeof templateBackgroundEntry === "string"
+    ? templateBackgroundEntry
+    : templateBackgroundEntry?.file || profile.template_background || "logo/background.png"
+);
 let templateBackgroundPath;
 
 try {
@@ -609,6 +615,7 @@ return [
         product_asset_id: primaryProduct ? primaryProduct.product_asset_id : null,
         product_asset_ids: productAssets.map((product) => product.product_asset_id),
         product_resolution: productResolution,
+        template_background_id: templateBackgroundId,
         ratio,
         profile_version: profile.schema_version,
         brand_theme: profile.brand_theme || {},

@@ -56,5 +56,13 @@
                          "logo_position":  "top-left",
                          "product_position":  "bottom-right",
                          "text_panel_position":  "left-middle"
-                     }
+                     },
+    "template_background":  "logo/background.png",
+    "template_backgrounds":  {
+                                 "future-oils-classic":  {
+                                                             "label":  "Future Oils classic product frame",
+                                                             "file":  "logo/background.png",
+                                                             "description":  "Approved Future Oils branded product-placement template"
+                                                         }
+                             }
 }

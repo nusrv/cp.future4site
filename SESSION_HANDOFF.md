@@ -2,8 +2,29 @@
 
 Canonical restart point after any interrupted or completed session. Read this file first before changing the CP or its n8n workflows.
 
-Last verified: **2026-07-08 (Asia/Amman)**
+Last verified: **2026-07-09 (Asia/Amman)**
 
+## 2026-07-09 selectable image background templates and non-oil fallback fix
+
+Current image-generation status:
+
+- CP New Content Request now has an `Image background` dropdown populated from `GET /api/content/creative-options`.
+- Added `ContentRequest.creativeTemplateId` with migration `202607090001_content_creative_template`.
+- CP stores `creativeTemplateId` and sends it to n8n as `payload.template_background_id` during creative image generation.
+- `public/assets/brand-profile.json` now has `template_backgrounds.future-oils-classic`, backed by `logo/background.png`.
+- n8n `Resolve Brand Assets` now resolves `template_background_id`/`background_id` through `profile.template_backgrounds` and exposes `asset_contract.template_background_id` plus `template_background_path` to Sharp composition.
+- Fixed the wrong-oil fallback: approved products no longer score as a match by approval alone, and CP only sends explicit `sunflower-oil-*` product asset IDs when the request text mentions sunflower/oil.
+- Removed the New Content Request defaults that forced `Business line = Edible Oils` and `Product = Refined Sunflower Oil`.
+- Live n8n workflow backup before deploy: `workflows/n8n/exports/2026-07-09T14-17-39-681Z-ff-admin-creative-image-generation.json`.
+- Redeployed and activated live n8n workflow `FF Admin - Creative Image Generation` (`rWQZP7saIkXUXDUD`) at `2026-07-09T14:18:04.178Z`.
+
+Important limitation:
+
+- The repo currently contains only Future Oils sunflower product assets and one Future Oils background template. Sugar, steel, or other product lines need real product PNGs and `brand-profile.json` entries before image generation can produce correct branded images. The fix prevents silent fallback to 1L oil; it does not invent missing non-oil assets.
+
+Validation passed: creative workflow build/check, TypeScript, secret scan, diff check, and brand-profile JSON parse. The older `scripts/test-creative-image-workflow-contract.mjs` is currently stale because it expects `workflows/n8n/generated/13-creative-image-result-callback.json`, which this workflow build no longer generates.
+
+Deployment required for CP: pull latest `develop`, apply Prisma migration, rebuild/restart CP. n8n creative image workflow is already deployed live.
 ## 2026-07-09 Facebook publishing success and CP cleanup controls
 
 User confirmed Facebook publishing worked after correcting the duplicated CP publish workflow path (`future-foresight/future-foresight/facebook-publishing` -> `future-foresight/facebook-publishing`).

@@ -465,6 +465,7 @@ model ContentRequest {
   channel     String?
   format      String
   cta         String?
+  creativeTemplateId String?
   internalNotes String?     @db.Text
   status      ContentStatus @default(DRAFT)
   requestedPublishingChannels Json?

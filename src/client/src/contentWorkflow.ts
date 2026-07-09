@@ -51,6 +51,7 @@ export type ContentRequest = {
   market?: string | null;
   audience?: string | null;
   format: "text" | "text_image" | "text_video" | "carousel";
+  creativeTemplateId?: string | null;
   status: string;
   createdAt: string;
   items: ContentItem[];

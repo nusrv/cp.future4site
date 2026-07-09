@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../db.js";
@@ -10,6 +12,21 @@ import { readFile, saveFile } from "../services/storage.js";
 import { contentRequestSchema } from "../../shared/contracts.js";
 
 export async function contentRoutes(app: FastifyInstance) {
+  app.get("/api/content/creative-options", { preHandler: requirePermission("content.read") }, async () => {
+    const profilePath = path.resolve(process.cwd(), "public", "assets", "brand-profile.json");
+    const profile = JSON.parse(await fs.readFile(profilePath, "utf8")) as Record<string, any>;
+    const backgrounds = Object.entries(profile.template_backgrounds || {}).map(([id, value]) => {
+      const entry = typeof value === "string" ? { file: value } : value as Record<string, unknown>;
+      return {
+        id,
+        label: typeof entry.label === "string" ? entry.label : id,
+        description: typeof entry.description === "string" ? entry.description : undefined,
+        file: typeof entry.file === "string" ? entry.file : value
+      };
+    });
+    return { backgrounds };
+  });
+
   app.get("/api/content/requests", { preHandler: requirePermission("content.read") }, async () => {
     const requests = await prisma.contentRequest.findMany({
       include: { items: { orderBy: { version: "desc" }, take: 1, include: { publishingRecords: true } }, assets: { orderBy: { createdAt: "desc" } } },
@@ -37,6 +54,7 @@ export async function contentRoutes(app: FastifyInstance) {
         channel: input.channel,
         format: input.format,
         cta: input.cta,
+        creativeTemplateId: input.creativeTemplateId,
         internalNotes: input.internalNotes,
         requestedPublishingChannels: input.requestedPublishingChannels,
         createdByUserId: current.user.id
@@ -465,6 +483,7 @@ async function requestCreativeProduction(contentRequestId: string, requestedByUs
       topic: content.topic,
       brand_id: resolveBrandId(content.brand),
       logo_id: "primary",
+      template_background_id: content.creativeTemplateId || "future-oils-classic",
       product_asset_id: productAssetIds[0] ?? null,
       product_asset_ids: productAssetIds,
       ratio: "4:5",
@@ -525,6 +544,9 @@ function resolveProductAssetIds(product?: string | null) {
   if (!product) return [];
   const source = product.toLowerCase();
   const compact = source.replace(/\s+/g, "");
+  const isSunflowerOilRequest = /sunflower|oil/i.test(source);
+  if (!isSunflowerOilRequest) return [];
+
   const ids: string[] = [];
   for (const size of ["18l", "17l", "10l", "5l", "4l", "3l", "1l"]) {
     const liters = size.slice(0, -1);

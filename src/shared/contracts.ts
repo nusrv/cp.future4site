@@ -52,6 +52,7 @@ export const contentRequestSchema = z.object({
   channel: z.string().max(120).optional().default("Facebook, Instagram"),
   format: z.enum(["text", "text_image", "text_video", "carousel"]),
   cta: z.string().max(180).optional().default(""),
+  creativeTemplateId: z.string().trim().max(120).optional().default("future-oils-classic"),
   internalNotes: z.string().max(2000).optional().default(""),
   requestedPublishingChannels: z.array(z.enum(["facebook", "instagram"])).default([])
 });

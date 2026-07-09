@@ -7,6 +7,9 @@ import { MediaLibraryPicker, type LibraryImage } from "./MediaLibrary";
 import { assetUrl, deriveStage, formatLabel, isProcessing, needsMedia, stageLabel, type ContentRequest, type WorkflowStage } from "../contentWorkflow";
 
 type ContentResponse = { requests: ContentRequest[] };
+type CreativeOptionsResponse = {
+  backgrounds: Array<{ id: string; label: string; description?: string; file?: string }>;
+};
 type ReviewDecision = "approved_publication" | "revision_requested" | "rejected" | "archived";
 type FilterKey = "all" | "review" | "media" | "failed" | "ready" | "rejected";
 
@@ -21,6 +24,11 @@ export function MarketingStudio() {
     queryFn: () => api<ContentResponse>("/api/content/requests"),
     refetchInterval: (current) => current.state.data?.requests.some(isProcessing) ? 2500 : false,
     refetchOnWindowFocus: true
+  });
+  const creativeOptions = useQuery<CreativeOptionsResponse>({
+    queryKey: ["content", "creative-options"],
+    queryFn: () => api<CreativeOptionsResponse>("/api/content/creative-options"),
+    staleTime: 5 * 60 * 1000
   });
   const refresh = () => qc.invalidateQueries({ queryKey: ["content"] });
   const create = useMutation({
@@ -82,7 +90,7 @@ export function MarketingStudio() {
         <button className="btn btn-primary" onClick={() => setShowCreate((value) => !value)}>{showCreate ? "Close request form" : "New content request"}</button>
       </div>
 
-      {showCreate ? <RequestForm pending={create.isPending} error={create.error?.message} onSubmit={(body) => create.mutate(body)} /> : null}
+      {showCreate ? <RequestForm backgrounds={creativeOptions.data?.backgrounds ?? []} pending={create.isPending} error={create.error?.message} onSubmit={(body) => create.mutate(body)} /> : null}
 
       <nav className="workflow-tabs" aria-label="Content filters">
         <FilterButton value="all" current={filter} onChange={setFilter} count={requests.filter((item) => deriveStage(item) !== "archived").length}>All</FilterButton>
@@ -244,23 +252,25 @@ function ContentSkeleton() {
   return <div className="content-workspace" aria-label="Loading content"><div className="content-queue skeleton-block" /><div className="content-detail skeleton-block" /></div>;
 }
 
-function RequestForm({ pending, error, onSubmit }: { pending: boolean; error?: string; onSubmit: (body: Record<string, unknown>) => void }) {
+function RequestForm({ backgrounds, pending, error, onSubmit }: { backgrounds: CreativeOptionsResponse["backgrounds"]; pending: boolean; error?: string; onSubmit: (body: Record<string, unknown>) => void }) {
+  const backgroundOptions = backgrounds.length ? backgrounds : [{ id: "future-oils-classic", label: "Future Oils classic product frame" }];
   return <form className="request-form" onSubmit={(event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const format = String(form.get("format"));
     onSubmit({
-      topic: String(form.get("topic")), brand: String(form.get("brand")), businessLine: String(form.get("businessLine")), product: String(form.get("product")), market: String(form.get("market")), audience: String(form.get("audience")), objective: String(form.get("objective")), channel: format === "text" ? "Facebook" : "Facebook, Instagram", format, cta: String(form.get("cta")), internalNotes: String(form.get("internalNotes")), requestedPublishingChannels: format === "text" ? ["facebook"] : ["facebook", "instagram"]
+      topic: String(form.get("topic")), brand: String(form.get("brand")), businessLine: String(form.get("businessLine")), product: String(form.get("product")), market: String(form.get("market")), audience: String(form.get("audience")), objective: String(form.get("objective")), channel: format === "text" ? "Facebook" : "Facebook, Instagram", format, creativeTemplateId: String(form.get("creativeTemplateId") || "future-oils-classic"), cta: String(form.get("cta")), internalNotes: String(form.get("internalNotes")), requestedPublishingChannels: format === "text" ? ["facebook"] : ["facebook", "instagram"]
     });
   }}>
     <div className="form-heading"><div><h2>New content request</h2><p>Start with the copy. Media is created only after copy approval.</p></div></div>
     <label className="form-span-2"><span className="label">Topic or instruction</span><textarea className="input min-h-24" name="topic" required /></label>
     <Input name="brand" label="Brand" defaultValue="Future Oils" />
-    <Input name="businessLine" label="Business line" defaultValue="Edible Oils" />
-    <Input name="product" label="Product" defaultValue="Refined Sunflower Oil" />
+    <Input name="businessLine" label="Business line" />
+    <Input name="product" label="Product" />
     <Input name="market" label="Market" defaultValue="Gulf/MENA" />
     <Input name="audience" label="Audience" defaultValue="Importers and distributors" />
     <label><span className="label">Format</span><select className="input" name="format" defaultValue="text_image"><option value="text">Text only</option><option value="text_image">Text and image</option><option value="text_video">Text and video</option><option value="carousel">Carousel</option></select></label>
+    <label><span className="label">Image background</span><select className="input" name="creativeTemplateId" defaultValue={backgroundOptions[0]?.id ?? "future-oils-classic"}>{backgroundOptions.map((option) => <option value={option.id} key={option.id}>{option.label}</option>)}</select></label>
     <label className="form-span-2"><span className="label">Objective</span><textarea className="input" name="objective" /></label>
     <Input name="cta" label="Call to action" defaultValue="Request a Quote" />
     <Input name="internalNotes" label="Internal notes" />
