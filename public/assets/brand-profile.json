@@ -13,8 +13,7 @@
                                           },
                      "sunflower-oil-3l":  {
                                               "file":  "products/3L-sunflower-oil.png",
-                                              "approved_for_marketing":  false,
-                                              "restriction":  "Not in the current KB-approved packaging list"
+                                              "approved_for_marketing":  true
                                           },
                      "sunflower-oil-4l":  {
                                               "file":  "products/4L-sunflower-oil.png",
