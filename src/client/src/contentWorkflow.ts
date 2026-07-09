@@ -29,6 +29,8 @@ export type PublishingRecord = {
   status: string;
   mode: string;
   platformUrl?: string | null;
+  automationJobId?: string | null;
+  errors?: Record<string, unknown> | null;
 };
 
 export type ContentItem = {

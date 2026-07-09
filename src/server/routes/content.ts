@@ -291,6 +291,36 @@ export async function contentRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
+  app.delete("/api/content/publishing-records/:id", { preHandler: requirePermission("publishing.request") }, async (request) => {
+    const current = request.currentUser!;
+    const params = z.object({ id: z.string() }).parse(request.params);
+    const record = await prisma.publishingRecord.findUniqueOrThrow({ where: { id: params.id } });
+    await prisma.publishingRecord.delete({ where: { id: record.id } });
+    await audit({
+      actorUserId: current.user.id,
+      action: "publishing.record_deleted",
+      entityType: "publishing_record",
+      entityId: record.id,
+      summary: "Publishing record deleted from CP only; external platform post was not modified",
+      metadata: { contentItemId: record.contentItemId, platform: record.platform, status: record.status, automationJobId: record.automationJobId }
+    });
+    return { ok: true };
+  });
+
+  app.delete("/api/content/items/:id/publishing-records", { preHandler: requirePermission("publishing.request") }, async (request) => {
+    const current = request.currentUser!;
+    const params = z.object({ id: z.string() }).parse(request.params);
+    const deleted = await prisma.publishingRecord.deleteMany({ where: { contentItemId: params.id } });
+    await audit({
+      actorUserId: current.user.id,
+      action: "publishing.records_cleared",
+      entityType: "content_item",
+      entityId: params.id,
+      summary: "All publishing records cleared from CP only; external platform posts were not modified",
+      metadata: { count: deleted.count }
+    });
+    return { ok: true, deleted: deleted.count };
+  });
   app.post("/api/content/items/:id/publish", { preHandler: requirePermission("publishing.request") }, async (request) => {
     const current = request.currentUser!;
     const params = z.object({ id: z.string() }).parse(request.params);

@@ -4,6 +4,26 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-08 (Asia/Amman)**
 
+## 2026-07-09 Facebook publishing success and CP cleanup controls
+
+User confirmed Facebook publishing worked after correcting the duplicated CP publish workflow path (`future-foresight/future-foresight/facebook-publishing` -> `future-foresight/facebook-publishing`).
+
+Added CP cleanup/control improvements:
+
+- Publishing page now shows all publishing records for each ready content item, including dry-run/live status and stored error messages.
+- Operators can remove an individual publishing record from CP.
+- Operators can clear all publishing records for a content item from CP.
+- UI warnings explicitly state that removing CP publishing records does not delete posts already published on Facebook/Instagram.
+- Added backend endpoints:
+  - `DELETE /api/content/publishing-records/:id`
+  - `DELETE /api/content/items/:id/publishing-records`
+  - `DELETE /api/automation/jobs/:id` (`automation.manage`)
+  - `DELETE /api/automation/jobs?status=...&jobType=...&terminalOnly=true` (`automation.manage`)
+- Automation job deletion detaches linked publishing records first, then deletes job/events by cascade.
+- Bulk automation cleanup defaults to terminal jobs only: `COMPLETED`, `COMPLETED_WITH_WARNINGS`, `FAILED`, `CANCELLED`, `ARCHIVED`.
+- Validation passed: TypeScript, secret scan, and diff check.
+
+Deployment required: pull latest `develop`, rebuild/restart CP. No n8n workflow change is required for these cleanup controls.
 ## 2026-07-09 Facebook publishing dispatch-error surfacing
 
 After the signed-URL fix was deployed, the user still saw a Cloudflare 502 on `POST /api/content/items/:id/publish`. Live n8n check showed workflow `9DSImxhIAF5PENgg` was active but still had zero executions, confirming the request still did not reach n8n.

@@ -41,6 +41,36 @@ export async function automationRoutes(app: FastifyInstance) {
     return { job };
   });
 
+  app.delete("/api/automation/jobs/:id", { preHandler: requirePermission("automation.manage") }, async (request) => {
+    const params = z.object({ id: z.string() }).parse(request.params);
+    const job = await prisma.automationJob.findUniqueOrThrow({ where: { id: params.id } });
+    await prisma.$transaction([
+      prisma.publishingRecord.updateMany({ where: { automationJobId: job.id }, data: { automationJobId: null } }),
+      prisma.automationJob.delete({ where: { id: job.id } })
+    ]);
+    return { ok: true };
+  });
+
+  app.delete("/api/automation/jobs", { preHandler: requirePermission("automation.manage") }, async (request) => {
+    const query = z.object({
+      status: z.string().optional(),
+      jobType: z.string().optional(),
+      terminalOnly: z.coerce.boolean().default(true)
+    }).parse(request.query);
+    const terminalStatuses = ["COMPLETED", "COMPLETED_WITH_WARNINGS", "FAILED", "CANCELLED", "ARCHIVED"];
+    const where = {
+      ...(query.status ? { currentStatus: query.status as any } : query.terminalOnly ? { currentStatus: { in: terminalStatuses as any[] } } : {}),
+      ...(query.jobType ? { jobType: query.jobType } : {})
+    };
+    const jobs = await prisma.automationJob.findMany({ where, select: { id: true } });
+    const ids = jobs.map((job) => job.id);
+    if (!ids.length) return { ok: true, deleted: 0 };
+    await prisma.$transaction([
+      prisma.publishingRecord.updateMany({ where: { automationJobId: { in: ids } }, data: { automationJobId: null } }),
+      prisma.automationJob.deleteMany({ where: { id: { in: ids } } })
+    ]);
+    return { ok: true, deleted: ids.length };
+  });
   app.post("/api/automation/jobs/:id/retry", { preHandler: requirePermission("automation.retry") }, async (request) => {
     const params = z.object({ id: z.string() }).parse(request.params);
     await prisma.automationJob.update({ where: { id: params.id }, data: { retryCount: { increment: 1 }, currentStatus: "QUEUED" } });
