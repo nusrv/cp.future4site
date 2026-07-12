@@ -4,6 +4,40 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-12 (Asia/Amman)**
 
+## 2026-07-12 Phase 0.1 n8n-owned Facebook credential alignment
+
+Implemented in `b74f60e` (`Align publishing readiness with n8n credentials`):
+
+- Capability responses now state `credentialManagement: "n8n"`; CP never reads, stores, or returns Facebook access tokens, Page credentials, application secrets, or n8n credential values.
+- Facebook availability is gated by CP live integration configuration plus the exact active `FF Admin - Facebook Publishing` workflow. Retained execution history is evidence only and no longer a permanent availability gate.
+- Execution evidence is reported as `recent_success`, `previous_failure`, `not_yet_verified`, or `unknown`, with safe last-execution timestamps/status, reason, and warning fields.
+- Clearing n8n execution history no longer disables an otherwise configured active Facebook integration.
+- A previous failure reports degraded evidence while leaving the configured active workflow available.
+- Removed obsolete CP-side Meta secret placeholders from `.env.example`; the documented Future Oils Page ID/token aliases remain n8n-container settings only.
+- Documented Phase 2 boundary: a dedicated n8n-owned, non-publishing Graph API validation operation must perform any future current-credential validation and return sanitized state only.
+
+Test baseline repair in `6e4afaf` (`Refresh fixed-template test baselines`):
+
+- Updated the Sharp composition test for the current local fixed-template JPEG workflow, which intentionally does not use `http`, `https`, or `fetch`.
+- Updated the public asset approval test to reflect the previously approved 3L product.
+
+Clean temporary checkout validation:
+
+- `npm ci` passed (482 packages). npm reported 10 dependency audit findings: 3 moderate, 6 high, 1 critical; remediation was not attempted in this scoped phase.
+- Full Vitest suite passed: 10 files, 43 tests. `tests/publishing-capabilities.test.ts`: 13 passed.
+- `npm run build` passed, including client/server TypeScript and Vite production build.
+- Secret scan passed.
+- `git diff --check` passed.
+
+Production verification status:
+
+- `GET /health` returned HTTP 200 with application/database `ok`, local storage, live integration, n8n configured, and Meta publishing enabled.
+- Production still served pre-Phase-0 bundle `/assets/index-JYuT_7LC.js`; it did not contain `/api/content/publishing-capabilities` or the Instagram-disabled reason. Therefore neither `38e0750` nor the Phase 0.1 alignment was deployed at verification time.
+- This session had no configured Plesk SSH/API credential or authenticated CP publisher session. Production pull/build/restart, authenticated capability response, 409 persistence checks, and a fresh Facebook dry-run remain externally blocked.
+- Last directly verified Facebook evidence remains n8n dry-run execution `18341` and live multi-photo execution `18342`, both successful through signed CP callback on 2026-07-09. No external post was created during Phase 0.1.
+
+Deployment required: pull latest `develop` on Plesk, run `npm ci`, `npm test`, and `npm run build`, restart CP, then perform the authenticated verification checklist. Confirm only that `N8N_API_KEY` exists and works; never print its value. No migration, n8n workflow change, or credential change is required.
+
 ## 2026-07-12 Phase 0 Instagram publishing safety correction
 
 Implemented in `ce575be` (`Guard publishing with server capabilities`):
