@@ -20,7 +20,7 @@ describe("public brand asset package", () => {
   });
 
   it("keeps profile marketing approvals current", () => {
-    expect(manifest.products["sunflower-oil-3l"].approved_for_marketing).toBe(false);
+    expect(manifest.products["sunflower-oil-3l"].approved_for_marketing).toBe(true);
     expect(manifest.products["sunflower-oil-17l"].approved_for_marketing).toBe(true);
   });
 });

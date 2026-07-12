@@ -16,16 +16,17 @@ describe("branded image composition pipeline", () => {
     expect(resolver).toContain("layout_rules");
     expect(resolver).toContain("escaped asset root");
   });
-  it("uses Sharp and returns a composed PNG payload", () => {
+  it("uses local mounted assets with Sharp and returns composed JPEG payloads", () => {
     const composer = read("workflows/n8n/code/compose-brand-image.js");
     expect(composer).toContain('require("sharp")');
-    expect(composer).toContain('require("http")');
-    expect(composer).toContain('require("https")');
+    expect(composer).toContain('require("fs")');
+    expect(composer).not.toContain('require("http")');
+    expect(composer).not.toContain('require("https")');
     expect(composer).not.toContain("fetch(");
-    expect(composer).toContain('mime_type: "image/png"');
+    expect(composer).toContain('mime_type: "image/jpeg"');
     expect(composer).toContain("data_base64");
-    expect(composer).toContain("brand_theme");
-    expect(composer).toContain("layout_rules");
+    expect(composer).toContain("template_background_path");
+    expect(composer).toContain("composed_files");
   });
   it("stores composed callback images as private files", () => {
     const route = read("src/server/routes/automation.ts");
