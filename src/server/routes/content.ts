@@ -8,10 +8,16 @@ import { requirePermission } from "../security/auth.js";
 import { signPayload } from "../security/crypto.js";
 import { audit } from "../services/audit.js";
 import { createAutomationJob, dispatchJob } from "../services/automation.js";
+import { getPublishingCapabilities } from "../services/publishingCapabilities.js";
 import { readFile, saveFile } from "../services/storage.js";
 import { contentRequestSchema } from "../../shared/contracts.js";
+import { getUnavailablePublishingPlatform } from "../../shared/publishingCapabilities.js";
 
 export async function contentRoutes(app: FastifyInstance) {
+  app.get("/api/content/publishing-capabilities", { preHandler: requirePermission("publishing.request") }, async () => {
+    return getPublishingCapabilities();
+  });
+
   app.get("/api/content/creative-options", { preHandler: requirePermission("content.read") }, async () => {
     const profilePath = path.resolve(process.cwd(), "public", "assets", "brand-profile.json");
     const profile = JSON.parse(await fs.readFile(profilePath, "utf8")) as Record<string, any>;
@@ -339,10 +345,12 @@ export async function contentRoutes(app: FastifyInstance) {
     });
     return { ok: true, deleted: deleted.count };
   });
-  app.post("/api/content/items/:id/publish", { preHandler: requirePermission("publishing.request") }, async (request) => {
+  app.post("/api/content/items/:id/publish", { preHandler: requirePermission("publishing.request") }, async (request, reply) => {
     const current = request.currentUser!;
     const params = z.object({ id: z.string() }).parse(request.params);
     const input = z.object({ platforms: z.array(z.enum(["facebook", "instagram"])).min(1), dryRun: z.boolean().default(true) }).parse(request.body);
+    const unavailablePlatform = getUnavailablePublishingPlatform(input.platforms);
+    if (unavailablePlatform) return reply.code(409).send(unavailablePlatform);
     const item = await prisma.contentItem.findUniqueOrThrow({ where: { id: params.id }, include: { request: { include: { assets: true } }, publishingRecords: true } });
     if (item.request.status !== "APPROVED_PUBLICATION") throw new Error("Content is not approved for publication");
     const approvedAssets = item.request.assets

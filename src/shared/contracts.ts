@@ -104,3 +104,23 @@ export type AutomationCallback = z.infer<typeof automationCallbackSchema>;
 export const publishPlatformSchema = z.enum(["facebook", "instagram"]);
 export type PublishPlatform = z.infer<typeof publishPlatformSchema>;
 
+export const publishingContentTypeSchema = z.enum(["text", "text_image", "text_video", "carousel"]);
+export type PublishingContentType = z.infer<typeof publishingContentTypeSchema>;
+
+export type PublishingCapability = {
+  platform: PublishPlatform;
+  enabled: boolean;
+  configured: boolean;
+  featureEnabled: boolean;
+  credentialsConfigured: boolean;
+  webhookConfigured: boolean;
+  workflowAvailable: boolean;
+  workflowActive: boolean;
+  supportedContentTypes: PublishingContentType[];
+  reason: string | null;
+};
+
+export type PublishingCapabilitiesResponse = {
+  platforms: PublishingCapability[];
+};
+
