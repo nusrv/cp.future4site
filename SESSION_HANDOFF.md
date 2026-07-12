@@ -2,7 +2,31 @@
 
 Canonical restart point after any interrupted or completed session. Read this file first before changing the CP or its n8n workflows.
 
-Last verified: **2026-07-09 (Asia/Amman)**
+Last verified: **2026-07-12 (Asia/Amman)**
+
+## 2026-07-12 Phase 0 Instagram publishing safety correction
+
+Implemented in `ce575be` (`Guard publishing with server capabilities`):
+
+- Added authenticated `GET /api/content/publishing-capabilities` as the server-owned publishing capability contract.
+- Facebook is available only when live/Meta publishing is enabled, the CP-to-n8n API/webhook configuration is present, the exact `FF Admin - Facebook Publishing` workflow exists and is active, and n8n reports a prior successful execution as non-secret credential-readiness evidence.
+- The endpoint returns capability booleans, supported content types, and safe reasons only. It does not return API keys, access tokens, secrets, signed URLs, or webhook paths.
+- Instagram is always reported unavailable with reason `Instagram publishing is not configured yet.` until a dedicated server-supported workflow is implemented.
+- The Publishing UI now reads server capabilities, removes the hardcoded `const facebookAllowed = true`, disables Instagram, and displays the server-provided reason.
+- Any direct or mixed Instagram publish request is rejected with HTTP 409 and code `PUBLISHING_CAPABILITY_UNAVAILABLE` immediately after request validation, before content lookup, publishing-record creation, automation-job creation, or n8n dispatch.
+- Existing Facebook job creation, webhook selection, dispatch, dry-run, and live publishing paths were not changed.
+
+Validation:
+
+- Client TypeScript passed.
+- Server TypeScript passed.
+- Focused publishing capability behavioral contract passed.
+- Focused route-order and UI source contract passed.
+- Secret scan passed.
+- `git diff --check` passed.
+- Added `tests/publishing-capabilities.test.ts`. The local Vitest executable is absent in this synced workspace, so the Vitest suite was not run here and must run in CI/Plesk or a clean dependency checkout.
+
+Deployment required: pull `develop`, rebuild, and restart CP. No database migration, n8n workflow deployment, credential change, or new environment variable is required. CP production must already have its existing `N8N_API_KEY`; if absent, Facebook is safely reported unavailable because workflow activation cannot be verified.
 
 ## 2026-07-09 selectable image background templates and non-oil fallback fix
 
