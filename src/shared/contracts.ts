@@ -112,12 +112,17 @@ export type PublishingCapability = {
   enabled: boolean;
   configured: boolean;
   featureEnabled: boolean;
-  credentialsConfigured: boolean;
+  credentialManagement: "n8n";
+  credentialValidation: "recent_success" | "previous_failure" | "not_yet_verified" | "unknown";
   webhookConfigured: boolean;
   workflowAvailable: boolean;
   workflowActive: boolean;
+  lastExecutionAt: string | null;
+  lastExecutionStatus: "success" | "error" | null;
+  lastSuccessfulExecutionAt: string | null;
   supportedContentTypes: PublishingContentType[];
   reason: string | null;
+  warning: string | null;
 };
 
 export type PublishingCapabilitiesResponse = {

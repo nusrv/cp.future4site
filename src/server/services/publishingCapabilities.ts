@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import type { PublishingCapabilitiesResponse } from '../../shared/contracts.js';
+import type { PublishingCapabilitiesResponse, PublishingCapability } from '../../shared/contracts.js';
 import { buildPublishingCapabilities } from '../../shared/publishingCapabilities.js';
 
 export const FACEBOOK_WORKFLOW_NAME = 'FF Admin - Facebook Publishing';
@@ -15,17 +15,39 @@ type WorkflowListResponse = {
   nextCursor?: string;
 };
 
+type ExecutionSummary = {
+  status?: string;
+  startedAt?: string;
+  stoppedAt?: string;
+};
+
 type PublishingWorkflowState = {
   available: boolean;
   active: boolean;
-  hasSuccessfulExecution: boolean;
+  credentialValidation: PublishingCapability['credentialValidation'];
+  lastExecutionAt: string | null;
+  lastExecutionStatus: PublishingCapability['lastExecutionStatus'];
+  lastSuccessfulExecutionAt: string | null;
 };
 
 const unavailableWorkflow: PublishingWorkflowState = {
   available: false,
   active: false,
-  hasSuccessfulExecution: false
+  credentialValidation: 'unknown',
+  lastExecutionAt: null,
+  lastExecutionStatus: null,
+  lastSuccessfulExecutionAt: null
 };
+
+function executionTime(execution: ExecutionSummary | undefined) {
+  return execution?.stoppedAt || execution?.startedAt || null;
+}
+
+function isRecent(timestamp: string | null) {
+  if (!timestamp) return false;
+  const time = Date.parse(timestamp);
+  return Number.isFinite(time) && Date.now() - time <= 30 * 24 * 60 * 60 * 1000;
+}
 
 async function getWorkflowState(workflowName: string): Promise<PublishingWorkflowState> {
   const controller = new AbortController();
@@ -47,17 +69,42 @@ async function getWorkflowState(workflowName: string): Promise<PublishingWorkflo
 
     const workflow = workflows.find((entry) => entry.name === workflowName);
     if (!workflow?.id) return unavailableWorkflow;
-    const executionsResponse = await fetch(`${config.N8N_BASE_URL.replace(/\/$/, '')}/api/v1/executions?workflowId=${encodeURIComponent(workflow.id)}&status=success&limit=1`, {
+    const executionsResponse = await fetch(`${config.N8N_BASE_URL.replace(/\/$/, '')}/api/v1/executions?workflowId=${encodeURIComponent(workflow.id)}&limit=20`, {
       headers: { 'X-N8N-API-KEY': config.N8N_API_KEY },
       signal: controller.signal
     });
-    const executionsBody = executionsResponse.ok
-      ? await executionsResponse.json() as { data?: unknown[] }
-      : { data: [] };
+    if (!executionsResponse.ok) {
+      return {
+        available: true,
+        active: workflow.active === true,
+        credentialValidation: 'unknown',
+        lastExecutionAt: null,
+        lastExecutionStatus: null,
+        lastSuccessfulExecutionAt: null
+      };
+    }
+    const executionsBody = await executionsResponse.json() as { data?: ExecutionSummary[] };
+    const executions = executionsBody.data ?? [];
+    const lastExecution = executions[0];
+    const lastSuccessfulExecution = executions.find((entry) => entry.status === 'success');
+    const lastExecutionStatus = lastExecution?.status === 'success' || lastExecution?.status === 'error'
+      ? lastExecution.status
+      : null;
+    const lastSuccessfulExecutionAt = executionTime(lastSuccessfulExecution);
+    const credentialValidation: PublishingCapability['credentialValidation'] = lastExecutionStatus === 'error'
+      ? 'previous_failure'
+      : isRecent(lastSuccessfulExecutionAt)
+        ? 'recent_success'
+        : executions.length
+          ? 'unknown'
+          : 'not_yet_verified';
     return {
       available: true,
       active: workflow.active === true,
-      hasSuccessfulExecution: Boolean(executionsBody.data?.length)
+      credentialValidation,
+      lastExecutionAt: executionTime(lastExecution),
+      lastExecutionStatus,
+      lastSuccessfulExecutionAt
     };
   } catch {
     return unavailableWorkflow;
@@ -80,9 +127,12 @@ export async function getPublishingCapabilities(): Promise<PublishingCapabilitie
 
   return buildPublishingCapabilities({
     featureEnabled,
-    credentialsConfigured: workflow.hasSuccessfulExecution,
     webhookConfigured,
     workflowAvailable: workflow.available,
-    workflowActive: workflow.active
+    workflowActive: workflow.active,
+    credentialValidation: workflow.credentialValidation,
+    lastExecutionAt: workflow.lastExecutionAt,
+    lastExecutionStatus: workflow.lastExecutionStatus,
+    lastSuccessfulExecutionAt: workflow.lastSuccessfulExecutionAt
   });
 }
