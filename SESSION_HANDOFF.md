@@ -4,28 +4,66 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-13 (Asia/Amman)**
 
-## 2026-07-13 Phase 1B implementation in progress
+## 2026-07-13 Phase 1B implementation complete, deployment gated
 
-Phase 1B human source review and manually approved claims is implemented in commit 5460b21 and is not yet deployed.
+Phase 1B human source review and manually approved claims is complete in source on develop. It has been statically reviewed only and has not been deployed.
 
-Implemented:
+Phase 1B commit series after baseline 41c0f46:
 
-- Additive Prisma models and MariaDB migration for source-review history, claim revisions, locale wording, source provenance, verified Future Oils brand, and brand/product/packaging/market/audience/objective applicability.
-- Source version submit, begin, approve, reject, and return transitions with active-file guards and audit history.
-- Replacement uploads start unapproved; an earlier approved source stays approved with a superseded timestamp.
-- Focused claim CRUD, independent translation review, final approval validation, rejection, immutable superseding revisions, and owner-only self-approval override.
-- Knowledge Library source-review controls and a manual claims section.
-- Pure future-eligibility/applicability policy tests and static Phase 1B boundary/security tests.
-- KnowledgeIndex, generation, prompts, n8n, embeddings, publishing, and existing product resolution remain unchanged.
+- 5460b21 - Add human review and approved claims.
+- aae1d06 - Record Phase 1B deployment gates.
+- c1f0f28 - Harden claim revision supersession.
+- 3e17f84 - Complete claim revision workspace.
+- 47571d5 - Add claim revision contracts.
+- ae8bb9c - Document Phase 1B deployment gate.
+- 5cd08df - Lock protected claim revision fields.
+- The following handoff commit records final static validation and deployment gates.
 
-Workspace constraint: this checkout is on a Google Drive filesystem that rejects Windows sandbox ACLs. Repository changes were applied through the Codex patch executable with explicit escalation. Per owner direction, npm, Prisma generation, TypeScript, Vitest, build, and migration execution were not run in this workspace. All are deployment gates before production.
+Final behavior:
 
-Verified without dependency installation:
+- Source versions use explicit submit, begin, approve, reject, and audit-safe return transitions. Archived documents and security-rejected files cannot begin review. Replacement uploads are never auto-approved and do not invalidate an earlier approved source.
+- Claim rows are immutable revisions under a stable claim key. The history API returns deterministic descending revision order and identifies the latest and current approved revisions.
+- Creating a replacement draft leaves the current approved revision unchanged. Final replacement approval locks the conceptual revision set, rejects stale/conflicting attempts, approves the replacement, and marks exactly its current approved predecessor SUPERSEDED in one transaction with separate audit events.
+- Rejected claims are immutable. A latest rejected revision creates a new draft; if the conceptual claim never had an approval, that new draft can become its first approved revision without rewriting history.
+- Generic claim PATCH changes only editable draft metadata, provenance, and applicability. It cannot set lifecycle, actor, approval, revision, or supersession fields. Generic translation PATCH changes only DRAFT wording and cannot reset review/approval metadata.
+- Arabic and English wording have independent review states. Reviewed wording is locked; corrections require a new claim revision.
+- Final approval requires at least one APPROVED_SOURCE version, independently approved required locales, explicit usage scope, and explicit applicability.
+- OWNER_ADMIN has an explicit self-approval override. Non-owner creators or last editors cannot approve their own wording or claim. MARKETING is draft-only, CONTENT_REVIEWER reviews/approves, READ_ONLY_MANAGEMENT reads, and unauthorized roles have no access.
+- The Knowledge Library UI provides grouped conceptual claims, full revision history, historical read-only views, actors/timestamps, locale states, applicability, provenance, source navigation, audit activity, inline supersession confirmation, permission-aware controls, safe API errors, and a mobile layout.
+- KnowledgeIndex, generation, prompts, Gemini, n8n, OCR, extraction, embeddings, semantic search, resolver behavior, publishing, and existing product resolution remain unchanged.
+
+Migration review:
+
+- 202607130002_human_review_approved_claims remains the original additive migration.
+- 202607130003_claim_supersession_guard is a separate additive correction with a nullable approved-predecessor relation, index, and foreign key.
+- Static SQL review found no table/column drops, deletes, truncation, or changes to Document, KnowledgeIndex, or FileObject. Fifty-four explicit index/constraint names were parsed; the longest is 37 characters, below MariaDB's 64-character limit.
+- Existing Phase 1A document/version/file relations remain structurally compatible. Production row contents and KnowledgeIndex contents were not queried.
+- Neither migration has been executed against MariaDB.
+
+Static validation completed without dependency installation:
 
 - Dependency-free secret scan passed.
-- Staged and working-tree git diff checks passed.
-- Focused boundary scan found no AI, n8n, OCR, extraction, embedding, publishing, storage-key, or filesystem-path coupling in the new claim domain.
-- The local node_modules contents are incomplete zero-byte Google Drive placeholders and were not treated as a valid compiler or test environment.
+- Working-tree and complete 41c0f46..HEAD patch whitespace checks passed.
+- Focused runtime scan found no AI, Gemini, n8n, OCR, extraction, embedding, semantic-search, publishing, content-request, or automation-job coupling in the new claim domain.
+- Focused response/UI scan found no storage key, filesystem path, absolute path, or FILE_STORAGE_PATH exposure in the claim domain.
+- Changed-file review found only Phase 1B schema/migrations, knowledge routes/shared policy/permissions, Knowledge Library UI/API/styles, focused tests, and documentation/handoff changes.
+
+Per owner direction, npm dependency installation, Prisma Client generation, Prisma validation execution, Vitest, TypeScript compilation, production build, and MariaDB migration execution were not run in the Google Drive workspace. Tests were authored and statically reviewed but not executed.
+
+Deferred Plesk gates, in order:
+
+```text
+npm run db:generate
+npx prisma validate
+npm test
+npm run typecheck
+npm run build
+npm run db:migrate
+```
+
+Before db:migrate, take restorable MariaDB and complete private FILE_STORAGE_PATH backups. After migration, verify both migration records, new indexes/foreign keys, legacy row counts, restart Passenger, then complete source-review, claim creation/revision, independent translation, transactional supersession, role-permission, and Phase 1A regression smoke tests. The exact procedure and rollback choices are in docs/DEPLOYMENT_PLESK.md.
+
+Workspace note: this checkout is on Google Drive and its Windows sandbox ACL refresh is unreliable. Changes were made with the repository patch mechanism through explicitly approved direct access. No local-HDD copy was used.
 
 ## 2026-07-13 Phase 1A private Knowledge Library foundation
 
