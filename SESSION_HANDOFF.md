@@ -6,7 +6,7 @@ Last verified: **2026-07-13 (Asia/Amman)**
 
 ## 2026-07-13 Phase 1B implementation in progress
 
-Phase 1B human source review and manually approved claims is implemented in the current working tree but not yet committed or deployed.
+Phase 1B human source review and manually approved claims is implemented in commit 5460b21 and is not yet deployed.
 
 Implemented:
 
@@ -19,6 +19,13 @@ Implemented:
 - KnowledgeIndex, generation, prompts, n8n, embeddings, publishing, and existing product resolution remain unchanged.
 
 Workspace constraint: this checkout is on a Google Drive filesystem that rejects Windows sandbox ACLs. Repository changes were applied through the Codex patch executable with explicit escalation. Per owner direction, npm, Prisma generation, TypeScript, Vitest, build, and migration execution were not run in this workspace. All are deployment gates before production.
+
+Verified without dependency installation:
+
+- Dependency-free secret scan passed.
+- Staged and working-tree git diff checks passed.
+- Focused boundary scan found no AI, n8n, OCR, extraction, embedding, publishing, storage-key, or filesystem-path coupling in the new claim domain.
+- The local node_modules contents are incomplete zero-byte Google Drive placeholders and were not treated as a valid compiler or test environment.
 
 ## 2026-07-13 Phase 1A private Knowledge Library foundation
 
