@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, patch, post, upload } from "../api";
+import { ApiError, api, patch, post, upload } from "../api";
 import { Header } from "./Dashboard";
 
 type KnowledgeFile = {
@@ -227,7 +227,7 @@ export function KnowledgeLibrary({ permissions }: { permissions: string[] }) {
         /> : null}
       </aside>
     </div>
-    <ClaimsPanel permissions={permissions} selectedDocument={selected} />
+    <ClaimsPanel permissions={permissions} selectedDocument={selected} onOpenDocument={(documentId) => setSelectedId(documentId)} />
   </section>;
 }
 
@@ -382,19 +382,158 @@ function SourceReviewActions({ version, active, canEdit, canReview, canApprove, 
     {version.reviewStatus === "APPROVED_SOURCE" ? <small>Trusted source only. Its statements still require separate claim approval.{version.supersededAt ? " This approved version has been superseded by a newer upload." : ""}</small> : null}
     {version.rejectionReason ? <small>Rejected: {version.rejectionReason}</small> : null}
     {version.linkedClaimCount ? <small>{version.linkedClaimCount} linked claim source record{version.linkedClaimCount === 1 ? "" : "s"}</small> : null}
+    {version.reviewHistory.length ? <details className="source-review-history"><summary>View source review history</summary><ol>{version.reviewHistory.map((event) => <li key={event.id}><strong>{event.previousStatus.replaceAll("_", " ")} to {event.newStatus.replaceAll("_", " ")}</strong><span>{formatDateTime(event.createdAt)} · {event.actor.displayName}</span></li>)}</ol></details> : null}
   </div>;
 }
 
+type ClaimStatus = "DRAFT" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "SUPERSEDED" | "EXPIRED";
+type ClaimActor = { id: string; displayName: string; username: string };
+type ClaimTranslation = {
+  locale: string; wording: string; reviewStatus: "DRAFT" | "UNDER_REVIEW" | "APPROVED" | "REJECTED";
+  reviewedBy?: ClaimActor | null; reviewedAt?: string | null; approvedBy?: ClaimActor | null; approvedAt?: string | null;
+  reviewNotes?: string | null; rejectionReason?: string | null;
+};
+type ClaimSource = {
+  id: string; pageNumber?: number | null; sectionHeading?: string | null; tableFigureReference?: string | null;
+  sourceExcerpt?: string | null; sourceNotes?: string | null;
+  documentVersion: {
+    id: string; versionNumber: number; reviewStatus: KnowledgeVersion["reviewStatus"]; createdAt: string;
+    document: { id: string; title: string; lifecycleStatus: KnowledgeDocument["lifecycleStatus"] };
+    file: { originalName: string; downloadUrl: string };
+  };
+};
 type KnowledgeClaim = {
-  id: string; stableKey: string; revision: number; claimType: string;
-  status: "DRAFT" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "SUPERSEDED" | "EXPIRED";
-  usageScope: "PUBLIC_SAFE" | "INTERNAL_ONLY" | "RESTRICTED";
-  eligibleForFuturePublicUse: boolean;
-  translations: Array<{ locale: string; wording: string; reviewStatus: "DRAFT" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" }>;
-  sources: Array<{ documentVersion: { id: string; versionNumber: number; document: { title: string } } }>;
+  id: string; stableKey: string; revision: number; claimType: string; status: ClaimStatus;
+  usageScope: "PUBLIC_SAFE" | "INTERNAL_ONLY" | "RESTRICTED"; requiredLocales: string[];
+  effectiveAt?: string | null; expiresAt?: string | null; restrictions?: string | null; internalNotes?: string | null;
+  rejectionReason?: string | null; reviewNotes?: string | null; createdAt: string; updatedAt: string;
+  createdBy: ClaimActor; lastEditedBy: ClaimActor; reviewedBy?: ClaimActor | null; reviewedAt?: string | null;
+  approvedBy?: ClaimActor | null; approvedAt?: string | null; eligibleForFuturePublicUse: boolean;
+  translations: ClaimTranslation[]; sources: ClaimSource[];
+  brands: Array<{ brandId: string; brand: { id: string; name: string } }>;
+  products: Array<{ productId: string; product: { id: string; name: string } }>;
+  packagingFormats: Array<{ packagingFormatId: string; packagingFormat: { id: string; label: string } }>;
+  markets: Array<{ value: string }>; audiences: Array<{ value: string }>; objectives: Array<{ value: string }>;
+  supersedes?: { id: string; revision: number; status: ClaimStatus } | null;
+  supersededBy?: { id: string; revision: number; status: ClaimStatus } | null;
+  replacesApproved?: { id: string; revision: number; status: ClaimStatus } | null;
+  isLatestRevision?: boolean; isCurrentApproved?: boolean; isHistorical?: boolean; isEditable?: boolean;
+};
+type ClaimRevisionHistory = { stableKey: string; latestRevisionId: string | null; currentApprovedRevisionId: string | null; revisions: KnowledgeClaim[] };
+type ClaimDetailResponse = {
+  claim: KnowledgeClaim; revisionHistory: ClaimRevisionHistory;
+  auditEvents: Array<{ id: string; action: string; summary: string; createdAt: string; actor?: ClaimActor | null }>;
+};
+type ClaimReferenceData = {
+  brands: Array<{ id: string; name: string }>; products: Array<{ id: string; name: string }>; packagingFormats: Array<{ id: string; label: string }>;
 };
 
-function ClaimsPanel({ permissions, selectedDocument }: { permissions: string[]; selectedDocument: KnowledgeDocument | null }) {
+function ClaimsPanel({ permissions, selectedDocument, onOpenDocument }: {
+  permissions: string[]; selectedDocument: KnowledgeDocument | null; onOpenDocument: (documentId: string) => void;
+}) {
+  const qc = useQueryClient();
+  const [showCreate, setShowCreate] = useState(false);
+  const [selectedClaimId, setSelectedClaimId] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [confirmRevision, setConfirmRevision] = useState(false);
+  const [decision, setDecision] = useState<{ claimId: string; locale?: string } | null>(null);
+  const [reason, setReason] = useState("");
+  const claims = useQuery<{ claims: KnowledgeClaim[] }>({ queryKey: ["knowledge-claims"], queryFn: () => api("/api/knowledge/claims") });
+  const detail = useQuery<ClaimDetailResponse>({
+    queryKey: ["knowledge-claim", selectedClaimId],
+    queryFn: () => api("/api/knowledge/claims/" + encodeURIComponent(selectedClaimId!)),
+    enabled: Boolean(selectedClaimId)
+  });
+  const refs = useQuery<ClaimReferenceData>({ queryKey: ["knowledge-claim-reference-data"], queryFn: () => api("/api/knowledge/claim-reference-data") });
+  const conceptualClaims = useMemo(() => {
+    const grouped = new Map<string, KnowledgeClaim[]>();
+    for (const claim of claims.data?.claims ?? []) grouped.set(claim.stableKey, [...(grouped.get(claim.stableKey) ?? []), claim]);
+    return [...grouped.entries()].map(([stableKey, revisions]) => {
+      const ordered = revisions.sort((a, b) => b.revision - a.revision);
+      return { stableKey, revisions: ordered, latest: ordered[0], currentApproved: ordered.find((revision) => revision.status === "APPROVED") };
+    }).sort((a, b) => a.stableKey.localeCompare(b.stableKey));
+  }, [claims.data?.claims]);
+  const refresh = async (claimId?: string) => {
+    await qc.invalidateQueries({ queryKey: ["knowledge-claims"] });
+    await qc.invalidateQueries({ queryKey: ["knowledge-claim", claimId ?? selectedClaimId] });
+  };
+  const create = useMutation({
+    mutationFn: (body: unknown) => post<{ claim: KnowledgeClaim }>("/api/knowledge/claims", body),
+    onSuccess: async (result) => { setShowCreate(false); setSelectedClaimId(result.claim.id); await refresh(result.claim.id); }
+  });
+  const transition = useMutation({
+    mutationFn: ({ id, action, locale, body = {} }: { id: string; action: string; locale?: string; body?: Record<string, string> }) =>
+      post<{ claim: KnowledgeClaim }>("/api/knowledge/claims/" + encodeURIComponent(id) + (locale ? "/translations/" + encodeURIComponent(locale) : "") + "/" + action, body),
+    onSuccess: async (result) => { setDecision(null); setReason(""); await refresh(result.claim.id); }
+  });
+  const createRevision = useMutation({
+    mutationFn: (claim: KnowledgeClaim) => post<{ claim: KnowledgeClaim }>("/api/knowledge/claims/" + encodeURIComponent(claim.id) + "/supersede", claimRevisionPayload(claim)),
+    onSuccess: async (result) => { setConfirmRevision(false); setEditing(true); setSelectedClaimId(result.claim.id); await refresh(result.claim.id); }
+  });
+  const editDraft = useMutation({
+    mutationFn: async ({ claim, metadata, translations }: { claim: KnowledgeClaim; metadata: Record<string, unknown>; translations: Array<{ locale: string; wording: string }> }) => {
+      await patch("/api/knowledge/claims/" + encodeURIComponent(claim.id), metadata);
+      for (const translation of translations) {
+        await patch("/api/knowledge/claims/" + encodeURIComponent(claim.id) + "/translations/" + encodeURIComponent(translation.locale), translation);
+      }
+      return api<ClaimDetailResponse>("/api/knowledge/claims/" + encodeURIComponent(claim.id));
+    },
+    onSuccess: async (result) => { setEditing(false); await refresh(result.claim.id); }
+  });
+  const canCreate = permissions.includes("knowledge.claim.create");
+  const canEdit = permissions.includes("knowledge.claim.edit");
+  const canReview = permissions.includes("knowledge.claim.review");
+  const canApprove = permissions.includes("knowledge.claim.approve");
+  const approvedVersions = selectedDocument?.versions.filter((version) => version.reviewStatus === "APPROVED_SOURCE") ?? [];
+  const selected = detail.data?.claim ?? null;
+  const history = detail.data?.revisionHistory;
+  const historyEntry = history?.revisions.find((revision) => revision.id === selected?.id);
+  const isLatest = history?.latestRevisionId === selected?.id;
+  const isEditable = Boolean(selected && historyEntry?.isEditable && canEdit);
+  const canStartRevision = Boolean(selected && canCreate && isLatest && ["APPROVED", "REJECTED"].includes(selected.status) && history?.currentApprovedRevisionId);
+  const error = claims.error ?? detail.error ?? refs.error ?? create.error ?? transition.error ?? createRevision.error ?? editDraft.error;
+  return <section className="knowledge-claims">
+    <div className="knowledge-section-heading"><div><h2>Approved claims</h2><p>Manual wording, immutable revisions, and source-level provenance.</p></div>{canCreate ? <button className="btn btn-primary" disabled={!approvedVersions.length} onClick={() => setShowCreate((value) => !value)}>{showCreate ? "Close claim form" : "Create manual claim"}</button> : null}</div>
+    <div className="notice notice-info" role="note"><strong>Three separate decisions.</strong><span>Source trust, localized wording, and public-safe claim approval are reviewed independently. Claims remain disconnected from AI generation.</span></div>
+    {canCreate && !approvedVersions.length ? <p className="knowledge-help">Select a document with an approved source version to create an initial claim.</p> : null}
+    {showCreate && approvedVersions.length ? <ClaimCreateForm versions={approvedVersions} references={refs.data} pending={create.isPending} onSubmit={(body) => create.mutate(body)} /> : null}
+    {error ? <div className="notice notice-error" role="alert">{formatApiError(error)}</div> : null}
+    {claims.isLoading ? <div className="skeleton-block" /> : null}
+    <div className="claim-history-workspace">
+      <div className="claim-concept-list" aria-label="Knowledge claims">
+        {conceptualClaims.map((group) => <button className={group.revisions.some((revision) => revision.id === selectedClaimId) ? "claim-concept-row selected" : "claim-concept-row"} key={group.stableKey} onClick={() => { setSelectedClaimId(group.latest.id); setEditing(false); setConfirmRevision(false); }}>
+          <strong>{group.stableKey}</strong><span>{group.latest.claimType}</span><small>{group.revisions.length} revision{group.revisions.length === 1 ? "" : "s"} · {group.currentApproved ? "approved revision " + group.currentApproved.revision : "no approved revision"}</small>
+        </button>)}
+        {!claims.isLoading && !conceptualClaims.length ? <div className="knowledge-detail-empty"><strong>No manual claims</strong><p>Create the first claim from an approved source version.</p></div> : null}
+      </div>
+      <div className="claim-revision-detail">
+        {!selectedClaimId ? <div className="knowledge-detail-empty"><strong>Select a claim</strong><p>Open a claim to inspect its current approved revision and complete history.</p></div> : null}
+        {selectedClaimId && detail.isLoading ? <div className="skeleton-block knowledge-detail-skeleton" /> : null}
+        {selected && history ? <>
+          <header className="claim-detail-heading"><div><h3>{selected.stableKey}</h3><p>{selected.claimType}</p></div><div><ClaimBadge status={selected.status} />{selected.id === history.currentApprovedRevisionId ? <span className="status-badge status-ok">Current approved</span> : null}{selected.id === history.latestRevisionId ? <span className="status-badge status-neutral">Latest revision</span> : <span className="status-badge status-neutral">Historical revision</span>}</div></header>
+          <nav className="claim-revision-tabs" aria-label="Claim revision history">{history.revisions.map((revision) => <button className={revision.id === selected.id ? "selected" : ""} key={revision.id} onClick={() => { setSelectedClaimId(revision.id); setEditing(false); setConfirmRevision(false); }}>
+            <strong>Revision {revision.revision}</strong><ClaimBadge status={revision.status} /><small>{formatDate(revision.createdAt)}</small>
+          </button>)}</nav>
+          {editing && isEditable ? <ClaimDraftEditForm claim={selected} references={refs.data} pending={editDraft.isPending} onCancel={() => setEditing(false)} onSubmit={(metadata, translations) => editDraft.mutate({ claim: selected, metadata, translations })} /> : <ClaimRevisionDetail claim={selected} auditEvents={detail.data?.auditEvents ?? []} onOpenDocument={onOpenDocument} />}
+          {!editing ? <div className="claim-primary-actions">
+            {isEditable ? <button className="btn btn-secondary" onClick={() => setEditing(true)}>Edit draft revision</button> : null}
+            {canEdit && selected.status === "DRAFT" && isLatest ? <button className="btn btn-secondary" disabled={transition.isPending} onClick={() => transition.mutate({ id: selected.id, action: "submit-review" })}>Submit claim review</button> : null}
+            {canApprove && selected.status === "UNDER_REVIEW" && isLatest ? <button className="btn btn-primary" disabled={transition.isPending} onClick={() => transition.mutate({ id: selected.id, action: "approve" })}>Approve revision</button> : null}
+            {canReview && selected.status === "UNDER_REVIEW" && isLatest ? <button className="btn btn-secondary" disabled={transition.isPending} onClick={() => setDecision({ claimId: selected.id })}>Reject revision</button> : null}
+            {canStartRevision ? <button className="btn btn-secondary" onClick={() => setConfirmRevision(true)}>Create draft revision</button> : null}
+          </div> : null}
+          {!editing ? <p className="claim-action-reason">{claimActionUnavailableReason(selected, Boolean(isLatest), canEdit, canCreate)}</p> : null}
+          {confirmRevision ? <div className="knowledge-inline-decision" role="alert"><p>Create revision {selected.revision + 1}? The current approved revision remains active until this draft passes review and is approved.</p><button className="btn btn-secondary btn-compact" onClick={() => setConfirmRevision(false)}>Cancel revision</button><button className="btn btn-primary btn-compact" disabled={createRevision.isPending} onClick={() => createRevision.mutate(selected)}>{createRevision.isPending ? "Creating revision" : "Create draft revision"}</button></div> : null}
+          <ClaimLocaleActions claim={selected} isLatest={Boolean(isLatest)} canEdit={canEdit} canReview={canReview} canApprove={canApprove} onTransition={(locale, action) => transition.mutate({ id: selected.id, locale, action })} onReject={(locale) => setDecision({ claimId: selected.id, locale })} />
+        </> : null}
+      </div>
+    </div>
+    {decision ? <div className="knowledge-inline-decision"><label><span className="label">Rejection reason</span><textarea className="input" value={reason} onChange={(event) => setReason(event.target.value)} /></label><button className="btn btn-secondary btn-compact" onClick={() => setDecision(null)}>Cancel rejection</button><button className="btn btn-danger btn-compact" disabled={reason.trim().length < 2 || transition.isPending} onClick={() => transition.mutate({ id: decision.claimId, locale: decision.locale, action: "reject", body: { rejectionReason: reason } })}>Confirm rejection</button></div> : null}
+  </section>;
+}
+
+/* Retired Phase 1B checkpoint panel. Kept outside compilation only to avoid rewriting synced-drive bytes during this patch series.
+function LegacyClaimsPanel({ permissions, selectedDocument }: { permissions: string[]; selectedDocument: KnowledgeDocument | null }) {
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [decision, setDecision] = useState<{ claimId: string; action: "reject"; locale?: string } | null>(null);
@@ -443,6 +582,157 @@ function ClaimsPanel({ permissions, selectedDocument }: { permissions: string[];
   </section>;
 }
 
+*/
+function ClaimRevisionDetail({ claim, auditEvents, onOpenDocument }: {
+  claim: KnowledgeClaim; auditEvents: ClaimDetailResponse["auditEvents"]; onOpenDocument: (documentId: string) => void;
+}) {
+  return <div className="claim-detail-sections">
+    <section><h4>Revision record</h4><dl className="knowledge-metadata">
+      <div><dt>Revision</dt><dd>{claim.revision}</dd></div><div><dt>Usage scope</dt><dd>{claim.usageScope.replaceAll("_", " ")}</dd></div>
+      <div><dt>Created</dt><dd>{formatDateTime(claim.createdAt)} by {claim.createdBy.displayName}</dd></div><div><dt>Last edited</dt><dd>{formatDateTime(claim.updatedAt)} by {claim.lastEditedBy.displayName}</dd></div>
+      <div><dt>Reviewed</dt><dd>{claim.reviewedAt ? formatDateTime(claim.reviewedAt) + (claim.reviewedBy ? " by " + claim.reviewedBy.displayName : "") : "Not reviewed"}</dd></div>
+      <div><dt>Approved</dt><dd>{claim.approvedAt ? formatDateTime(claim.approvedAt) + (claim.approvedBy ? " by " + claim.approvedBy.displayName : "") : "Not approved"}</dd></div>
+      <div><dt>Effective</dt><dd>{claim.effectiveAt ? formatDateTime(claim.effectiveAt) : "Immediately after approval"}</dd></div><div><dt>Expires</dt><dd>{claim.expiresAt ? formatDateTime(claim.expiresAt) : "No expiration"}</dd></div>
+      <div className="knowledge-wide"><dt>Restrictions</dt><dd>{claim.restrictions || "None recorded"}</dd></div>
+      <div className="knowledge-wide"><dt>Internal notes</dt><dd>{claim.internalNotes || "None recorded"}</dd></div>
+      {claim.rejectionReason ? <div className="knowledge-wide"><dt>Rejection reason</dt><dd>{claim.rejectionReason}</dd></div> : null}
+    </dl></section>
+    <section><h4>Localized wording</h4><div className="knowledge-translation-list">{claim.translations.map((translation) => <div key={translation.locale} lang={translation.locale} dir={translation.locale.toLowerCase().startsWith("ar") ? "rtl" : "ltr"}>
+      <strong>{translation.locale.toUpperCase()} · {translation.reviewStatus.replaceAll("_", " ")}</strong><p>{translation.wording}</p>
+      <small>{translation.approvedAt ? "Approved " + formatDateTime(translation.approvedAt) + (translation.approvedBy ? " by " + translation.approvedBy.displayName : "") : translation.reviewedAt ? "Reviewed " + formatDateTime(translation.reviewedAt) + (translation.reviewedBy ? " by " + translation.reviewedBy.displayName : "") : "No review decision"}</small>
+      {translation.rejectionReason ? <small>Rejected: {translation.rejectionReason}</small> : null}
+    </div>)}</div></section>
+    <section><h4>Applicability</h4><dl className="knowledge-metadata">
+      <div><dt>Brands</dt><dd>{claim.brands.map((item) => item.brand.name).join(", ") || "None"}</dd></div>
+      <div><dt>Products</dt><dd>{claim.products.map((item) => item.product.name).join(", ") || "None"}</dd></div>
+      <div><dt>Packaging</dt><dd>{claim.packagingFormats.map((item) => item.packagingFormat.label).join(", ") || "None"}</dd></div>
+      <div><dt>Markets</dt><dd>{claim.markets.map((item) => item.value).join(", ") || "None"}</dd></div>
+      <div><dt>Audiences</dt><dd>{claim.audiences.map((item) => item.value).join(", ") || "None"}</dd></div>
+      <div><dt>Objectives</dt><dd>{claim.objectives.map((item) => item.value).join(", ") || "None"}</dd></div>
+    </dl></section>
+    <section><h4>Source provenance</h4><ol className="claim-source-list">{claim.sources.map((source) => <li key={source.id}><div><strong>{source.documentVersion.document.title} · version {source.documentVersion.versionNumber}</strong><span>{source.documentVersion.file.originalName}</span><small>{source.pageNumber ? "Page " + source.pageNumber : "Page not specified"}{source.sectionHeading ? " · " + source.sectionHeading : ""}{source.tableFigureReference ? " · " + source.tableFigureReference : ""}</small>{source.sourceExcerpt ? <blockquote>{source.sourceExcerpt}</blockquote> : null}{source.sourceNotes ? <small>Source notes: {source.sourceNotes}</small> : null}</div><div><button className="btn btn-secondary btn-compact" onClick={() => onOpenDocument(source.documentVersion.document.id)}>Open source document</button><a className="btn btn-secondary btn-compact" href={source.documentVersion.file.downloadUrl}>Download source version</a></div></li>)}</ol></section>
+    <section><h4>Revision activity</h4>{auditEvents.length ? <ol className="knowledge-audit-list">{auditEvents.map((event) => <li key={event.id}><strong>{event.summary}</strong><span>{formatDateTime(event.createdAt)}{event.actor ? " · " + event.actor.displayName : ""}</span></li>)}</ol> : <p className="knowledge-help">No audit events recorded for this revision.</p>}</section>
+  </div>;
+}
+
+function ClaimLocaleActions({ claim, isLatest, canEdit, canReview, canApprove, onTransition, onReject }: {
+  claim: KnowledgeClaim; isLatest: boolean; canEdit: boolean; canReview: boolean; canApprove: boolean;
+  onTransition: (locale: string, action: string) => void; onReject: (locale: string) => void;
+}) {
+  return <section className="claim-locale-actions"><h4>Localized wording review</h4>{claim.translations.map((translation) => <div className="claim-locale-action" key={translation.locale}><span><strong>{translation.locale.toUpperCase()}</strong><small>{translation.reviewStatus.replaceAll("_", " ")}</small></span><div>
+    {canEdit && claim.status === "DRAFT" && isLatest && translation.reviewStatus === "DRAFT" ? <button className="btn btn-secondary btn-compact" onClick={() => onTransition(translation.locale, "submit-review")}>Submit {translation.locale.toUpperCase()} wording</button> : null}
+    {canApprove && ["DRAFT", "UNDER_REVIEW"].includes(claim.status) && isLatest && translation.reviewStatus === "UNDER_REVIEW" ? <button className="btn btn-primary btn-compact" onClick={() => onTransition(translation.locale, "approve")}>Approve {translation.locale.toUpperCase()} wording</button> : null}
+    {canReview && ["DRAFT", "UNDER_REVIEW"].includes(claim.status) && isLatest && translation.reviewStatus === "UNDER_REVIEW" ? <button className="btn btn-secondary btn-compact" onClick={() => onReject(translation.locale)}>Reject {translation.locale.toUpperCase()} wording</button> : null}
+    {!isLatest || ["APPROVED", "REJECTED", "SUPERSEDED", "EXPIRED"].includes(claim.status) ? <small>Read-only historical wording</small> : null}
+  </div></div>)}</section>;
+}
+
+function ClaimDraftEditForm({ claim, references, pending, onCancel, onSubmit }: {
+  claim: KnowledgeClaim; references?: ClaimReferenceData; pending: boolean; onCancel: () => void;
+  onSubmit: (metadata: Record<string, unknown>, translations: Array<{ locale: string; wording: string }>) => void;
+}) {
+  const [validationError, setValidationError] = useState<string | null>(null);
+  return <form className="knowledge-upload-form claim-edit-form" onSubmit={(event) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const applicability = {
+      brandIds: data.getAll("brandIds").map(String), productIds: data.getAll("productIds").map(String),
+      packagingFormatIds: data.getAll("packagingFormatIds").map(String),
+      markets: splitValues(String(data.get("markets") || "")), audiences: splitValues(String(data.get("audiences") || "")), objectives: splitValues(String(data.get("objectives") || ""))
+    };
+    if (!Object.values(applicability).some((items) => items.length)) { setValidationError("Set at least one brand, product, packaging, market, audience, or objective."); return; }
+    const sources = claim.sources.map((source, index) => ({
+      documentVersionId: source.documentVersion.id,
+      pageNumber: data.get("sourcePage" + index) ? Number(data.get("sourcePage" + index)) : undefined,
+      sectionHeading: String(data.get("sourceSection" + index) || ""),
+      tableFigureReference: String(data.get("sourceReference" + index) || ""),
+      sourceExcerpt: String(data.get("sourceExcerpt" + index) || ""),
+      sourceNotes: String(data.get("sourceNotes" + index) || "")
+    }));
+    const sourceChanged = JSON.stringify(sources) !== JSON.stringify(claim.sources.map((source) => ({
+      documentVersionId: source.documentVersion.id, pageNumber: source.pageNumber ?? undefined,
+      sectionHeading: source.sectionHeading || "", tableFigureReference: source.tableFigureReference || "",
+      sourceExcerpt: source.sourceExcerpt || "", sourceNotes: source.sourceNotes || ""
+    })));
+    const translations = claim.translations.map((translation) => ({ locale: translation.locale, wording: String(data.get("wording-" + translation.locale) || "").trim() })).filter((translation) => translation.wording && translation.wording !== claim.translations.find((current) => current.locale === translation.locale)?.wording);
+    setValidationError(null);
+    onSubmit({
+      claimType: data.get("claimType"), usageScope: data.get("usageScope"), requiredLocales: claim.requiredLocales,
+      effectiveAt: data.get("effectiveAt") || null, expiresAt: data.get("expiresAt") || null,
+      restrictions: String(data.get("restrictions") || "") || null, internalNotes: String(data.get("internalNotes") || "") || null,
+      applicability, ...(sourceChanged ? { sources } : {})
+    }, translations);
+  }}>
+    <div className="form-heading"><h4>Edit draft revision {claim.revision}</h4><p>Saving wording changes resets review for only the changed locale.</p></div>
+    <RequiredInput name="claimType" label="Claim type" defaultValue={claim.claimType} />
+    <label><span className="label">Usage scope</span><select className="input" name="usageScope" defaultValue={claim.usageScope}><option value="INTERNAL_ONLY">Internal only</option><option value="RESTRICTED">Restricted</option><option value="PUBLIC_SAFE">Public safe</option></select></label>
+    <label><span className="label">Effective date</span><input className="input" type="date" name="effectiveAt" defaultValue={dateInputValue(claim.effectiveAt)} /></label>
+    <label><span className="label">Expiration date</span><input className="input" type="date" name="expiresAt" defaultValue={dateInputValue(claim.expiresAt)} /></label>
+    {claim.translations.map((translation) => <label className="form-span-2" key={translation.locale} dir={translation.locale.toLowerCase().startsWith("ar") ? "rtl" : "ltr"}><span className="label">{translation.locale.toUpperCase()} wording</span><textarea className="input" name={"wording-" + translation.locale} required defaultValue={translation.wording} /></label>)}
+    <MultiSelect name="brandIds" label="Brands" options={references?.brands.map((item) => ({ id: item.id, label: item.name })) ?? []} selected={claim.brands.map((item) => item.brandId)} />
+    <MultiSelect name="productIds" label="Products" options={references?.products.map((item) => ({ id: item.id, label: item.name })) ?? []} selected={claim.products.map((item) => item.productId)} />
+    <MultiSelect name="packagingFormatIds" label="Packaging formats" options={references?.packagingFormats.map((item) => ({ id: item.id, label: item.label })) ?? []} selected={claim.packagingFormats.map((item) => item.packagingFormatId)} />
+    <label><span className="label">Markets</span><input className="input" name="markets" defaultValue={claim.markets.map((item) => item.value).join(", ")} placeholder="Comma-separated" /></label>
+    <label><span className="label">Audiences</span><input className="input" name="audiences" defaultValue={claim.audiences.map((item) => item.value).join(", ")} placeholder="Comma-separated" /></label>
+    <label><span className="label">Objectives</span><input className="input" name="objectives" defaultValue={claim.objectives.map((item) => item.value).join(", ")} placeholder="Comma-separated" /></label>
+    {claim.sources.map((source, index) => <fieldset className="claim-source-editor form-span-2" key={source.id}><legend>{source.documentVersion.document.title} · version {source.documentVersion.versionNumber}</legend>
+      <label><span className="label">Page</span><input className="input" type="number" min="1" name={"sourcePage" + index} defaultValue={source.pageNumber ?? ""} /></label>
+      <label><span className="label">Section</span><input className="input" name={"sourceSection" + index} defaultValue={source.sectionHeading || ""} /></label>
+      <label><span className="label">Table or figure</span><input className="input" name={"sourceReference" + index} defaultValue={source.tableFigureReference || ""} /></label>
+      <label><span className="label">Source notes</span><input className="input" name={"sourceNotes" + index} defaultValue={source.sourceNotes || ""} /></label>
+      <label className="form-span-2"><span className="label">Short excerpt</span><textarea className="input" name={"sourceExcerpt" + index} defaultValue={source.sourceExcerpt || ""} /></label>
+    </fieldset>)}
+    <label className="form-span-2"><span className="label">Restrictions</span><textarea className="input" name="restrictions" defaultValue={claim.restrictions || ""} /></label>
+    <label className="form-span-2"><span className="label">Internal notes</span><textarea className="input" name="internalNotes" defaultValue={claim.internalNotes || ""} /></label>
+    {validationError ? <div className="notice notice-error form-span-2" role="alert">{validationError}</div> : null}
+    <div className="form-actions form-span-2"><button type="button" className="btn btn-secondary" disabled={pending} onClick={onCancel}>Cancel editing</button><button className="btn btn-primary" disabled={pending}>{pending ? "Saving draft" : "Save draft revision"}</button></div>
+  </form>;
+}
+
+function MultiSelect({ name, label, options, selected }: { name: string; label: string; options: Array<{ id: string; label: string }>; selected: string[] }) {
+  return <label><span className="label">{label}</span><select className="input claim-multi-select" name={name} multiple defaultValue={selected}>{options.map((option) => <option value={option.id} key={option.id}>{option.label}</option>)}</select></label>;
+}
+
+function claimRevisionPayload(claim: KnowledgeClaim) {
+  return {
+    stableKey: claim.stableKey, claimType: claim.claimType, usageScope: claim.usageScope, requiredLocales: claim.requiredLocales,
+    effectiveAt: claim.effectiveAt || undefined, expiresAt: claim.expiresAt || undefined,
+    restrictions: claim.restrictions || "", internalNotes: claim.internalNotes || "",
+    translations: claim.translations.map((translation) => ({ locale: translation.locale, wording: translation.wording })),
+    sources: claim.sources.map((source) => ({
+      documentVersionId: source.documentVersion.id, pageNumber: source.pageNumber ?? undefined,
+      sectionHeading: source.sectionHeading || "", tableFigureReference: source.tableFigureReference || "",
+      sourceExcerpt: source.sourceExcerpt || "", sourceNotes: source.sourceNotes || ""
+    })),
+    applicability: {
+      brandIds: claim.brands.map((item) => item.brandId), productIds: claim.products.map((item) => item.productId),
+      packagingFormatIds: claim.packagingFormats.map((item) => item.packagingFormatId),
+      markets: claim.markets.map((item) => item.value), audiences: claim.audiences.map((item) => item.value), objectives: claim.objectives.map((item) => item.value)
+    }
+  };
+}
+function claimActionUnavailableReason(claim: KnowledgeClaim, isLatest: boolean, canEdit: boolean, canCreate: boolean) {
+  if (!isLatest) return "Historical revisions are read-only.";
+  if (claim.status === "SUPERSEDED") return "This revision was replaced and is permanently read-only.";
+  if (claim.status === "EXPIRED") return "Expired revisions remain available for audit and cannot be edited.";
+  if (claim.status === "REJECTED") return canCreate ? "Create a new draft revision to make corrections. Rejected wording remains immutable." : "This rejected revision is read-only.";
+  if (claim.status === "APPROVED") return canCreate ? "Create a draft revision to propose changes without altering the approved record." : "Approved revisions are read-only.";
+  if (claim.status === "UNDER_REVIEW") return "This revision is locked while reviewers decide it.";
+  if (claim.status === "DRAFT" && !canEdit) return "You do not have permission to edit this draft.";
+  return "";
+}
+function formatApiError(error: Error) {
+  if (!(error instanceof ApiError)) return error.message;
+  if (error.status === 401) return "Your session has expired. Sign in again to continue.";
+  if (error.status === 403) return "You do not have permission to perform this action.";
+  if (error.status === 404) return "The requested claim, revision, or source no longer exists.";
+  if (error.status === 409) return error.message || "The record changed before this action completed. Refresh and try again.";
+  if (error.status === 422) return "Approval requirements are incomplete: " + error.message;
+  return error.message;
+}
+function splitValues(value: string) { return [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))]; }
+function dateInputValue(value?: string | null) { return value ? new Date(value).toISOString().slice(0, 10) : ""; }
+
 function ClaimCreateForm({ versions, references, pending, onSubmit }: {
   versions: KnowledgeVersion[];
   references?: { brands: Array<{ id: string; name: string }>; products: Array<{ id: string; name: string }>; packagingFormats: Array<{ id: string; label: string }> };
@@ -465,7 +755,13 @@ function ClaimCreateForm({ versions, references, pending, onSubmit }: {
     onSubmit({
       stableKey: data.get("stableKey"), claimType: data.get("claimType"), usageScope: data.get("usageScope"),
       requiredLocales: translations.map((item) => item.locale), translations,
-      sources: [{ documentVersionId: data.get("documentVersionId"), pageNumber: data.get("pageNumber") ? Number(data.get("pageNumber")) : undefined, sectionHeading: data.get("sectionHeading"), sourceExcerpt: data.get("sourceExcerpt") }],
+      effectiveAt: data.get("effectiveAt") || undefined, expiresAt: data.get("expiresAt") || undefined,
+      restrictions: data.get("restrictions"), internalNotes: data.get("internalNotes"),
+      sources: [{
+        documentVersionId: data.get("documentVersionId"), pageNumber: data.get("pageNumber") ? Number(data.get("pageNumber")) : undefined,
+        sectionHeading: data.get("sectionHeading"), tableFigureReference: data.get("tableFigureReference"),
+        sourceExcerpt: data.get("sourceExcerpt"), sourceNotes: data.get("sourceNotes")
+      }],
       applicability
     });
   }}>
@@ -484,7 +780,13 @@ function ClaimCreateForm({ versions, references, pending, onSubmit }: {
     <label><span className="label">Content objective</span><input className="input" name="objective" placeholder="Optional" /></label>
     <label><span className="label">Page number</span><input className="input" name="pageNumber" type="number" min="1" /></label>
     <label><span className="label">Section or heading</span><input className="input" name="sectionHeading" /></label>
+    <label><span className="label">Table or figure</span><input className="input" name="tableFigureReference" /></label>
+    <label><span className="label">Source notes</span><input className="input" name="sourceNotes" /></label>
+    <label><span className="label">Effective date</span><input className="input" name="effectiveAt" type="date" /></label>
+    <label><span className="label">Expiration date</span><input className="input" name="expiresAt" type="date" /></label>
     <label className="form-span-2"><span className="label">Short source excerpt</span><textarea className="input" name="sourceExcerpt" maxLength={3000} /></label>
+    <label className="form-span-2"><span className="label">Restrictions</span><textarea className="input" name="restrictions" maxLength={5000} /></label>
+    <label className="form-span-2"><span className="label">Internal notes</span><textarea className="input" name="internalNotes" maxLength={5000} /></label>
     <div className="form-actions form-span-2"><button className="btn btn-primary" disabled={pending}>{pending ? "Creating claim" : "Create draft claim"}</button></div>
   </form>;
 }

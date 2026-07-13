@@ -1,3 +1,10 @@
+export class ApiError extends Error {
+  constructor(message: string, public status: number, public code?: string) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const isFormData = options.body instanceof FormData;
   const response = await fetch(path, {
@@ -9,7 +16,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     credentials: "include"
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error ?? "Request failed");
+  if (!response.ok) throw new ApiError(data.error ?? "Request failed", response.status, data.code);
   return data as T;
 }
 
