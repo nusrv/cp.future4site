@@ -12,6 +12,13 @@ export type StoredFile = {
   sha256Hash: string;
 };
 
+export const storageNamespaces = ["default", "knowledge-base"] as const;
+export type StorageNamespace = (typeof storageNamespaces)[number];
+
+export type SaveFileOptions =
+  | { namespace?: "default" }
+  | { namespace: "knowledge-base"; documentId: string; versionId: string; extension: string };
+
 const allowedMime = new Set([
   "image/png",
   "image/jpeg",
@@ -19,31 +26,53 @@ const allowedMime = new Set([
   "video/mp4",
   "application/pdf",
   "text/plain",
+  "text/csv",
   "application/json"
 ]);
 
-export async function saveFile(buffer: Buffer, originalName: string, mimeType: string): Promise<StoredFile> {
+export async function saveFile(buffer: Buffer, originalName: string, mimeType: string, options: SaveFileOptions = {}): Promise<StoredFile> {
   if (!allowedMime.has(mimeType)) throw new Error("Unsupported file type");
   if (buffer.length > config.MAX_UPLOAD_MB * 1024 * 1024) throw new Error("File too large");
   const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
-  const category = mimeType.startsWith("image/") ? "images" : mimeType.startsWith("video/") ? "videos" : "files";
-  const storageKey = `${category}/${new Date().toISOString().slice(0, 10)}/${nanoid(16)}-${safeName}`;
+  const namespace = options.namespace ?? "default";
+  if (!storageNamespaces.includes(namespace)) throw new Error("Unsupported storage namespace");
+  let storageKey: string;
+  if (options.namespace === "knowledge-base") {
+    assertStorageSegment(options.documentId, "document ID");
+    assertStorageSegment(options.versionId, "version ID");
+    const extension = options.extension.toLowerCase();
+    if (!/^[a-z0-9]{1,10}$/.test(extension)) throw new Error("Invalid file extension");
+    const now = new Date();
+    storageKey = ["knowledge-base", String(now.getUTCFullYear()), String(now.getUTCMonth() + 1).padStart(2, "0"), options.documentId, options.versionId, `${nanoid(24)}.${extension}`].join("/");
+  } else {
+    const category = mimeType.startsWith("image/") ? "images" : mimeType.startsWith("video/") ? "videos" : "files";
+    storageKey = `${category}/${new Date().toISOString().slice(0, 10)}/${nanoid(16)}-${safeName}`;
+  }
   if (config.FILE_STORAGE_DRIVER === "mock") {
     return { storageKey: `mock://${storageKey}`, originalName, mimeType, sizeBytes: buffer.length, sha256Hash: sha256(buffer) };
   }
   const target = path.resolve(config.FILE_STORAGE_PATH, storageKey);
   const root = path.resolve(config.FILE_STORAGE_PATH);
-  if (!target.startsWith(root)) throw new Error("Invalid storage path");
+  if (!isWithinStorageRoot(root, target)) throw new Error("Invalid storage path");
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.writeFile(target, buffer);
   return { storageKey, originalName, mimeType, sizeBytes: buffer.length, sha256Hash: sha256(buffer) };
+}
+
+function assertStorageSegment(value: string, label: string) {
+  if (!/^[a-zA-Z0-9_-]{1,191}$/.test(value)) throw new Error(`Invalid ${label}`);
+}
+
+export function isWithinStorageRoot(root: string, target: string) {
+  const relative = path.relative(root, target);
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
 export async function readFile(storageKey: string): Promise<Buffer> {
   if (config.FILE_STORAGE_DRIVER !== "local") throw new Error("Stored file preview is unavailable for this storage driver");
   const root = path.resolve(config.FILE_STORAGE_PATH);
   const target = path.resolve(root, storageKey);
-  if (!target.startsWith(root + path.sep)) throw new Error("Invalid storage path");
+  if (!isWithinStorageRoot(root, target)) throw new Error("Invalid storage path");
   return fs.readFile(target);
 }
 
@@ -52,7 +81,7 @@ export async function deleteFile(storageKey: string): Promise<void> {
   if (config.FILE_STORAGE_DRIVER !== "local") throw new Error("Stored file deletion is unavailable for this storage driver");
   const root = path.resolve(config.FILE_STORAGE_PATH);
   const target = path.resolve(root, storageKey);
-  if (!target.startsWith(root + path.sep)) throw new Error("Invalid storage path");
+  if (!isWithinStorageRoot(root, target)) throw new Error("Invalid storage path");
   try {
     await fs.unlink(target);
   } catch (error) {
