@@ -4,6 +4,39 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-13 (Asia/Amman)**
 
+## 2026-07-13 Phase 1A private Knowledge Library foundation
+
+Implemented on `develop` from baseline `33925ab` in a clean non-Google-Drive checkout:
+
+- `bba4794` adds the additive MariaDB/Prisma models, enums, indexes, and migration for `KnowledgeDocument`, immutable `KnowledgeDocumentVersion`, and `FileObject.securityStatus`.
+- `a3a67ec` adds the controlled `knowledge-base` namespace, opaque storage layout, path containment, extension/MIME/content verification, SHA-256 handling, and `SCAN_UNAVAILABLE` fallback.
+- `91327b6` adds permission-enforced private document/version/list/download/archive/restore APIs and audit events.
+- `0cd47df` adds the permission-aware Knowledge Library list, filters, upload, details, metadata edit, replacement, version timeline, scan state, private download, and in-app archive/restore UI.
+- `8ea5061` adds focused storage, permission, API-contract, version, archive, audit, and UI coverage.
+- `cb9ee14` documents private storage, Plesk deployment, backup/restore, security state, and the Phase 1A boundary.
+- `1cb3dfb` makes the Fastify cookie type augmentation explicit and keeps the new contract test type-safe.
+
+Phase boundary preserved: no extraction, OCR, claims, approval/rejection workflow, embeddings, Gemini, n8n, permanent deletion, antivirus installation, or publishing changes.
+
+Validation:
+
+- `npm ci` passed; npm reported 10 pre-existing audit findings (3 moderate, 6 high, 1 critical), not changed in this phase.
+- Prisma schema validation and client generation passed.
+- Full Vitest: 14 files, 67 tests passed.
+- Client TypeScript, server TypeScript, and production Vite/server build passed.
+- Secret scan and `git diff --check` passed.
+- A clean MariaDB migration execution could not run locally: Docker is unavailable and the installed local MySQL service requires credentials not available to this workspace. Production deployment must take a database backup and run `npm run db:migrate` as a deployment gate before starting the new build.
+
+Deployment required:
+
+1. Back up MariaDB and the full existing `FILE_STORAGE_PATH`.
+2. Confirm an absolute private storage root outside `httpdocs`, for example `/var/www/vhosts/future4site.com/private/cp-storage`.
+3. Create its `knowledge-base` directory and grant the effective Passenger application user read/write access without public web access.
+4. Pull `develop`, run `npm ci`, `npm run db:migrate`, `npm test`, and `npm run build`, then restart CP.
+5. Verify login, Knowledge Library permissions, one safe upload/download/archive/restore cycle, and coordinated database/file backup coverage.
+
+Phase 1B recommendation: add a separate human review/approval domain and source-to-approved-claim workflow before any extraction or AI resolver is connected.
+
 ## 2026-07-13 Facebook hashtag and duplicate-CTA correction
 
 Directly verified from live n8n:
