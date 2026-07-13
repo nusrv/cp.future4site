@@ -4,6 +4,21 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-13 (Asia/Amman)**
 
+## 2026-07-13 next-phase planning checkpoint
+
+Current source checkpoint: develop is synchronized with origin/develop through 3f6b89a (correct CP identity assets). Phase 1B implementation and its three reported Plesk test corrections are pushed. The corrected full suite has not yet been reported as rerun on Plesk, the Phase 1B migrations have not been reported as applied, and the Phase 1B application build has not been reported as deployed.
+
+Immediate next action is Phase 1B production acceptance, not Phase 2 development:
+
+1. Pull current develop on Plesk and take verified MariaDB plus FILE_STORAGE_PATH backups.
+2. Rerun the complete deployment validation gate, including the full test suite.
+3. Apply and verify both additive Phase 1B migrations only after all pre-migration gates pass.
+4. Restart CP and run source-review, claim, locale, supersession, permission, Phase 1A regression, and final branding smoke tests.
+5. Record the deployed commit, migration state, test totals, smoke-test evidence, and rollback checkpoint in this handoff.
+6. Inspect production KnowledgeIndex contents without changing them.
+
+The planning-only roadmap for governance, extraction, OCR, AI-assisted candidate claims, the approved-claim resolver, controlled generation integration, and optional semantic retrieval is in docs/KNOWLEDGE_ROADMAP.md. No Phase 2 implementation is authorized by that document. Recommended next phase after production acceptance is Phase 1C: a small manually curated pilot that proves governance and data quality before automation.
+
 ## 2026-07-13 CP identity fix
 
 The login and authenticated sidebar now replace the FF text mark with main-logo.png from the Future4site Website identity, aligned left with Internal management directly below it. The favicon is a square, transparently padded crop containing only the colored bird from that source; the black wordmark text is excluded so browser icon masks remain legible. Placement and outer sizing remain unchanged.
