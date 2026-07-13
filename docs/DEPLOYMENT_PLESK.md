@@ -27,12 +27,13 @@ npm start
 ```
 
 
-## Media Storage
+## Private Persistent Storage
 
 Before starting the application, create a persistent private directory that is not replaced by Git pulls or deployment builds:
 
 ```bash
 mkdir -p /var/www/vhosts/YOUR-DOMAIN/private/cp-storage/images
+mkdir -p /var/www/vhosts/YOUR-DOMAIN/private/cp-storage/knowledge-base
 ```
 
 Configure production `.env`:
@@ -43,7 +44,11 @@ FILE_STORAGE_PATH=/var/www/vhosts/YOUR-DOMAIN/private/cp-storage
 MAX_UPLOAD_MB=25
 ```
 
-Grant the Plesk application user read and write permission to the directory. Uploaded images are private and are served only through authenticated CP routes.
+Production `FILE_STORAGE_PATH` must be absolute and remain outside `httpdocs`, the Git checkout, and every release/build directory. Grant only the effective Plesk/Passenger application user read and write permission to the storage root; do not make it web-readable. Confirm that runtime user before setting ownership. Use restrictive owner/group permissions appropriate to the actual Plesk configuration.
+
+Uploaded media and Knowledge Library originals are private and are served only through authenticated CP routes. Phase 1A does not provide extraction, AI integration, or an antivirus guarantee when a file reports `SCAN_UNAVAILABLE`.
+
+Cloudflare, Nginx, Passenger, Plesk, and Fastify multipart limits can each reject an upload before application validation. Keep their request-body limits at or above `MAX_UPLOAD_MB` without increasing the application default beyond 25 MB in this phase.
 
 ## Public Brand Assets
 
@@ -91,6 +96,8 @@ Expected response includes `ok: true`.
 3. Restore database backup if migrations were already applied.
 4. Restart.
 5. Verify `/health` and login.
+
+The Phase 1A migration is additive, but rolling the application back after applying it leaves the new tables and `FileObject` columns in place. Prefer restoring a pre-migration MariaDB backup for a complete rollback. Never remove the private storage directory during a code rollback.
 
 ## Branded Image Composition
 

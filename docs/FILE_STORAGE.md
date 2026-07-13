@@ -1,6 +1,6 @@
-# File Storage and Media Library
+# File Storage, Media Library, and Knowledge Library
 
-The CP stores file metadata and usage references in MySQL. Image binaries are stored under `FILE_STORAGE_PATH`, not inside the database.
+The CP stores file metadata and usage references in MariaDB. File binaries are stored under `FILE_STORAGE_PATH`, not inside the database.
 
 ## Media library
 
@@ -31,6 +31,20 @@ FILE_STORAGE_PATH/
 
 The database stores the storage key, original name, MIME type, size, SHA-256 hash, approval state, and creative-asset references.
 
+Knowledge Library originals use the controlled layout:
+
+```text
+FILE_STORAGE_PATH/
+  knowledge-base/
+    YYYY/
+      MM/
+        document-id/
+          version-id/
+            opaque-name.extension
+```
+
+Knowledge files are private, use immutable versions, and are downloaded only through authenticated routes. They are never stored in Git, `public`, `dist`, `dist-client`, `httpdocs`, or another build/release directory. See `docs/KNOWLEDGE_LIBRARY.md`.
+
 ## Plesk configuration
 
 Use an absolute, persistent directory outside any release folder that Plesk replaces during deployment:
@@ -41,7 +55,7 @@ FILE_STORAGE_PATH=/var/www/vhosts/YOUR-DOMAIN/private/cp-storage
 MAX_UPLOAD_MB=25
 ```
 
-Create the directory once and give the Plesk application user read and write permission. The application creates the dated `images` subdirectories automatically.
+Create the directory once and give the Plesk application user read and write permission. The application creates controlled `images` and `knowledge-base` subdirectories automatically.
 
 For a simple deployment where the application directory itself persists, `FILE_STORAGE_PATH=./storage` also works. An external absolute path is safer when deployment replaces application files.
 
@@ -55,6 +69,8 @@ For a simple deployment where the application directory itself persists, `FILE_S
 - Deleting a library image removes its CP creative-asset links and returns affected content requests to review.
 - Deleting a content request keeps its uploaded and generated images available in the library.
 - Virus scanning should be added before accepting files from untrusted external users.
+- Knowledge uploads enforce an extension allowlist, declared/detected MIME agreement, safe content signatures, SHA-256, and private attachment downloads.
+- Knowledge files record `SCAN_UNAVAILABLE` until a stable antivirus integration exists; that status is not an antivirus guarantee.
 
 ## Long term
 
