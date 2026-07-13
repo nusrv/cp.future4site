@@ -12,6 +12,7 @@ import { authRoutes } from "./routes/auth.js";
 import { automationRoutes } from "./routes/automation.js";
 import { contentRoutes } from "./routes/content.js";
 import { mediaRoutes } from "./routes/media.js";
+import { knowledgeRoutes } from "./routes/knowledge.js";
 import { operationsRoutes } from "./routes/operations.js";
 
 export async function buildServer() {
@@ -58,6 +59,7 @@ export async function buildServer() {
   await automationRoutes(app);
   await contentRoutes(app);
   await mediaRoutes(app);
+  await knowledgeRoutes(app);
   await operationsRoutes(app);
 
   const clientRoot = path.resolve("dist-client");
