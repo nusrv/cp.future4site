@@ -101,7 +101,6 @@ function Shell({ user }: { user: NonNullable<MeResponse["user"]> }) {
 function BrandIdentity({ className = "" }: { className?: string }) {
   return (
     <div className={`cp-brand ${className}`}>
-      <img className="cp-brand-emblem" src="/assets/logo/future-oils-emblem.png" alt="" aria-hidden="true" />
       <div className="cp-brand-identity">
         <div className="cp-brand-wordmark-frame">
           <img className="cp-brand-wordmark" src="/assets/logo/future-oils-logo.png" alt="Future Oils" />

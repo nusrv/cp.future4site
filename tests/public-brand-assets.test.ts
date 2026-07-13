@@ -28,11 +28,12 @@ describe("public brand asset package", () => {
     const html = readFileSync(join(root, "src/client/index.html"), "utf8");
     const app = readFileSync(join(root, "src/client/src/ui/App.tsx"), "utf8");
     const css = readFileSync(join(root, "src/client/src/styles.css"), "utf8");
-    expect(html).toContain('href="/assets/logo/future-oils-emblem.png"');
-    expect(app).toContain('src="/assets/logo/future-oils-emblem.png"');
+    expect(existsSync(join(root, "public/assets/logo/future-oils-favicon.png"))).toBe(true);
+    expect(html).toContain('href="/assets/logo/future-oils-favicon.png"');
     expect(app).toContain('src="/assets/logo/future-oils-logo.png"');
     expect(app).toContain("Internal management");
     expect(app).not.toMatch(/brand-mark[^\n]*>FF</);
+    expect(app).not.toContain('className="cp-brand-emblem"');
     expect(css).toContain(".cp-brand-wordmark-frame");
   });
 });

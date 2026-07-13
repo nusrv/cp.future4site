@@ -71,20 +71,12 @@ select:focus-visible {
 }
 
 .cp-brand {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  display: block;
   min-width: 0;
 }
 
-.cp-brand-emblem {
-  width: 45px;
-  height: 53px;
-  flex: 0 0 auto;
-  object-fit: contain;
-}
-
 .cp-brand-identity {
+  width: 158px;
   min-width: 0;
 }
 
@@ -104,6 +96,7 @@ select:focus-visible {
 
 .cp-brand-subtitle {
   margin-top: 2px;
+  text-align: left;
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.25;

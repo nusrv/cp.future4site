@@ -6,7 +6,7 @@ Last verified: **2026-07-13 (Asia/Amman)**
 
 ## 2026-07-13 CP Future Oils identity fix
 
-The login and authenticated sidebar now replace the FF text mark with the tracked Future Oils emblem and place the tracked full Future Oils logo beside it. Internal management remains directly below the wordmark. The emblem is also the Vite favicon. No image files were modified or duplicated; both references use the approved public/assets/logo package. The wordmark frame uses the PNG's measured transparent bounds so the visible logo remains legible at sidebar size.
+The login and authenticated sidebar now replace the FF text mark with the tracked full Future Oils logo, aligned left with Internal management directly below it. The duplicated standalone emblem was removed. The favicon uses a square, transparently padded derivative of the approved emblem so browser icon masks do not clip the artwork. The wordmark frame uses the PNG's measured transparent bounds so the visible logo remains legible at sidebar size.
 
 ## 2026-07-13 Phase 1B Plesk test-gate correction
 
