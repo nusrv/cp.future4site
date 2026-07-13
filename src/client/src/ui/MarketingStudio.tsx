@@ -265,7 +265,7 @@ function RequestForm({ backgrounds, pending, error, onSubmit }: { backgrounds: C
     <div className="form-heading"><div><h2>New content request</h2><p>Start with the copy. Media is created only after copy approval.</p></div></div>
     <label className="form-span-2"><span className="label">Topic or instruction</span><textarea className="input min-h-24" name="topic" required /></label>
     <Input name="brand" label="Brand" defaultValue="Future Oils" />
-    <Input name="businessLine" label="Business line" />
+    <Input name="businessLine" label="Business line" defaultValue="Edible Oils" />
     <Input name="product" label="Product" />
     <Input name="market" label="Market" defaultValue="Gulf/MENA" />
     <Input name="audience" label="Audience" defaultValue="Importers and distributors" />

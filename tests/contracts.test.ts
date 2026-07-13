@@ -14,6 +14,15 @@ describe("shared contracts", () => {
     expect(parsed.brand).toBe("Future Oils");
   });
 
+  it("accepts an omitted business line so the server can use the brand fallback", () => {
+    const parsed = contentRequestSchema.parse({
+      topic: "New Future Oils products",
+      brand: "Future Oils",
+      format: "text_image"
+    });
+    expect(parsed.businessLine).toBe("");
+  });
+
   it("rejects unsupported content formats", () => {
     expect(() => contentRequestSchema.parse({
       topic: "Bad format",

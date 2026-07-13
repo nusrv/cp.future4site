@@ -52,7 +52,7 @@ export async function contentRoutes(app: FastifyInstance) {
       data: {
         topic: input.topic,
         brand: input.brand,
-        businessLine: input.businessLine,
+        businessLine: input.businessLine.trim() || input.brand,
         product: input.product,
         market: input.market,
         audience: input.audience,
@@ -66,7 +66,11 @@ export async function contentRoutes(app: FastifyInstance) {
         createdByUserId: current.user.id
       }
     });
-    await audit({ actorUserId: current.user.id, action: "content.request_created", entityType: "content_request", entityId: created.id, summary: "Content request created" });
+    try {
+      await audit({ actorUserId: current.user.id, action: "content.request_created", entityType: "content_request", entityId: created.id, summary: "Content request created" });
+    } catch (error) {
+      request.log.error({ error, contentRequestId: created.id }, "Content request was created but its audit event could not be recorded");
+    }
     return { request: created };
   });
 

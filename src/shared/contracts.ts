@@ -44,7 +44,7 @@ export type ContentStatus = z.infer<typeof contentStatusSchema>;
 export const contentRequestSchema = z.object({
   topic: z.string().min(3).max(500),
   brand: z.string().min(1).max(120),
-  businessLine: z.string().min(1).max(120),
+  businessLine: z.string().max(120).optional().default(""),
   product: z.string().max(160).optional().default(""),
   market: z.string().max(160).optional().default(""),
   audience: z.string().max(240).optional().default(""),

@@ -5,6 +5,7 @@ import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
+import { ZodError } from "zod";
 import { config } from "./config.js";
 import { prisma } from "./db.js";
 import { authRoutes } from "./routes/auth.js";
@@ -21,6 +22,13 @@ export async function buildServer() {
   await app.register(multipart, { limits: { fileSize: config.MAX_UPLOAD_MB * 1024 * 1024 } });
 
   app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof ZodError) {
+      return reply.code(400).send({
+        error: "Invalid request",
+        code: "VALIDATION_ERROR",
+        issues: error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message }))
+      });
+    }
     const errorStatus = "statusCode" in error && typeof error.statusCode === "number" ? error.statusCode : undefined;
     const status = reply.statusCode >= 400 ? reply.statusCode : errorStatus ?? 500;
     if (status >= 500) app.log.error(error);
