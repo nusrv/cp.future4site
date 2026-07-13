@@ -48,7 +48,7 @@ describe("Phase 1B human review and approved claims contract", () => {
     expect(claimRoutes).toContain('where: { id: approvedPredecessor.id }');
     expect(claimRoutes).toContain('data: { status: "SUPERSEDED" }');
     expect(claimRoutes).toContain("supersedesClaimId: existing.id");
-    expect(claimRoutes).toContain("replacesApprovedClaimId: approvedPredecessor.id");
+    expect(claimRoutes).toContain("replacesApprovedClaimId: approvedPredecessor?.id ?? null");
     expect(claimRoutes).toContain("FOR UPDATE");
     expect(claimRoutes).not.toContain("knowledgeClaim.delete");
   });

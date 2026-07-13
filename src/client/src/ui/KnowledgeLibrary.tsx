@@ -490,7 +490,9 @@ function ClaimsPanel({ permissions, selectedDocument, onOpenDocument }: {
   const historyEntry = history?.revisions.find((revision) => revision.id === selected?.id);
   const isLatest = history?.latestRevisionId === selected?.id;
   const isEditable = Boolean(selected && historyEntry?.isEditable && canEdit);
-  const canStartRevision = Boolean(selected && canCreate && isLatest && ["APPROVED", "REJECTED"].includes(selected.status) && history?.currentApprovedRevisionId);
+  const canStartRevision = Boolean(selected && canCreate && isLatest && (
+    selected.status === "REJECTED" || (selected.status === "APPROVED" && history?.currentApprovedRevisionId === selected.id)
+  ));
   const error = claims.error ?? detail.error ?? refs.error ?? create.error ?? transition.error ?? createRevision.error ?? editDraft.error;
   return <section className="knowledge-claims">
     <div className="knowledge-section-heading"><div><h2>Approved claims</h2><p>Manual wording, immutable revisions, and source-level provenance.</p></div>{canCreate ? <button className="btn btn-primary" disabled={!approvedVersions.length} onClick={() => setShowCreate((value) => !value)}>{showCreate ? "Close claim form" : "Create manual claim"}</button> : null}</div>
@@ -523,7 +525,7 @@ function ClaimsPanel({ permissions, selectedDocument, onOpenDocument }: {
             {canStartRevision ? <button className="btn btn-secondary" onClick={() => setConfirmRevision(true)}>Create draft revision</button> : null}
           </div> : null}
           {!editing ? <p className="claim-action-reason">{claimActionUnavailableReason(selected, Boolean(isLatest), canEdit, canCreate)}</p> : null}
-          {confirmRevision ? <div className="knowledge-inline-decision" role="alert"><p>Create revision {selected.revision + 1}? The current approved revision remains active until this draft passes review and is approved.</p><button className="btn btn-secondary btn-compact" onClick={() => setConfirmRevision(false)}>Cancel revision</button><button className="btn btn-primary btn-compact" disabled={createRevision.isPending} onClick={() => createRevision.mutate(selected)}>{createRevision.isPending ? "Creating revision" : "Create draft revision"}</button></div> : null}
+          {confirmRevision ? <div className="knowledge-inline-decision" role="alert"><p>Create revision {selected.revision + 1}? {history.currentApprovedRevisionId ? "The current approved revision remains active until this draft passes review and is approved." : "The rejected revision remains immutable while the new draft starts a separate review."}</p><button className="btn btn-secondary btn-compact" onClick={() => setConfirmRevision(false)}>Cancel revision</button><button className="btn btn-primary btn-compact" disabled={createRevision.isPending} onClick={() => createRevision.mutate(selected)}>{createRevision.isPending ? "Creating revision" : "Create draft revision"}</button></div> : null}
           <ClaimLocaleActions claim={selected} isLatest={Boolean(isLatest)} canEdit={canEdit} canReview={canReview} canApprove={canApprove} onTransition={(locale, action) => transition.mutate({ id: selected.id, locale, action })} onReject={(locale) => setDecision({ claimId: selected.id, locale })} />
         </> : null}
       </div>
@@ -663,12 +665,12 @@ function ClaimDraftEditForm({ claim, references, pending, onCancel, onSubmit }: 
       applicability, ...(sourceChanged ? { sources } : {})
     }, translations);
   }}>
-    <div className="form-heading"><h4>Edit draft revision {claim.revision}</h4><p>Saving wording changes resets review for only the changed locale.</p></div>
+    <div className="form-heading"><h4>Edit draft revision {claim.revision}</h4><p>Only wording still in DRAFT can be edited. Reviewed locales remain locked.</p></div>
     <RequiredInput name="claimType" label="Claim type" defaultValue={claim.claimType} />
     <label><span className="label">Usage scope</span><select className="input" name="usageScope" defaultValue={claim.usageScope}><option value="INTERNAL_ONLY">Internal only</option><option value="RESTRICTED">Restricted</option><option value="PUBLIC_SAFE">Public safe</option></select></label>
     <label><span className="label">Effective date</span><input className="input" type="date" name="effectiveAt" defaultValue={dateInputValue(claim.effectiveAt)} /></label>
     <label><span className="label">Expiration date</span><input className="input" type="date" name="expiresAt" defaultValue={dateInputValue(claim.expiresAt)} /></label>
-    {claim.translations.map((translation) => <label className="form-span-2" key={translation.locale} dir={translation.locale.toLowerCase().startsWith("ar") ? "rtl" : "ltr"}><span className="label">{translation.locale.toUpperCase()} wording</span><textarea className="input" name={"wording-" + translation.locale} required defaultValue={translation.wording} /></label>)}
+    {claim.translations.map((translation) => <label className="form-span-2" key={translation.locale} dir={translation.locale.toLowerCase().startsWith("ar") ? "rtl" : "ltr"}><span className="label">{translation.locale.toUpperCase()} wording - {translation.reviewStatus.replaceAll("_", " ")}</span><textarea className="input" name={"wording-" + translation.locale} required disabled={translation.reviewStatus !== "DRAFT"} defaultValue={translation.wording} />{translation.reviewStatus !== "DRAFT" ? <small>Reviewed wording is locked. Create a new claim revision to change it.</small> : null}</label>)}
     <MultiSelect name="brandIds" label="Brands" options={references?.brands.map((item) => ({ id: item.id, label: item.name })) ?? []} selected={claim.brands.map((item) => item.brandId)} />
     <MultiSelect name="productIds" label="Products" options={references?.products.map((item) => ({ id: item.id, label: item.name })) ?? []} selected={claim.products.map((item) => item.productId)} />
     <MultiSelect name="packagingFormatIds" label="Packaging formats" options={references?.packagingFormats.map((item) => ({ id: item.id, label: item.label })) ?? []} selected={claim.packagingFormats.map((item) => item.packagingFormatId)} />

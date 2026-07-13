@@ -24,7 +24,7 @@ describe("Phase 1B claim revision and supersession contract", () => {
 
   it("creates a draft without changing the approved predecessor", () => {
     const supersedeBody = routes.slice(routes.indexOf("async function supersedeClaim"), routes.indexOf("function assertApprovalRequirements"));
-    expect(supersedeBody).toContain("replacesApprovedClaimId: approvedPredecessor.id");
+    expect(supersedeBody).toContain("replacesApprovedClaimId: approvedPredecessor?.id ?? null");
     expect(supersedeBody).not.toContain('data: { status: "SUPERSEDED" }');
     expect(supersedeBody).toContain("A newer revision already exists");
     expect(supersedeBody).toContain("latest.revision + 1");
@@ -33,7 +33,7 @@ describe("Phase 1B claim revision and supersession contract", () => {
   it("locks the conceptual claim and atomically swaps exactly one approved revision", () => {
     expect(routes).toContain("lockClaimRevisionSet");
     expect(routes).toContain("ORDER BY revision FOR UPDATE");
-    expect(routes).toContain('activeApproved.length !== 1');
+    expect(routes).toContain('activeApproved.length > 1');
     expect(routes).toContain('claim.replacesApprovedClaimId !== approvedPredecessor.id');
     expect(routes).toContain('action: "knowledge.claim_superseded"');
     expect(routes).toContain('action: next === "UNDER_REVIEW" ? "knowledge.claim_review_submitted" : next === "APPROVED" ? "knowledge.claim_approved"');
@@ -53,16 +53,25 @@ describe("Phase 1B claim revision and supersession contract", () => {
     for (const protectedField of ["status", "reviewStatus", "reviewedByUserId", "approvedByUserId", "approvedAt", "supersedesClaimId", "replacesApprovedClaimId"]) {
       expect(routes).not.toContain(protectedField + ": input." + protectedField);
     }
+    expect(routes).not.toContain('status: existing.status === "REJECTED"');
+    expect(routes).toContain('update: { wording: input.wording }');
+    expect(routes).toContain("Reviewed wording is immutable. Create a new claim revision to change it.");
+  });
+
+  it("corrects rejected claims through a new draft without mutating the rejected row", () => {
+    expect(routes).toContain('existing.status === "APPROVED" && approvedPredecessor?.id !== existing.id');
+    expect(routes).toContain("approvedPredecessor = activeApproved[0] ?? null");
+    expect(ui).toContain("The rejected revision remains immutable while the new draft starts a separate review.");
   });
 
   it("preserves locale independence and approval requirements", () => {
     expect(schema).toContain("@@unique([claimId, locale])");
     expect(routes).toContain("where: { claimId_locale: { claimId, locale: input.locale } }");
-    expect(routes).toContain('reviewStatus: "PROPOSED"');
+    expect(routes).toContain('existingTranslation.reviewStatus !== "DRAFT"');
     /*
     expect(routes).toContain("reviewStatus: \PROPOSED\");
     */
-    expect(ui).toContain("Saving wording changes resets review for only the changed locale.");
+    expect(ui).toContain("Only wording still in DRAFT can be edited. Reviewed locales remain locked.");
     expect(routes).toContain("Every required locale must be independently approved");
     expect(routes).toContain('requirePermission("knowledge.claim.approve")');
   });

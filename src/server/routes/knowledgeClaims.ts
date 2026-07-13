@@ -218,9 +218,7 @@ export async function knowledgeClaimRoutes(app: FastifyInstance) {
         expiresAt: input.expiresAt,
         restrictions: input.restrictions,
         internalNotes: input.internalNotes,
-        lastEditedByUserId: current.user.id,
-        status: existing.status === "REJECTED" ? "DRAFT" : undefined,
-        rejectionReason: existing.status === "REJECTED" ? null : undefined
+        lastEditedByUserId: current.user.id
       } });
       if (input.applicability) await replaceApplicability(tx, id, input.applicability);
       if (input.sources) await replaceSources(tx, id, input.sources);
@@ -284,14 +282,17 @@ async function upsertTranslation(request: FastifyRequest) {
   const input = translationInput.parse({ ...(request.body as object), locale: params.locale ?? (request.body as any)?.locale });
   const claim = await prisma.knowledgeClaim.findUniqueOrThrow({ where: { id: params.id }, include: { supersededBy: true } });
   assertEditable(claim);
+  const existingTranslation = await prisma.knowledgeClaimTranslation.findUnique({
+    where: { claimId_locale: { claimId: params.id, locale: input.locale } }
+  });
+  if (existingTranslation && existingTranslation.reviewStatus !== "DRAFT") {
+    throw conflict("Reviewed wording is immutable. Create a new claim revision to change it.");
+  }
   await prisma.$transaction(async (tx) => {
     await tx.knowledgeClaimTranslation.upsert({
       where: { claimId_locale: { claimId: params.id, locale: input.locale } },
       create: { claimId: params.id, locale: input.locale, wording: input.wording },
-      update: {
-        wording: input.wording, reviewStatus: "DRAFT", reviewedByUserId: null, reviewedAt: null,
-        approvedByUserId: null, approvedAt: null, reviewNotes: null, rejectionReason: null
-      }
+      update: { wording: input.wording }
     });
     await tx.knowledgeClaim.update({ where: { id: params.id }, data: { lastEditedByUserId: current.user.id } });
     await tx.auditEvent.create({ data: {
@@ -360,10 +361,14 @@ async function transitionClaim(request: FastifyRequest, next: "UNDER_REVIEW" | "
       if (claim.revision === 1) {
         if (activeApproved.length) throw conflict("Another approved revision is already active");
       } else {
-        if (activeApproved.length !== 1) throw conflict("The conceptual claim does not have exactly one current approved revision");
-        approvedPredecessor = activeApproved[0];
-        if (!claim.replacesApprovedClaimId || claim.replacesApprovedClaimId !== approvedPredecessor.id) {
-          throw conflict("This revision no longer targets the current approved revision");
+        if (activeApproved.length > 1) throw conflict("The conceptual claim has conflicting approved revisions");
+        approvedPredecessor = activeApproved[0] ?? null;
+        if (claim.replacesApprovedClaimId) {
+          if (!approvedPredecessor || claim.replacesApprovedClaimId !== approvedPredecessor.id) {
+            throw conflict("This revision no longer targets the current approved revision");
+          }
+        } else if (approvedPredecessor) {
+          throw conflict("This revision was not created to replace the current approved revision");
         }
         if (!claim.supersedes || claim.supersedes.stableKey !== stableKey) {
           throw conflict("Revision history does not belong to the same conceptual claim");
@@ -415,15 +420,18 @@ async function supersedeClaim(request: FastifyRequest) {
     if (latest.id !== existing.id || existing.supersededBy) throw conflict("A newer revision already exists");
     if (!["APPROVED", "REJECTED"].includes(existing.status)) throw conflict("Only the latest approved or rejected revision can start a replacement draft");
     const activeApproved = await tx.knowledgeClaim.findMany({ where: { stableKey, status: "APPROVED" } });
-    if (activeApproved.length !== 1) throw conflict("The conceptual claim does not have exactly one current approved revision");
-    const approvedPredecessor = activeApproved[0];
+    if (activeApproved.length > 1) throw conflict("The conceptual claim has conflicting approved revisions");
+    const approvedPredecessor = activeApproved[0] ?? null;
+    if (existing.status === "APPROVED" && approvedPredecessor?.id !== existing.id) {
+      throw conflict("The selected revision is not the current approved revision");
+    }
     const revision = latest.revision + 1;
     const replacement = await tx.knowledgeClaim.create({ data: {
       stableKey: existing.stableKey, revision, claimType: input.claimType, usageScope: input.usageScope,
       requiredLocales: unique(input.requiredLocales), effectiveAt: input.effectiveAt, expiresAt: input.expiresAt,
       restrictions: input.restrictions || null, internalNotes: input.internalNotes || null,
       createdByUserId: current.user.id, lastEditedByUserId: current.user.id,
-      supersedesClaimId: existing.id, replacesApprovedClaimId: approvedPredecessor.id,
+      supersedesClaimId: existing.id, replacesApprovedClaimId: approvedPredecessor?.id ?? null,
       translations: { create: input.translations.map((translation) => ({ locale: translation.locale, wording: translation.wording })) },
       sources: { create: sourceRows(input.sources) },
       brands: { create: unique(input.applicability.brandIds).map((brandId) => ({ brandId })) },
@@ -434,7 +442,7 @@ async function supersedeClaim(request: FastifyRequest) {
       objectives: { create: unique(input.applicability.objectives).map((value) => ({ value })) }
     } });
     await tx.auditEvent.create({ data:
-      { actorUserId: current.user.id, action: "knowledge.claim_revision_created", entityType: "knowledge_claim", entityId: replacement.id, summary: "Replacement claim revision created", metadata: { stableKey: existing.stableKey, revision, supersedesClaimId: existing.id, replacesApprovedClaimId: approvedPredecessor.id } }
+      { actorUserId: current.user.id, action: "knowledge.claim_revision_created", entityType: "knowledge_claim", entityId: replacement.id, summary: "Claim revision draft created", metadata: { stableKey: existing.stableKey, revision, supersedesClaimId: existing.id, replacesApprovedClaimId: approvedPredecessor?.id ?? null } }
     });
     return tx.knowledgeClaim.findUniqueOrThrow({ where: { id: replacement.id }, include: claimInclude });
   });

@@ -23,7 +23,7 @@ APPROVED_SOURCE means the version is trusted evidence. It does not approve any s
 
 A claim can become APPROVED only when it is UNDER_REVIEW, at least one source is APPROVED_SOURCE, every required locale is independently APPROVED, usage scope is set, and at least one applicability value is set. Drafts are the only editable revisions. Approved, rejected, expired, superseded, and historical revisions are immutable; correcting any decided revision requires a new draft with the same stable key and the next revision.
 
-Creating a draft revision never alters the current approved revision. Final approval locks all rows for the stable claim key, verifies that the target draft still points to the single current approved revision, approves the replacement, and marks that predecessor SUPERSEDED in one transaction. Stale, repeated, and conflicting attempts return a conflict without a partial transition. Separate audit events record the replacement approval and predecessor supersession.
+Creating a draft revision never alters the current approved revision. Final approval of a replacement locks all rows for the stable claim key, verifies that the target draft still points to the single current approved revision, approves the replacement, and marks that predecessor SUPERSEDED in one transaction. Stale, repeated, and conflicting attempts return a conflict without a partial transition. Separate audit events record the replacement approval and predecessor supersession. A rejected conceptual claim that has never had an approved revision may also start a new draft; approving that draft creates the first approved revision and does not rewrite the rejected row.
 
 The future-eligibility flag is informational only. It is true only for APPROVED, PUBLIC_SAFE, currently effective, unexpired, non-superseded claims. No generation path reads it in Phase 1B.
 
@@ -52,7 +52,7 @@ A non-owner user who created or most recently edited a claim cannot approve its 
 - POST /api/knowledge/claims/:id/reject
 - POST /api/knowledge/claims/:id/supersede
 
-Generic PATCH accepts editable metadata only and uses a strict schema. It cannot assign approval, review, revision, stable-key, actor, or supersession state.
+Generic PATCH accepts editable draft metadata only and uses a strict schema. It cannot assign approval, review, revision, stable-key, actor, or supersession state. Reviewed localized wording is immutable; generic translation PATCH can update only wording that is still DRAFT, and corrections after a review decision require a new claim revision.
 
 Claim detail and revision-history responses identify the latest revision, the current approved revision, direct predecessor, intended approved predecessor, historical state, editability, translations, applicability, provenance, and available workflow context. Revision history is ordered by revision descending. Responses expose authenticated download routes, never storage keys or filesystem paths.
 
