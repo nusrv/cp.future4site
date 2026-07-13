@@ -605,6 +605,7 @@ model KnowledgeClaim {
   approvedByUserId String?
   approvedAt DateTime?
   supersedesClaimId String? @unique
+  replacesApprovedClaimId String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   createdBy User @relation("KnowledgeClaimCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
@@ -613,6 +614,8 @@ model KnowledgeClaim {
   approvedBy User? @relation("KnowledgeClaimApprover", fields: [approvedByUserId], references: [id], onDelete: Restrict)
   supersedes KnowledgeClaim? @relation("KnowledgeClaimSupersession", fields: [supersedesClaimId], references: [id], onDelete: Restrict)
   supersededBy KnowledgeClaim? @relation("KnowledgeClaimSupersession")
+  replacesApproved KnowledgeClaim? @relation("KnowledgeClaimApprovedReplacement", fields: [replacesApprovedClaimId], references: [id], onDelete: Restrict)
+  replacementAttempts KnowledgeClaim[] @relation("KnowledgeClaimApprovedReplacement")
   translations KnowledgeClaimTranslation[]
   sources KnowledgeClaimSource[]
   brands KnowledgeClaimBrand[]
@@ -627,6 +630,7 @@ model KnowledgeClaim {
   @@index([usageScope, status])
   @@index([effectiveAt])
   @@index([expiresAt])
+  @@index([replacesApprovedClaimId, status])
 }
 
 model KnowledgeClaimTranslation {

@@ -31,6 +31,12 @@ export async function buildServer() {
         issues: error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message }))
       });
     }
+    if ("code" in error && error.code === "P2025") {
+      return reply.code(404).send({ error: "Requested record was not found", code: "NOT_FOUND" });
+    }
+    if ("code" in error && error.code === "P2002") {
+      return reply.code(409).send({ error: "A conflicting record already exists", code: "CONFLICT" });
+    }
     const errorStatus = "statusCode" in error && typeof error.statusCode === "number" ? error.statusCode : undefined;
     const status = reply.statusCode >= 400 ? reply.statusCode : errorStatus ?? 500;
     if (status >= 500) app.log.error(error);

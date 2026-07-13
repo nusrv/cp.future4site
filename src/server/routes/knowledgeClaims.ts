@@ -39,6 +39,11 @@ const claimInput = z.object({
 }).refine((value) => !value.expiresAt || !value.effectiveAt || value.expiresAt > value.effectiveAt, {
   message: "Expiration must be after the effective date",
   path: ["expiresAt"]
+}).superRefine((value, context) => {
+  const required = value.requiredLocales.map((locale) => locale.toLowerCase());
+  const translations = value.translations.map((translation) => translation.locale.toLowerCase());
+  if (new Set(required).size !== required.length) context.addIssue({ code: "custom", path: ["requiredLocales"], message: "Required locales must be unique" });
+  if (new Set(translations).size !== translations.length) context.addIssue({ code: "custom", path: ["translations"], message: "Each locale may appear only once" });
 });
 
 const claimInclude = {
@@ -70,7 +75,8 @@ const claimInclude = {
   audiences: true,
   objectives: true,
   supersedes: { select: { id: true, stableKey: true, revision: true, status: true } },
-  supersededBy: { select: { id: true, stableKey: true, revision: true, status: true } }
+  supersededBy: { select: { id: true, stableKey: true, revision: true, status: true } },
+  replacesApproved: { select: { id: true, stableKey: true, revision: true, status: true } }
 };
 
 export async function knowledgeClaimRoutes(app: FastifyInstance) {
@@ -108,12 +114,26 @@ export async function knowledgeClaimRoutes(app: FastifyInstance) {
     return { claims: claims.map(serializeClaim) };
   });
 
+  app.get("/api/knowledge/claims/:id/revisions", { preHandler: requirePermission("knowledge.read") }, async (request) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const selected = await prisma.knowledgeClaim.findUniqueOrThrow({ where: { id }, select: { stableKey: true } });
+    const revisions = await prisma.knowledgeClaim.findMany({
+      where: { stableKey: selected.stableKey },
+      include: claimInclude,
+      orderBy: { revision: "desc" }
+    });
+    return serializeRevisionHistory(revisions);
+  });
+
   app.post("/api/knowledge/claims", { preHandler: requirePermission("knowledge.claim.create") }, async (request, reply) => {
     const current = request.currentUser!;
     const input = claimInput.parse(request.body);
     assertRequiredTranslations(input.requiredLocales, input.translations);
     assertApplicability(input.applicability);
     await assertSourceVersions(input.sources.map((source) => source.documentVersionId));
+    if (await prisma.knowledgeClaim.count({ where: { stableKey: input.stableKey } })) {
+      throw conflict("This stable claim key already exists. Create a new revision from its history instead.");
+    }
     const claim = await prisma.$transaction(async (tx) => {
       const created = await tx.knowledgeClaim.create({ data: {
         stableKey: input.stableKey,
@@ -159,7 +179,12 @@ export async function knowledgeClaimRoutes(app: FastifyInstance) {
         take: 100
       })
     ]);
-    return { claim: serializeClaim(claim), auditEvents };
+    const revisions = await prisma.knowledgeClaim.findMany({
+      where: { stableKey: claim.stableKey },
+      include: claimInclude,
+      orderBy: { revision: "desc" }
+    });
+    return { claim: serializeClaim(claim), auditEvents, revisionHistory: serializeRevisionHistory(revisions) };
   });
 
   app.patch("/api/knowledge/claims/:id", { preHandler: requirePermission("knowledge.claim.edit") }, async (request) => {
@@ -173,12 +198,17 @@ export async function knowledgeClaimRoutes(app: FastifyInstance) {
       expiresAt: z.coerce.date().nullable().optional(),
       restrictions: z.string().trim().max(5000).nullable().optional(),
       internalNotes: z.string().trim().max(5000).nullable().optional(),
-      applicability: applicabilitySchema.optional()
+      applicability: applicabilitySchema.optional(),
+      sources: z.array(sourceInput).min(1).max(25).optional()
     }).strict().parse(request.body);
-    const existing = await prisma.knowledgeClaim.findUniqueOrThrow({ where: { id }, include: { translations: true } });
-    assertEditable(existing.status);
+    const existing = await prisma.knowledgeClaim.findUniqueOrThrow({ where: { id }, include: { translations: true, supersededBy: true } });
+    assertEditable(existing);
     if (input.requiredLocales) assertRequiredTranslations(input.requiredLocales, existing.translations);
     if (input.applicability) assertApplicability(input.applicability);
+    if (input.sources) await assertSourceVersions(input.sources.map((source) => source.documentVersionId));
+    const nextEffectiveAt = input.effectiveAt === undefined ? existing.effectiveAt : input.effectiveAt;
+    const nextExpiresAt = input.expiresAt === undefined ? existing.expiresAt : input.expiresAt;
+    if (nextExpiresAt && nextEffectiveAt && nextExpiresAt <= nextEffectiveAt) throw badRequest("Expiration must be after the effective date");
     const claim = await prisma.$transaction(async (tx) => {
       await tx.knowledgeClaim.update({ where: { id }, data: {
         claimType: input.claimType,
@@ -193,6 +223,7 @@ export async function knowledgeClaimRoutes(app: FastifyInstance) {
         rejectionReason: existing.status === "REJECTED" ? null : undefined
       } });
       if (input.applicability) await replaceApplicability(tx, id, input.applicability);
+      if (input.sources) await replaceSources(tx, id, input.sources);
       const fields = Object.keys(input);
       await tx.auditEvent.createMany({ data: [
         {
@@ -210,6 +241,11 @@ export async function knowledgeClaimRoutes(app: FastifyInstance) {
         ...(input.applicability ? [{
           actorUserId: current.user.id, action: "knowledge.claim_applicability_changed", entityType: "knowledge_claim",
           entityId: id, summary: "Claim applicability changed", metadata: applicabilityAudit(input.applicability)
+        }] : []),
+        ...(input.sources ? [{
+          actorUserId: current.user.id, action: "knowledge.claim_provenance_changed", entityType: "knowledge_claim",
+          entityId: id, summary: "Claim source provenance changed",
+          metadata: { stableKey: existing.stableKey, sourceVersionIds: input.sources.map((source) => source.documentVersionId) }
         }] : [])
       ] });
       return tx.knowledgeClaim.findUniqueOrThrow({ where: { id }, include: claimInclude });
@@ -246,8 +282,8 @@ async function upsertTranslation(request: FastifyRequest) {
   const current = request.currentUser!;
   const params = z.object({ id: z.string(), locale: localeSchema.optional() }).parse(request.params);
   const input = translationInput.parse({ ...(request.body as object), locale: params.locale ?? (request.body as any)?.locale });
-  const claim = await prisma.knowledgeClaim.findUniqueOrThrow({ where: { id: params.id } });
-  assertEditable(claim.status);
+  const claim = await prisma.knowledgeClaim.findUniqueOrThrow({ where: { id: params.id }, include: { supersededBy: true } });
+  assertEditable(claim);
   await prisma.$transaction(async (tx) => {
     await tx.knowledgeClaimTranslation.upsert({
       where: { claimId_locale: { claimId: params.id, locale: input.locale } },
@@ -270,9 +306,13 @@ async function transitionTranslation(request: FastifyRequest, next: "UNDER_REVIE
   const current = request.currentUser!;
   const params = z.object({ id: z.string(), locale: localeSchema }).parse(request.params);
   const input = z.object({ notes: z.string().trim().max(5000).optional().default(""), rejectionReason: z.string().trim().max(5000).optional().default("") }).parse(request.body ?? {});
-  const claim = await prisma.knowledgeClaim.findUniqueOrThrow({ where: { id: params.id } });
+  const claim = await prisma.knowledgeClaim.findUniqueOrThrow({ where: { id: params.id }, include: { supersededBy: true } });
   const translation = await prisma.knowledgeClaimTranslation.findUniqueOrThrow({ where: { claimId_locale: { claimId: params.id, locale: params.locale } } });
-  const allowed = next === "UNDER_REVIEW" ? ["DRAFT", "REJECTED"] : ["UNDER_REVIEW"];
+  if (claim.supersededBy || !["DRAFT", "UNDER_REVIEW"].includes(claim.status)) {
+    throw conflict("Historical or decided claim translations cannot change review state");
+  }
+  if (next === "UNDER_REVIEW" && claim.status !== "DRAFT") throw conflict("Only a draft claim can submit wording for review");
+  const allowed = next === "UNDER_REVIEW" ? ["DRAFT"] : ["UNDER_REVIEW"];
   if (!allowed.includes(translation.reviewStatus)) throw conflict("Invalid translation review transition");
   if (next === "REJECTED" && input.rejectionReason.length < 2) throw badRequest("A rejection reason is required");
   if (next === "APPROVED") assertNoSelfApproval(current, claim);
@@ -301,16 +341,35 @@ async function transitionClaim(request: FastifyRequest, next: "UNDER_REVIEW" | "
   const current = request.currentUser!;
   const { id } = z.object({ id: z.string() }).parse(request.params);
   const input = z.object({ notes: z.string().trim().max(5000).optional().default(""), rejectionReason: z.string().trim().max(5000).optional().default("") }).parse(request.body ?? {});
-  const claim = await prisma.knowledgeClaim.findUniqueOrThrow({ where: { id }, include: claimInclude });
-  const allowed = next === "UNDER_REVIEW" ? ["DRAFT", "REJECTED"] : ["UNDER_REVIEW"];
-  if (!allowed.includes(claim.status)) throw conflict("Invalid claim review transition");
-  if (next === "REJECTED" && input.rejectionReason.length < 2) throw badRequest("A rejection reason is required");
-  if (next === "APPROVED") {
-    assertNoSelfApproval(current, claim);
-    assertApprovalRequirements(claim);
-  }
   const now = new Date();
   const updated = await prisma.$transaction(async (tx) => {
+    const stableKey = await lockClaimRevisionSet(tx, id);
+    const claim = await tx.knowledgeClaim.findUniqueOrThrow({ where: { id }, include: claimInclude });
+    const allowed = next === "UNDER_REVIEW" ? ["DRAFT"] : ["UNDER_REVIEW"];
+    if (claim.supersededBy) throw conflict("Historical revisions cannot change review state");
+    if (!allowed.includes(claim.status)) throw conflict("Invalid or stale claim review transition");
+    if (next === "REJECTED" && input.rejectionReason.length < 2) throw badRequest("A rejection reason is required");
+    let approvedPredecessor: any = null;
+    if (next === "APPROVED") {
+      assertNoSelfApproval(current, claim);
+      assertApprovalRequirements(claim);
+      const activeApproved = await tx.knowledgeClaim.findMany({
+        where: { stableKey, status: "APPROVED", id: { not: claim.id } },
+        orderBy: { revision: "desc" }
+      });
+      if (claim.revision === 1) {
+        if (activeApproved.length) throw conflict("Another approved revision is already active");
+      } else {
+        if (activeApproved.length !== 1) throw conflict("The conceptual claim does not have exactly one current approved revision");
+        approvedPredecessor = activeApproved[0];
+        if (!claim.replacesApprovedClaimId || claim.replacesApprovedClaimId !== approvedPredecessor.id) {
+          throw conflict("This revision no longer targets the current approved revision");
+        }
+        if (!claim.supersedes || claim.supersedes.stableKey !== stableKey) {
+          throw conflict("Revision history does not belong to the same conceptual claim");
+        }
+      }
+    }
     await tx.knowledgeClaim.update({ where: { id }, data: {
       status: next,
       reviewedByUserId: next === "UNDER_REVIEW" ? null : current.user.id,
@@ -320,11 +379,14 @@ async function transitionClaim(request: FastifyRequest, next: "UNDER_REVIEW" | "
       reviewNotes: input.notes || null,
       rejectionReason: next === "REJECTED" ? input.rejectionReason : null
     } });
-    if (next === "APPROVED" && claim.supersedesClaimId) {
-      await tx.knowledgeClaim.update({ where: { id: claim.supersedesClaimId }, data: { status: "SUPERSEDED" } });
+    if (next === "APPROVED" && approvedPredecessor) {
+      await tx.knowledgeClaim.update({
+        where: { id: approvedPredecessor.id },
+        data: { status: "SUPERSEDED" }
+      });
       await tx.auditEvent.create({ data: {
         actorUserId: current.user.id, action: "knowledge.claim_superseded", entityType: "knowledge_claim",
-        entityId: claim.supersedesClaimId, summary: "Approved claim superseded by an approved replacement revision",
+        entityId: approvedPredecessor.id, summary: "Approved claim superseded by an approved replacement revision",
         metadata: { stableKey: claim.stableKey, replacementClaimId: claim.id, revision: claim.revision }
       } });
     }
@@ -343,18 +405,25 @@ async function supersedeClaim(request: FastifyRequest) {
   const current = request.currentUser!;
   const { id } = z.object({ id: z.string() }).parse(request.params);
   const input = claimInput.parse({ ...(request.body as object), stableKey: existingStableKeyPlaceholder });
-  const existing = await prisma.knowledgeClaim.findUniqueOrThrow({ where: { id } });
-  if (existing.status !== "APPROVED") throw conflict("Only an approved claim can be superseded");
   assertRequiredTranslations(input.requiredLocales, input.translations);
   assertApplicability(input.applicability);
   await assertSourceVersions(input.sources.map((source) => source.documentVersionId));
   const created = await prisma.$transaction(async (tx) => {
-    const revision = existing.revision + 1;
+    const stableKey = await lockClaimRevisionSet(tx, id);
+    const existing = await tx.knowledgeClaim.findUniqueOrThrow({ where: { id }, include: { supersededBy: true } });
+    const latest = await tx.knowledgeClaim.findFirstOrThrow({ where: { stableKey }, orderBy: { revision: "desc" } });
+    if (latest.id !== existing.id || existing.supersededBy) throw conflict("A newer revision already exists");
+    if (!["APPROVED", "REJECTED"].includes(existing.status)) throw conflict("Only the latest approved or rejected revision can start a replacement draft");
+    const activeApproved = await tx.knowledgeClaim.findMany({ where: { stableKey, status: "APPROVED" } });
+    if (activeApproved.length !== 1) throw conflict("The conceptual claim does not have exactly one current approved revision");
+    const approvedPredecessor = activeApproved[0];
+    const revision = latest.revision + 1;
     const replacement = await tx.knowledgeClaim.create({ data: {
       stableKey: existing.stableKey, revision, claimType: input.claimType, usageScope: input.usageScope,
       requiredLocales: unique(input.requiredLocales), effectiveAt: input.effectiveAt, expiresAt: input.expiresAt,
       restrictions: input.restrictions || null, internalNotes: input.internalNotes || null,
-      createdByUserId: current.user.id, lastEditedByUserId: current.user.id, supersedesClaimId: existing.id,
+      createdByUserId: current.user.id, lastEditedByUserId: current.user.id,
+      supersedesClaimId: existing.id, replacesApprovedClaimId: approvedPredecessor.id,
       translations: { create: input.translations.map((translation) => ({ locale: translation.locale, wording: translation.wording })) },
       sources: { create: sourceRows(input.sources) },
       brands: { create: unique(input.applicability.brandIds).map((brandId) => ({ brandId })) },
@@ -365,21 +434,29 @@ async function supersedeClaim(request: FastifyRequest) {
       objectives: { create: unique(input.applicability.objectives).map((value) => ({ value })) }
     } });
     await tx.auditEvent.create({ data:
-      { actorUserId: current.user.id, action: "knowledge.claim_revision_created", entityType: "knowledge_claim", entityId: replacement.id, summary: "Replacement claim revision created", metadata: { stableKey: existing.stableKey, revision, supersedesClaimId: existing.id } }
+      { actorUserId: current.user.id, action: "knowledge.claim_revision_created", entityType: "knowledge_claim", entityId: replacement.id, summary: "Replacement claim revision created", metadata: { stableKey: existing.stableKey, revision, supersedesClaimId: existing.id, replacesApprovedClaimId: approvedPredecessor.id } }
     });
     return tx.knowledgeClaim.findUniqueOrThrow({ where: { id: replacement.id }, include: claimInclude });
   });
   return { claim: serializeClaim(created) };
 }
 
+async function lockClaimRevisionSet(tx: any, claimId: string) {
+  const anchor = await tx.$queryRaw`SELECT id, stableKey FROM KnowledgeClaim WHERE id = ${claimId}` as Array<{ id: string; stableKey: string }>;
+  if (!anchor.length) throw notFound("Claim revision was not found");
+  const stableKey = anchor[0].stableKey;
+  await tx.$queryRaw`SELECT id FROM KnowledgeClaim WHERE stableKey = ${stableKey} ORDER BY revision FOR UPDATE`;
+  return stableKey;
+}
+
 function assertApprovalRequirements(claim: any) {
-  if (!claim.sources.length || claim.sources.some((source: any) => source.documentVersion.reviewStatus !== "APPROVED_SOURCE")) {
-    throw conflict("Every approved claim requires provenance from an approved source version");
+  if (!claim.sources.length || !claim.sources.some((source: any) => source.documentVersion.reviewStatus === "APPROVED_SOURCE")) {
+    throw unprocessable("At least one approved source version is required before claim approval");
   }
   const required = new Set((claim.requiredLocales as string[]).map((locale) => locale.toLowerCase()));
   for (const locale of required) {
     const translation = claim.translations.find((item: any) => item.locale.toLowerCase() === locale);
-    if (!translation || translation.reviewStatus !== "APPROVED") throw conflict("Every required locale must be independently approved");
+    if (!translation || translation.reviewStatus !== "APPROVED") throw unprocessable("Every required locale must be independently approved");
   }
   assertApplicability({
     brandIds: claim.brands, productIds: claim.products, packagingFormatIds: claim.packagingFormats,
@@ -393,8 +470,8 @@ function assertNoSelfApproval(current: NonNullable<FastifyRequest["currentUser"]
     throw Object.assign(new Error("Claim creators and editors cannot approve their own wording or claim"), { statusCode: 403 });
   }
 }
-function assertEditable(status: string) {
-  if (!["DRAFT", "REJECTED"].includes(status)) throw conflict("Only draft or rejected claims may be edited");
+function assertEditable(claim: { status: string; supersededBy?: unknown }) {
+  if (claim.status !== "DRAFT" || claim.supersededBy) throw conflict("Only the latest draft revision may be edited");
 }
 function assertRequiredTranslations(required: string[], translations: Array<{ locale: string }>) {
   const present = new Set(translations.map((item) => item.locale.toLowerCase()));
@@ -402,7 +479,7 @@ function assertRequiredTranslations(required: string[], translations: Array<{ lo
 }
 function assertApplicability(value: { brandIds: unknown[]; productIds: unknown[]; packagingFormatIds: unknown[]; markets: unknown[]; audiences: unknown[]; objectives: unknown[] }) {
   if (![value.brandIds, value.productIds, value.packagingFormatIds, value.markets, value.audiences, value.objectives].some((items) => items.length)) {
-    throw badRequest("At least one explicit applicability value is required");
+    throw unprocessable("At least one explicit applicability value is required");
   }
 }
 async function assertSourceVersions(ids: string[]) {
@@ -427,6 +504,12 @@ async function replaceApplicability(tx: any, claimId: string, value: z.infer<typ
     tx.knowledgeClaimObjective.createMany({ data: unique(value.objectives).map((item) => ({ claimId, value: item })) })
   ]);
 }
+async function replaceSources(tx: any, claimId: string, sources: z.infer<typeof sourceInput>[]) {
+  await tx.knowledgeClaimSource.deleteMany({ where: { claimId } });
+  for (const source of sourceRows(sources)) {
+    await tx.knowledgeClaimSource.create({ data: { claimId, ...source } });
+  }
+}
 function sourceRows(sources: z.infer<typeof sourceInput>[]) {
   return sources.map((source) => ({
     documentVersionId: source.documentVersionId, pageNumber: source.pageNumber,
@@ -447,6 +530,26 @@ async function getClaim(id: string) {
 function serializeClaim(claim: any) {
   return {
     ...claim,
+    sources: claim.sources?.map((source: any) => ({
+      id: source.id,
+      pageNumber: source.pageNumber,
+      sectionHeading: source.sectionHeading,
+      tableFigureReference: source.tableFigureReference,
+      sourceExcerpt: source.sourceExcerpt,
+      sourceNotes: source.sourceNotes,
+      createdAt: source.createdAt,
+      documentVersion: {
+        id: source.documentVersion.id,
+        versionNumber: source.documentVersion.versionNumber,
+        reviewStatus: source.documentVersion.reviewStatus,
+        createdAt: source.documentVersion.createdAt,
+        document: source.documentVersion.document,
+        file: {
+          originalName: source.documentVersion.fileObject.originalName,
+          downloadUrl: `/api/knowledge/documents/${source.documentVersion.document.id}/versions/${source.documentVersion.id}/file`
+        }
+      }
+    })) ?? [],
     eligibleForFuturePublicUse: isFuturePublicEligible({
       status: claim.status,
       usageScope: claim.usageScope,
@@ -456,7 +559,25 @@ function serializeClaim(claim: any) {
     })
   };
 }
+function serializeRevisionHistory(revisions: any[]) {
+  const latestRevisionId = revisions[0]?.id ?? null;
+  const currentApprovedRevisionId = revisions.find((revision) => revision.status === "APPROVED")?.id ?? null;
+  return {
+    stableKey: revisions[0]?.stableKey ?? null,
+    latestRevisionId,
+    currentApprovedRevisionId,
+    revisions: revisions.map((revision) => ({
+      ...serializeClaim(revision),
+      isLatestRevision: revision.id === latestRevisionId,
+      isCurrentApproved: revision.id === currentApprovedRevisionId,
+      isHistorical: revision.id !== latestRevisionId,
+      isEditable: revision.id === latestRevisionId && revision.status === "DRAFT"
+    }))
+  };
+}
 function unique<T>(values: T[]) { return [...new Set(values)]; }
 const existingStableKeyPlaceholder = "existing.claim.revision";
 function conflict(message: string) { return Object.assign(new Error(message), { statusCode: 409 }); }
 function badRequest(message: string) { return Object.assign(new Error(message), { statusCode: 400 }); }
+function unprocessable(message: string) { return Object.assign(new Error(message), { statusCode: 422 }); }
+function notFound(message: string) { return Object.assign(new Error(message), { statusCode: 404 }); }
