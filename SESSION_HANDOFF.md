@@ -4,6 +4,10 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-13 (Asia/Amman)**
 
+## 2026-07-13 CP Future Oils identity fix
+
+The login and authenticated sidebar now replace the FF text mark with the tracked Future Oils emblem and place the tracked full Future Oils logo beside it. Internal management remains directly below the wordmark. The emblem is also the Vite favicon. No image files were modified or duplicated; both references use the approved public/assets/logo package. The wordmark frame uses the PNG's measured transparent bounds so the visible logo remains legible at sidebar size.
+
 ## 2026-07-13 Phase 1B Plesk test-gate correction
 
 The first Plesk Phase 1B test run passed 85 of 88 tests. This focused correction addresses only the three reported failures:

@@ -33,7 +33,7 @@ function Login() {
   return (
     <main className="min-h-[100dvh] grid place-items-center px-4">
       <section className="panel w-full max-w-md p-8">
-        <div className="brand-mark mb-5">FF</div>
+        <BrandIdentity className="mb-5" />
         <h1 className="text-3xl font-black tracking-tight">Future Foresight Admin</h1>
         <p className="mt-2 text-sm text-[var(--text-muted)]">Internal staff access only. No public registration.</p>
         <form
@@ -61,13 +61,7 @@ function Shell({ user }: { user: NonNullable<MeResponse["user"]> }) {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="brand-mark">FF</div>
-          <div>
-            <div className="font-black">Future Foresight</div>
-            <div className="text-xs text-[var(--text-muted)]">Internal management</div>
-          </div>
-        </div>
+        <BrandIdentity className="mb-8" />
         <nav>
           <NavLink className="nav-link" to="/">Dashboard</NavLink>
           <NavLink className="nav-link" to="/marketing">Content</NavLink>
@@ -100,6 +94,20 @@ function Shell({ user }: { user: NonNullable<MeResponse["user"]> }) {
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </main>
+    </div>
+  );
+}
+
+function BrandIdentity({ className = "" }: { className?: string }) {
+  return (
+    <div className={`cp-brand ${className}`}>
+      <img className="cp-brand-emblem" src="/assets/logo/future-oils-emblem.png" alt="" aria-hidden="true" />
+      <div className="cp-brand-identity">
+        <div className="cp-brand-wordmark-frame">
+          <img className="cp-brand-wordmark" src="/assets/logo/future-oils-logo.png" alt="Future Oils" />
+        </div>
+        <div className="cp-brand-subtitle">Internal management</div>
+      </div>
     </div>
   );
 }

@@ -23,4 +23,16 @@ describe("public brand asset package", () => {
     expect(manifest.products["sunflower-oil-3l"].approved_for_marketing).toBe(true);
     expect(manifest.products["sunflower-oil-17l"].approved_for_marketing).toBe(true);
   });
+
+  it("uses the approved Future Oils identity for the CP favicon and brand lockup", () => {
+    const html = readFileSync(join(root, "src/client/index.html"), "utf8");
+    const app = readFileSync(join(root, "src/client/src/ui/App.tsx"), "utf8");
+    const css = readFileSync(join(root, "src/client/src/styles.css"), "utf8");
+    expect(html).toContain('href="/assets/logo/future-oils-emblem.png"');
+    expect(app).toContain('src="/assets/logo/future-oils-emblem.png"');
+    expect(app).toContain('src="/assets/logo/future-oils-logo.png"');
+    expect(app).toContain("Internal management");
+    expect(app).not.toMatch(/brand-mark[^\n]*>FF</);
+    expect(css).toContain(".cp-brand-wordmark-frame");
+  });
 });

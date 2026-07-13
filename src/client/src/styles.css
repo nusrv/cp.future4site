@@ -70,15 +70,43 @@ select:focus-visible {
   height: 100dvh;
 }
 
-.brand-mark {
-  width: 42px;
-  height: 42px;
-  border-radius: 14px;
-  background: #2e4a2e;
-  display: grid;
-  place-items: center;
-  color: #ffffff;
-  font-weight: 800;
+.cp-brand {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cp-brand-emblem {
+  width: 45px;
+  height: 53px;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+
+.cp-brand-identity {
+  min-width: 0;
+}
+
+.cp-brand-wordmark-frame {
+  width: 158px;
+  height: 54px;
+  overflow: hidden;
+}
+
+.cp-brand-wordmark {
+  display: block;
+  width: 249px;
+  max-width: none;
+  height: auto;
+  transform: translate(-47px, -44px);
+}
+
+.cp-brand-subtitle {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.25;
 }
 
 .nav-link {
