@@ -69,10 +69,20 @@ describe("Knowledge Library file verification", () => {
     await expect(saveFile(signatures.pdf, "x.pdf", "application/pdf", { namespace: "arbitrary" } as never)).rejects.toThrow("Unsupported storage namespace");
   });
 
-  it("rejects paths outside the configured storage root", () => {
+  it("applies Windows containment safely independent of the test host", () => {
     expect(isWithinStorageRoot("C:\\private\\storage", "C:\\private\\storage\\knowledge-base\\file.pdf")).toBe(true);
     expect(isWithinStorageRoot("C:\\private\\storage", "C:\\private\\storage-escape\\file.pdf")).toBe(false);
+    expect(isWithinStorageRoot("C:\\private\\storage", "C:\\private\\storage\\knowledge-base\\..\\..\\escape.pdf")).toBe(false);
+    expect(isWithinStorageRoot("C:\\private\\storage", "D:\\private\\storage\\file.pdf")).toBe(false);
+    expect(isWithinStorageRoot("C:\\private\\storage", "C:\\private\\storage")).toBe(false);
+  });
+
+  it("enforces POSIX containment for the Plesk production filesystem", () => {
     expect(isWithinStorageRoot("/srv/private/storage", "/srv/private/storage/knowledge-base/file.pdf")).toBe(true);
+    expect(isWithinStorageRoot("/srv/private/storage", "/srv/private/storage-escape/file.pdf")).toBe(false);
+    expect(isWithinStorageRoot("/srv/private/storage", "/srv/private/storage/knowledge-base/../../public/file.pdf")).toBe(false);
     expect(isWithinStorageRoot("/srv/private/storage", "/srv/public/file.pdf")).toBe(false);
+    expect(isWithinStorageRoot("/srv/private/storage", "/srv/private/storage")).toBe(false);
+    expect(isWithinStorageRoot("/srv/private/storage", "C:\\srv\\private\\storage\\file.pdf")).toBe(false);
   });
 });

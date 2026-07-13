@@ -64,8 +64,16 @@ function assertStorageSegment(value: string, label: string) {
 }
 
 export function isWithinStorageRoot(root: string, target: string) {
-  const relative = path.relative(root, target);
-  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+  const windowsPath = /^[a-zA-Z]:[\\/]/.test(root) || /^\\\\/.test(root);
+  const posixPath = root.startsWith("/");
+  const pathApi = windowsPath ? path.win32 : posixPath ? path.posix : null;
+  if (!pathApi) return false;
+  const targetMatchesRootFormat = windowsPath
+    ? /^[a-zA-Z]:[\\/]/.test(target) || /^\\\\/.test(target)
+    : target.startsWith("/") && !/^[a-zA-Z]:[\\/]/.test(target);
+  if (!targetMatchesRootFormat || !pathApi.isAbsolute(root) || !pathApi.isAbsolute(target)) return false;
+  const relative = pathApi.relative(pathApi.resolve(root), pathApi.resolve(target));
+  return relative !== "" && relative !== ".." && !relative.startsWith(`..${pathApi.sep}`) && !pathApi.isAbsolute(relative);
 }
 
 export async function readFile(storageKey: string): Promise<Buffer> {

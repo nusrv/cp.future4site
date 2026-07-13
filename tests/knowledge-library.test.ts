@@ -41,7 +41,7 @@ describe("private Knowledge Library contract", () => {
     expect(routes).toContain("FOR UPDATE");
     expect(routes).toContain("const versionNumber = (previous?.versionNumber ?? 0) + 1");
     expect(routes).toContain("versionNumber,");
-    expect(routes).toContain("reviewStatus: " + JSON.stringify("SUPERSEDED"));
+    expect(routes).toMatch(/reviewStatus:\s*previous\.reviewStatus\s*===\s*"APPROVED_SOURCE"\s*\?\s*"APPROVED_SOURCE"\s*:\s*"SUPERSEDED"/);
     expect(routes).toContain("await deleteFile(stored.storageKey).catch");
     expect(migration).toContain("KnowledgeVersion_document_version_key");
     expect(migration).toContain("KnowledgeDocumentVersion_fileObjectId_key");

@@ -4,6 +4,17 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-13 (Asia/Amman)**
 
+## 2026-07-13 Phase 1B Plesk test-gate correction
+
+The first Plesk Phase 1B test run passed 85 of 88 tests. This focused correction addresses only the three reported failures:
+
+- The Knowledge Library contract now asserts the intentional replacement policy: an APPROVED_SOURCE predecessor remains APPROVED_SOURCE, while other predecessor states become SUPERSEDED.
+- The locale contract now verifies use of the claimId_locale compound unique key and the input locale without depending on a local variable name.
+- isWithinStorageRoot now selects Windows or POSIX path semantics from the supplied absolute root, independent of the host running the test. It fails closed for relative or mixed-format inputs and rejects sibling prefixes, normalized traversal, different Windows drives, and the storage root itself.
+- Plesk POSIX containment cases remain explicit, and Windows containment remains covered on Linux.
+
+Dependency-free validation in the Google Drive workspace passed for the extracted helper body across nine Windows/POSIX cases, the secret scan, and git diff whitespace checks. This workspace has no Vitest binary, so the full suite was not rerun locally. Plesk must rerun npm test before deployment. No migration, schema, production data, publishing, n8n, or AI behavior changed.
+
 ## 2026-07-13 Phase 1B implementation complete, deployment gated
 
 Phase 1B human source review and manually approved claims is complete in source on develop. It has been statically reviewed only and has not been deployed.

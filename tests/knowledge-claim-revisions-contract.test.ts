@@ -66,7 +66,8 @@ describe("Phase 1B claim revision and supersession contract", () => {
 
   it("preserves locale independence and approval requirements", () => {
     expect(schema).toContain("@@unique([claimId, locale])");
-    expect(routes).toContain("where: { claimId_locale: { claimId, locale: input.locale } }");
+    expect(routes).toContain("claimId_locale");
+    expect(routes).toMatch(/claimId:\s*params\.id,\s*locale:\s*input\.locale/);
     expect(routes).toContain('existingTranslation.reviewStatus !== "DRAFT"');
     /*
     expect(routes).toContain("reviewStatus: \PROPOSED\");
