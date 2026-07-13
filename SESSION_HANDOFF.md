@@ -2,7 +2,40 @@
 
 Canonical restart point after any interrupted or completed session. Read this file first before changing the CP or its n8n workflows.
 
-Last verified: **2026-07-12 (Asia/Amman)**
+Last verified: **2026-07-13 (Asia/Amman)**
+
+## 2026-07-13 Facebook hashtag and duplicate-CTA correction
+
+Directly verified from live n8n:
+
+- Active workflow FF Admin - Facebook Publishing (ID 9DSImxhIAF5PENgg).
+- Successful live execution 18348 received a caption that already ended with Request a Quote, then appended the separate CTA again.
+- The matching content-generation execution 18345 generated and returned eight hashtags in its signed callback.
+- CP omitted item.hashtags from the Facebook publishing job payload, so execution 18348 received no hashtags.
+
+Implemented:
+
+- CP now includes item.hashtags in the publishing payload.
+- Prepare Facebook Photo Uploads adds the CTA only when the caption does not already end with the same CTA.
+- Hashtags are normalized from string or array input, deduplicated case-insensitively, and appended as the final paragraph.
+- The same message composer is used by single-photo and multi-photo Facebook publication paths.
+- Added tests/facebook-publishing-workflow.test.ts with CP payload, CTA-deduplication, hashtag-deduplication, and array-input coverage.
+
+Live n8n deployment:
+
+- Pre-change backup: workflows/n8n/exports/2026-07-13T08-28-17-635Z-ff-admin-facebook-publishing.json.
+- Workflow updated and kept active at 2026-07-13T08:40:49.646Z.
+- Post-deployment export: workflows/n8n/exports/2026-07-13T08-40-56-077Z-ff-admin-facebook-publishing.json.
+- The re-exported live Prepare Facebook Photo Uploads code exactly matched the generated workflow.
+- No external Facebook post was created during deployment or testing.
+
+Validation:
+
+- Focused Facebook/capability tests: 16 passed.
+- Full Vitest suite: 11 files, 47 tests passed.
+- Production build passed.
+
+CP deployment required: pull the implementation commit from develop, run npm run build, and restart CP. No migration or environment-variable change is required.
 
 ## 2026-07-12 Phase 0.1 n8n-owned Facebook credential alignment
 

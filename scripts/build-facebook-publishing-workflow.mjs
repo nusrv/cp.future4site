@@ -110,7 +110,30 @@ const pageId = String($env.FUTURE_OILS_FACEBOOK_PAGE_ID || "").trim();
 const accessToken = String($env.FUTURE_OILS_FACEBOOK_ACCESS_TOKEN || "").trim();
 if (!pageId) throw new Error("Missing FUTURE_OILS_FACEBOOK_PAGE_ID in n8n environment");
 if (!accessToken) throw new Error("Missing FUTURE_OILS_FACEBOOK_ACCESS_TOKEN in n8n environment");
-const caption = [payload.caption, payload.cta].filter((value) => typeof value === "string" && value.trim()).join("\\n\\n");
+const captionText = typeof payload.caption === "string" ? payload.caption.trim() : "";
+const cta = typeof payload.cta === "string" ? payload.cta.trim() : "";
+const comparisonKey = (value) => String(value || "").trim().toLocaleLowerCase().replace(/[.!?]+$/, "").trim();
+const lastCaptionLine = captionText.split(/\\r?\\n/).map((line) => line.trim()).filter(Boolean).at(-1) || "";
+const parts = captionText ? [captionText] : [];
+if (cta && comparisonKey(lastCaptionLine) !== comparisonKey(cta)) parts.push(cta);
+const rawHashtags = Array.isArray(payload.hashtags)
+  ? payload.hashtags
+  : typeof payload.hashtags === "string"
+    ? payload.hashtags.split(/[\\s,]+/)
+    : [];
+const existingHashtags = new Set((captionText.match(/#[\\p{L}\\p{N}_]+/gu) || []).map((tag) => tag.toLocaleLowerCase()));
+const seenHashtags = new Set();
+const hashtags = rawHashtags.flatMap((value) => {
+  const clean = String(value || "").trim().replace(/^#+/, "").replace(/[^\\p{L}\\p{N}_]/gu, "");
+  if (!clean) return [];
+  const tag = "#" + clean;
+  const key = tag.toLocaleLowerCase();
+  if (seenHashtags.has(key) || existingHashtags.has(key)) return [];
+  seenHashtags.add(key);
+  return [tag];
+});
+if (hashtags.length) parts.push(hashtags.join(" "));
+const caption = parts.join("\\n\\n");
 const mediaFiles = Array.isArray(payload.media_files) ? payload.media_files : [];
 if (!dryRun && !mediaFiles.length) throw new Error("Facebook publishing requires at least one approved media file");
 if (dryRun) {

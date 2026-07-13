@@ -398,6 +398,7 @@ export async function contentRoutes(app: FastifyInstance) {
         caption: item.caption,
         headline: item.headline,
         cta: item.cta,
+        hashtags: item.hashtags,
         destination_key: "FUTURE_OILS",
         creative_asset_id: approvedAsset?.id ?? null,
         creative_asset: approvedAsset?.metadata ?? null,
