@@ -82,6 +82,24 @@ enum PublishStatus {
   CANCELLED
 }
 
+enum FileSecurityStatus {
+  PENDING
+  CLEAN
+  REJECTED
+  SCAN_UNAVAILABLE
+}
+
+enum KnowledgeDocumentLifecycle {
+  ACTIVE
+  ARCHIVED
+}
+
+enum KnowledgeDocumentReviewStatus {
+  UPLOADED
+  READY_FOR_REVIEW
+  SUPERSEDED
+}
+
 model User {
   id                    String       @id @default(cuid())
   username              String       @unique
@@ -98,6 +116,8 @@ model User {
   roles                 UserRole[]
   sessions              Session[]
   auditEvents           AuditEvent[] @relation("AuditActor")
+  knowledgeDocumentsCreated KnowledgeDocument[] @relation("KnowledgeDocumentCreator")
+  knowledgeVersionsUploaded KnowledgeDocumentVersion[] @relation("KnowledgeVersionUploader")
 }
 
 model Role {
@@ -443,6 +463,48 @@ model KnowledgeIndex {
   synthetic    Boolean        @default(false)
 }
 
+model KnowledgeDocument {
+  id              String                     @id @default(cuid())
+  title           String
+  category        String
+  sourceType      String
+  locale          String                     @default("en")
+  market          String?
+  notes           String?                    @db.Text
+  lifecycleStatus KnowledgeDocumentLifecycle @default(ACTIVE)
+  createdByUserId String
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+  createdBy       User                       @relation("KnowledgeDocumentCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  versions        KnowledgeDocumentVersion[]
+
+  @@index([lifecycleStatus, updatedAt])
+  @@index([category])
+  @@index([locale])
+  @@index([market])
+}
+
+model KnowledgeDocumentVersion {
+  id                  String                         @id @default(cuid())
+  documentId          String
+  fileObjectId        String                         @unique
+  versionNumber       Int
+  versionLabel        String?
+  uploadedByUserId    String
+  createdAt           DateTime                       @default(now())
+  supersedesVersionId String?                        @unique
+  reviewStatus        KnowledgeDocumentReviewStatus @default(UPLOADED)
+  document            KnowledgeDocument              @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  fileObject          FileObject                     @relation(fields: [fileObjectId], references: [id], onDelete: Restrict)
+  uploadedBy          User                           @relation("KnowledgeVersionUploader", fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+  supersedes          KnowledgeDocumentVersion?      @relation("KnowledgeVersionSupersession", fields: [supersedesVersionId], references: [id], onDelete: Restrict)
+  supersededBy        KnowledgeDocumentVersion?      @relation("KnowledgeVersionSupersession")
+
+  @@unique([documentId, versionNumber], map: "KnowledgeVersion_document_version_key")
+  @@index([documentId, createdAt])
+  @@index([reviewStatus])
+}
+
 model Campaign {
   id          String   @id @default(cuid())
   name        String
@@ -513,6 +575,9 @@ model FileObject {
   mimeType    String
   sizeBytes   Int
   sha256Hash  String
+  fileExtension String?
+  declaredMimeType String?
+  securityStatus FileSecurityStatus @default(PENDING)
   width       Int?
   height      Int?
   durationSeconds Int?
@@ -523,6 +588,10 @@ model FileObject {
   createdByUserId String?
   synthetic   Boolean         @default(false)
   createdAt   DateTime        @default(now())
+  knowledgeVersion KnowledgeDocumentVersion?
+
+  @@index([sha256Hash])
+  @@index([securityStatus])
 }
 
 model Approval {
