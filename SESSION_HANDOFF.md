@@ -4,9 +4,9 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-13 (Asia/Amman)**
 
-## 2026-07-13 CP Future Oils identity fix
+## 2026-07-13 CP identity fix
 
-The login and authenticated sidebar now replace the FF text mark with the tracked full Future Oils logo, aligned left with Internal management directly below it. The duplicated standalone emblem was removed. The favicon uses a square, transparently padded derivative of the approved emblem so browser icon masks do not clip the artwork. The wordmark frame uses the PNG's measured transparent bounds so the visible logo remains legible at sidebar size.
+The login and authenticated sidebar now replace the FF text mark with main-logo.png from the Future4site Website identity, aligned left with Internal management directly below it. The favicon is a square, transparently padded crop containing only the colored bird from that source; the black wordmark text is excluded so browser icon masks remain legible. Placement and outer sizing remain unchanged.
 
 ## 2026-07-13 Phase 1B Plesk test-gate correction
 

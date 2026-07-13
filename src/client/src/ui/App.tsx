@@ -103,7 +103,7 @@ function BrandIdentity({ className = "" }: { className?: string }) {
     <div className={`cp-brand ${className}`}>
       <div className="cp-brand-identity">
         <div className="cp-brand-wordmark-frame">
-          <img className="cp-brand-wordmark" src="/assets/logo/future-oils-logo.png" alt="Future Oils" />
+          <img className="cp-brand-wordmark" src="/assets/logo/main-logo.png" alt="Future Foresight" />
         </div>
         <div className="cp-brand-subtitle">Internal management</div>
       </div>

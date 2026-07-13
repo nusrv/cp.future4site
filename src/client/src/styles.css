@@ -88,10 +88,10 @@ select:focus-visible {
 
 .cp-brand-wordmark {
   display: block;
-  width: 249px;
+  width: 120px;
   max-width: none;
   height: auto;
-  transform: translate(-47px, -44px);
+  transform: translate(-12px, -16px);
 }
 
 .cp-brand-subtitle {
