@@ -2,16 +2,53 @@
 
 ## Phase 1B deployment gate
 
-Before deploying migration 202607130002_human_review_approved_claims:
+Phase 1B has been statically reviewed only. Neither migration 202607130002_human_review_approved_claims nor 202607130003_claim_supersession_guard has been executed against MariaDB, and the release has not been built or deployed from the Google Drive workspace.
 
-1. Back up MariaDB and the complete private file-storage root.
-2. Verify existing KnowledgeDocument, KnowledgeDocumentVersion, FileObject, Document, and KnowledgeIndex row counts.
-3. Run Prisma migration deployment and regenerate Prisma Client before starting the application.
-4. Build and test the release, then restart the Passenger application.
-5. Confirm an existing Phase 1A document still lists, downloads, versions, archives, and restores.
-6. Verify one source review through approval, a rejected replacement that leaves the prior approved version intact, independent English/Arabic wording approval, final claim approval, and read-only role behavior.
+Before changing production:
 
-The migration is additive but has no automatic down migration. Application rollback can revert the release while leaving additive tables unused. Full database rollback requires the pre-deployment MariaDB backup. Do not drop claim or review tables after operators have created audit history.
+1. Put the CP into a maintenance window and record the currently deployed Git commit.
+2. Create a restorable MariaDB backup and verify it can be read.
+3. Back up the complete private FILE_STORAGE_PATH without changing its ownership or paths.
+4. Record row counts for KnowledgeDocument, KnowledgeDocumentVersion, FileObject, Document, KnowledgeIndex, Product, and PackagingFormat.
+5. Pull the approved develop commit into the Plesk checkout.
+
+Run these deferred validation gates from that exact checkout:
+
+```bash
+npm run db:generate
+npx prisma validate
+npm test
+npm run typecheck
+npm run build
+npm run db:migrate
+```
+
+Prisma Client regeneration must complete before typecheck and build. Do not run db:migrate unless schema validation, tests, typecheck, build, the MariaDB backup, and the private-storage backup have succeeded.
+
+After migration:
+
+1. Verify the Prisma migration table records both Phase 1B migrations as successful.
+2. Verify the new tables, nullable revision-replacement column, indexes, and foreign keys exist in MariaDB.
+3. Recheck the pre-migration legacy row counts and confirm existing Phase 1A document/version/file associations are intact.
+4. Restart the Passenger application and verify GET /health plus authenticated CP login.
+5. Run the smoke tests below before ending the maintenance window.
+
+### Phase 1B smoke tests
+
+1. Source review: submit and begin review on an active version, approve it, and confirm reviewer/approver timestamps and history.
+2. Replacement safety: upload a replacement, confirm it is not auto-approved, reject it, and confirm the earlier approved source remains approved.
+3. Claim creation: create a draft with explicit applicability and an approved immutable source; confirm no storage key or filesystem path appears.
+4. Translation review: edit and review English and Arabic independently; confirm one locale transition does not alter the other.
+5. Supersession: create a draft revision from an approved claim, approve the new revision, confirm the prior revision becomes SUPERSEDED, and retry the stale action to confirm it fails safely.
+6. Permissions: verify OWNER_ADMIN override, MARKETING draft-only behavior, CONTENT_REVIEWER review/approval behavior, READ_ONLY_MANAGEMENT read-only behavior, and no access for unauthorized roles.
+7. Regression: confirm existing document list, authenticated download, replacement history, archive, and restore still work.
+8. Boundary: confirm no AI generation, Gemini, n8n, extraction, OCR, embedding, resolver, or publishing job is dispatched.
+
+### Phase 1B rollback
+
+If failure occurs before db:migrate, restore the previous Git commit and restart; the database is unchanged. If migration succeeded but no Phase 1B operator data was created, the safest complete rollback is to stop the app, restore the pre-migration MariaDB backup, restore the previous Git commit, restart, and verify health/login plus a Phase 1A document download.
+
+If operators created Phase 1B review or claim history, do not manually drop tables or columns. Stop writes, retain the database and private-storage backups, and choose either an application-only rollback that leaves additive tables unused or a coordinated point-in-time database restore approved by the owner. Never delete or rewrite private source files during rollback.
 
 ## Owner Responsibilities
 

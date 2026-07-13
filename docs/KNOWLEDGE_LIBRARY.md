@@ -16,12 +16,14 @@ APPROVED_SOURCE means the version is trusted evidence. It does not approve any s
 
 ### Manual claims
 
-- KnowledgeClaim is a stable claim key plus immutable revision number, lifecycle, usage scope, effective/expiration dates, restrictions, notes, actor fields, and supersession link.
+- KnowledgeClaim is a stable claim key plus immutable revision number, lifecycle, usage scope, effective/expiration dates, restrictions, notes, actor fields, a direct revision predecessor, and the approved revision it is intended to replace.
 - KnowledgeClaimTranslation stores manually entered locale wording. claimId plus locale is unique. English and Arabic are submitted, rejected, and approved independently.
 - KnowledgeClaimSource links a claim to an immutable document version with optional page, heading, table/figure, short excerpt, and source notes.
 - Brand, product, packaging format, market, audience, and content-objective associations define explicit applicability. Product and packaging restrictions never broaden to other products or sizes.
 
-A claim can become APPROVED only when it is UNDER_REVIEW, every source is APPROVED_SOURCE, every required locale is independently APPROVED, usage scope is set, and at least one applicability value is set. Rejected claims may be corrected as drafts. Approved claims are revised by creating a new draft with the same stable key and the next revision. The earlier claim remains approved until the replacement is approved, then becomes SUPERSEDED and remains auditable.
+A claim can become APPROVED only when it is UNDER_REVIEW, at least one source is APPROVED_SOURCE, every required locale is independently APPROVED, usage scope is set, and at least one applicability value is set. Drafts are the only editable revisions. Approved, rejected, expired, superseded, and historical revisions are immutable; correcting any decided revision requires a new draft with the same stable key and the next revision.
+
+Creating a draft revision never alters the current approved revision. Final approval locks all rows for the stable claim key, verifies that the target draft still points to the single current approved revision, approves the replacement, and marks that predecessor SUPERSEDED in one transaction. Stale, repeated, and conflicting attempts return a conflict without a partial transition. Separate audit events record the replacement approval and predecessor supersession.
 
 The future-eligibility flag is informational only. It is true only for APPROVED, PUBLIC_SAFE, currently effective, unexpired, non-superseded claims. No generation path reads it in Phase 1B.
 
@@ -40,6 +42,7 @@ A non-owner user who created or most recently edited a claim cannot approve its 
 - POST /api/knowledge/documents/:id/versions/:versionId/return-uploaded
 - GET/POST /api/knowledge/claims
 - GET/PATCH /api/knowledge/claims/:id
+- GET /api/knowledge/claims/:id/revisions
 - POST/PATCH /api/knowledge/claims/:id/translations/:locale
 - POST /api/knowledge/claims/:id/translations/:locale/submit-review
 - POST /api/knowledge/claims/:id/translations/:locale/approve
@@ -50,6 +53,22 @@ A non-owner user who created or most recently edited a claim cannot approve its 
 - POST /api/knowledge/claims/:id/supersede
 
 Generic PATCH accepts editable metadata only and uses a strict schema. It cannot assign approval, review, revision, stable-key, actor, or supersession state.
+
+Claim detail and revision-history responses identify the latest revision, the current approved revision, direct predecessor, intended approved predecessor, historical state, editability, translations, applicability, provenance, and available workflow context. Revision history is ordered by revision descending. Responses expose authenticated download routes, never storage keys or filesystem paths.
+
+State-transition failures use 409 for stale or invalid transitions and 422 for incomplete final-approval requirements. Authentication, permission, and missing-record failures use 401, 403, and 404 respectively. The CP translates these into safe operator-facing explanations.
+
+### Claim workspace
+
+The Knowledge Library groups revisions by stable claim key. Operators can open every revision, see which one is latest and which one is currently approved, and inspect actors, timestamps, independently reviewed Arabic and English wording, applicability, immutable source-location metadata, and audit activity. Historical revisions are read-only.
+
+Users with claim-edit permission can edit only the latest DRAFT revision. Users with the relevant review or approval permission receive explicit submit, review, approve, and reject actions. Creating a new revision uses an inline confirmation and leaves the approved revision active until the replacement is approved. Disabled actions explain the status, permission, self-approval, or historical-state reason. Source links open the matching document and immutable source version without revealing storage identity.
+
+### Migration notes
+
+Migration 202607130002_human_review_approved_claims is additive and introduces the Phase 1B enums, source-review history, claims, translations, provenance, applicability, and verified-brand relations. Migration 202607130003_claim_supersession_guard is a separate additive correction that adds nullable replacesApprovedClaimId, its index, and its self-referencing foreign key. The already-authored first migration was not modified.
+
+Existing KnowledgeDocument, KnowledgeDocumentVersion, FileObject, Document, Product, PackagingFormat, and KnowledgeIndex rows remain valid. New relationships are nullable where existing rows need compatibility, and claim-domain foreign keys preserve history with Restrict or SetNull semantics. Neither migration has been executed against MariaDB in this workspace; backup, schema validation, client generation, migration execution, and production smoke tests remain deployment gates.
 
 ### KnowledgeIndex decision
 
