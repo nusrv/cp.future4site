@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
+import type {} from "@fastify/cookie";
 import { prisma } from "../db.js";
 import { sha256 } from "./crypto.js";
 import { rolePermissions, type PermissionKey, type RoleKey } from "../../shared/permissions.js";

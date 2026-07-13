@@ -74,7 +74,7 @@ describe("private Knowledge Library contract", () => {
   });
 
   it("provides validation, filters, versions, scan state, and the AI boundary", () => {
-    expect(ui).toContain("new Set([" + ["pdf", "txt", "csv", "png", "jpg", "jpeg", "webp"].map(JSON.stringify).join(", ") + "])");
+    expect(ui).toContain("new Set([" + ["pdf", "txt", "csv", "png", "jpg", "jpeg", "webp"].map((value) => JSON.stringify(value)).join(", ") + "])");
     expect(ui).toContain("File exceeds the 25 MB upload limit.");
     for (const filter of ["search", "category", "locale", "market", "lifecycle", "fileType", "uploadedFrom", "uploadedTo"]) {
       expect(ui).toContain(filter);
