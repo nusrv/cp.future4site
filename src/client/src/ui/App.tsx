@@ -9,6 +9,7 @@ import { AutomationJobs } from "./AutomationJobs";
 import { Operations } from "./Operations";
 import { Publishing } from "./Publishing";
 import { Audit } from "./Audit";
+import { KnowledgeLibrary } from "./KnowledgeLibrary";
 
 type MeResponse = { user: null | { id: string; username: string; displayName: string; roles: string[]; permissions: string[]; mustChangePassword: boolean } };
 
@@ -56,6 +57,7 @@ function Login() {
 function Shell({ user }: { user: NonNullable<MeResponse["user"]> }) {
   const qc = useQueryClient();
   const logout = useMutation({ mutationFn: () => post("/api/auth/logout", {}), onSuccess: () => qc.invalidateQueries({ queryKey: ["me"] }) });
+  const canReadKnowledge = user.permissions.includes("knowledge.read");
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -70,6 +72,7 @@ function Shell({ user }: { user: NonNullable<MeResponse["user"]> }) {
           <NavLink className="nav-link" to="/">Dashboard</NavLink>
           <NavLink className="nav-link" to="/marketing">Content</NavLink>
           <NavLink className="nav-link" to="/media-library">Media library</NavLink>
+          {canReadKnowledge ? <NavLink className="nav-link" to="/knowledge">Knowledge Library</NavLink> : null}
           <NavLink className="nav-link" to="/publishing">Publishing</NavLink>
           <NavLink className="nav-link" to="/automation">Automation Jobs</NavLink>
           <NavLink className="nav-link" to="/operations">Operations</NavLink>
@@ -88,6 +91,7 @@ function Shell({ user }: { user: NonNullable<MeResponse["user"]> }) {
           <Route path="/" element={<Dashboard />} />
           <Route path="/marketing" element={<MarketingStudio />} />
           <Route path="/media-library" element={<MediaLibrary />} />
+          <Route path="/knowledge" element={canReadKnowledge ? <KnowledgeLibrary permissions={user.permissions} /> : <Navigate to="/" />} />
           <Route path="/publishing" element={<Publishing />} />
           <Route path="/automation" element={<AutomationJobs />} />
           <Route path="/operations" element={<Operations />} />
