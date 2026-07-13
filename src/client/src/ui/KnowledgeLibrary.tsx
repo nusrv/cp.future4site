@@ -17,7 +17,16 @@ type KnowledgeVersion = {
   id: string;
   versionNumber: number;
   versionLabel?: string | null;
-  reviewStatus: "UPLOADED" | "READY_FOR_REVIEW" | "SUPERSEDED";
+  reviewStatus: "UPLOADED" | "READY_FOR_REVIEW" | "UNDER_REVIEW" | "APPROVED_SOURCE" | "REJECTED" | "SUPERSEDED";
+  reviewedBy?: { displayName: string } | null;
+  reviewedAt?: string | null;
+  approvedBy?: { displayName: string } | null;
+  approvedAt?: string | null;
+  rejectionReason?: string | null;
+  reviewNotes?: string | null;
+  supersededAt?: string | null;
+  linkedClaimCount: number;
+  reviewHistory: Array<{ id: string; action: string; previousStatus: string; newStatus: string; createdAt: string; actor: { displayName: string } }>;
   supersedesVersionId?: string | null;
   createdAt: string;
   uploadedBy: { displayName: string; username: string };
@@ -92,6 +101,8 @@ export function KnowledgeLibrary({ permissions }: { permissions: string[] }) {
   const canUpload = permissions.includes("knowledge.upload");
   const canEdit = permissions.includes("knowledge.edit");
   const canArchive = permissions.includes("knowledge.archive");
+  const canReview = permissions.includes("knowledge.review");
+  const canApprove = permissions.includes("knowledge.approve");
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -144,10 +155,18 @@ export function KnowledgeLibrary({ permissions }: { permissions: string[] }) {
       await refresh(result.document.id);
     }
   });
+  const reviewVersion = useMutation({
+    mutationFn: ({ documentId, versionId, action, body = {} }: { documentId: string; versionId: string; action: string; body?: Record<string, string> }) =>
+      post<KnowledgeMutationResponse>("/api/knowledge/documents/" + encodeURIComponent(documentId) + "/versions/" + encodeURIComponent(versionId) + "/" + action, body),
+    onSuccess: async (result) => {
+      setNotice("Source review status updated.");
+      await refresh(result.document.id);
+    }
+  });
 
   const documents = list.data?.documents ?? [];
   const selected = detail.data?.document ?? documents.find((item) => item.id === selectedId) ?? null;
-  const error = list.error ?? detail.error ?? createDocument.error ?? replaceVersion.error ?? editDocument.error ?? lifecycle.error;
+  const error = list.error ?? detail.error ?? createDocument.error ?? replaceVersion.error ?? editDocument.error ?? lifecycle.error ?? reviewVersion.error;
 
   return <section>
     <div className="page-heading-row">
@@ -192,9 +211,11 @@ export function KnowledgeLibrary({ permissions }: { permissions: string[] }) {
           canUpload={canUpload}
           canEdit={canEdit}
           canArchive={canArchive}
+          canReview={canReview}
+          canApprove={canApprove}
           editing={editing}
           confirmingLifecycle={confirmLifecycle}
-          busy={replaceVersion.isPending || editDocument.isPending || lifecycle.isPending}
+          busy={replaceVersion.isPending || editDocument.isPending || lifecycle.isPending || reviewVersion.isPending}
           onEdit={() => setEditing(true)}
           onCancelEdit={() => setEditing(false)}
           onSave={(body) => editDocument.mutate({ id: selected.id, body })}
@@ -202,9 +223,11 @@ export function KnowledgeLibrary({ permissions }: { permissions: string[] }) {
           onAskLifecycle={(action) => setConfirmLifecycle(action)}
           onCancelLifecycle={() => setConfirmLifecycle(null)}
           onLifecycle={(action) => lifecycle.mutate({ id: selected.id, action })}
+          onReview={(versionId, action, body) => reviewVersion.mutate({ documentId: selected.id, versionId, action, body })}
         /> : null}
       </aside>
     </div>
+    <ClaimsPanel permissions={permissions} selectedDocument={selected} />
   </section>;
 }
 
@@ -258,6 +281,8 @@ function DocumentDetail(props: {
   canUpload: boolean;
   canEdit: boolean;
   canArchive: boolean;
+  canReview: boolean;
+  canApprove: boolean;
   editing: boolean;
   confirmingLifecycle: "archive" | "restore" | null;
   busy: boolean;
@@ -268,6 +293,7 @@ function DocumentDetail(props: {
   onAskLifecycle: (action: "archive" | "restore") => void;
   onCancelLifecycle: () => void;
   onLifecycle: (action: "archive" | "restore") => void;
+  onReview: (versionId: string, action: string, body?: Record<string, string>) => void;
 }) {
   const document = props.document;
   const current = document.currentVersion;
@@ -288,7 +314,8 @@ function DocumentDetail(props: {
 
     <section className="knowledge-section"><h3>Version timeline</h3><ol className="knowledge-version-list">{document.versions.map((version) => <li key={version.id}>
       <div><strong>Version {version.versionNumber}{version.versionLabel ? " · " + version.versionLabel : ""}</strong><span>{version.file.originalName}</span><small>{formatDateTime(version.createdAt)} · {version.uploadedBy.displayName}</small></div>
-      <div><ScanBadge status={version.file.securityStatus} /><span className="status-badge status-neutral">{version.reviewStatus === "SUPERSEDED" ? "Superseded" : "Uploaded"}</span><a href={version.file.downloadUrl}>Download</a></div>
+      <div><ScanBadge status={version.file.securityStatus} /><ReviewBadge status={version.reviewStatus} /><a href={version.file.downloadUrl}>Download</a></div>
+      <SourceReviewActions version={version} active={document.lifecycleStatus === "ACTIVE"} canEdit={props.canEdit} canReview={props.canReview} canApprove={props.canApprove} busy={props.busy} onReview={props.onReview} />
     </li>)}</ol></section>
 
     {props.auditEvents.length ? <section className="knowledge-section"><h3>Recent activity</h3><ol className="knowledge-audit-list">{props.auditEvents.slice(0, 10).map((event) => <li key={event.id}><strong>{event.summary}</strong><span>{formatDateTime(event.createdAt)}{event.actor ? " · " + event.actor.displayName : ""}</span></li>)}</ol></section> : null}
@@ -336,6 +363,139 @@ function ReplacementForm({ busy, onSubmit }: { busy: boolean; onSubmit: (form: F
 
 function RequiredInput({ name, label, defaultValue, placeholder }: { name: string; label: string; defaultValue?: string; placeholder?: string }) {
   return <label><span className="label">{label}</span><input className="input" name={name} required defaultValue={defaultValue} placeholder={placeholder} /></label>;
+}
+
+function SourceReviewActions({ version, active, canEdit, canReview, canApprove, busy, onReview }: {
+  version: KnowledgeVersion; active: boolean; canEdit: boolean; canReview: boolean; canApprove: boolean; busy: boolean;
+  onReview: (versionId: string, action: string, body?: Record<string, string>) => void;
+}) {
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState("");
+  if (!active || version.file.securityStatus === "REJECTED") return null;
+  return <div className="knowledge-review-actions">
+    {canEdit && version.reviewStatus === "UPLOADED" ? <button className="btn btn-secondary btn-compact" disabled={busy} onClick={() => onReview(version.id, "submit-review")}>Submit source review</button> : null}
+    {canReview && version.reviewStatus === "READY_FOR_REVIEW" ? <button className="btn btn-primary btn-compact" disabled={busy} onClick={() => onReview(version.id, "begin-review")}>Begin source review</button> : null}
+    {canApprove && version.reviewStatus === "UNDER_REVIEW" ? <button className="btn btn-primary btn-compact" disabled={busy} onClick={() => onReview(version.id, "approve-source")}>Approve trusted source</button> : null}
+    {canReview && version.reviewStatus === "UNDER_REVIEW" ? <button className="btn btn-secondary btn-compact" disabled={busy} onClick={() => setRejecting(true)}>Reject source</button> : null}
+    {canReview && ["READY_FOR_REVIEW", "UNDER_REVIEW", "REJECTED"].includes(version.reviewStatus) ? <button className="btn btn-secondary btn-compact" disabled={busy} onClick={() => onReview(version.id, "return-uploaded")}>Return to uploaded</button> : null}
+    {rejecting ? <div className="knowledge-inline-decision"><label><span className="label">Rejection reason</span><textarea className="input" value={reason} onChange={(event) => setReason(event.target.value)} /></label><button className="btn btn-secondary btn-compact" onClick={() => setRejecting(false)}>Cancel rejection</button><button className="btn btn-danger btn-compact" disabled={busy || reason.trim().length < 2} onClick={() => { onReview(version.id, "reject", { rejectionReason: reason }); setRejecting(false); }}>Confirm source rejection</button></div> : null}
+    {version.reviewStatus === "APPROVED_SOURCE" ? <small>Trusted source only. Its statements still require separate claim approval.{version.supersededAt ? " This approved version has been superseded by a newer upload." : ""}</small> : null}
+    {version.rejectionReason ? <small>Rejected: {version.rejectionReason}</small> : null}
+    {version.linkedClaimCount ? <small>{version.linkedClaimCount} linked claim source record{version.linkedClaimCount === 1 ? "" : "s"}</small> : null}
+  </div>;
+}
+
+type KnowledgeClaim = {
+  id: string; stableKey: string; revision: number; claimType: string;
+  status: "DRAFT" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "SUPERSEDED" | "EXPIRED";
+  usageScope: "PUBLIC_SAFE" | "INTERNAL_ONLY" | "RESTRICTED";
+  eligibleForFuturePublicUse: boolean;
+  translations: Array<{ locale: string; wording: string; reviewStatus: "DRAFT" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" }>;
+  sources: Array<{ documentVersion: { id: string; versionNumber: number; document: { title: string } } }>;
+};
+
+function ClaimsPanel({ permissions, selectedDocument }: { permissions: string[]; selectedDocument: KnowledgeDocument | null }) {
+  const qc = useQueryClient();
+  const [showCreate, setShowCreate] = useState(false);
+  const [decision, setDecision] = useState<{ claimId: string; action: "reject"; locale?: string } | null>(null);
+  const [reason, setReason] = useState("");
+  const claims = useQuery<{ claims: KnowledgeClaim[] }>({ queryKey: ["knowledge-claims"], queryFn: () => api("/api/knowledge/claims") });
+  const refs = useQuery<{ brands: Array<{ id: string; name: string }>; products: Array<{ id: string; name: string }>; packagingFormats: Array<{ id: string; label: string }> }>({
+    queryKey: ["knowledge-claim-reference-data"], queryFn: () => api("/api/knowledge/claim-reference-data")
+  });
+  const refresh = () => qc.invalidateQueries({ queryKey: ["knowledge-claims"] });
+  const create = useMutation({
+    mutationFn: (body: unknown) => post("/api/knowledge/claims", body),
+    onSuccess: async () => { setShowCreate(false); await refresh(); }
+  });
+  const transition = useMutation({
+    mutationFn: ({ id, action, locale, body = {} }: { id: string; action: string; locale?: string; body?: Record<string, string> }) =>
+      post("/api/knowledge/claims/" + encodeURIComponent(id) + (locale ? "/translations/" + encodeURIComponent(locale) : "") + "/" + action, body),
+    onSuccess: async () => { setDecision(null); setReason(""); await refresh(); }
+  });
+  const canCreate = permissions.includes("knowledge.claim.create");
+  const canEdit = permissions.includes("knowledge.claim.edit");
+  const canReview = permissions.includes("knowledge.claim.review");
+  const canApprove = permissions.includes("knowledge.claim.approve");
+  const approvedVersions = selectedDocument?.versions.filter((version) => version.reviewStatus === "APPROVED_SOURCE") ?? [];
+  const error = claims.error ?? refs.error ?? create.error ?? transition.error;
+  return <section className="knowledge-claims">
+    <div className="knowledge-section-heading"><div><h2>Approved claims</h2><p>Manual wording with version-level provenance and locale-specific review.</p></div>{canCreate ? <button className="btn btn-primary" disabled={!approvedVersions.length} onClick={() => setShowCreate((value) => !value)}>{showCreate ? "Close claim form" : "Create manual claim"}</button> : null}</div>
+    <div className="notice notice-info" role="note"><strong>Three separate decisions.</strong><span>A trusted source does not approve its statements. Each locale is reviewed independently. Approved public-safe claims are not connected to AI generation yet.</span></div>
+    {canCreate && !approvedVersions.length ? <p className="knowledge-help">Select a document with an approved source version to create a claim.</p> : null}
+    {showCreate && approvedVersions.length ? <ClaimCreateForm versions={approvedVersions} references={refs.data} pending={create.isPending} onSubmit={(body) => create.mutate(body)} /> : null}
+    {error ? <div className="notice notice-error" role="alert">{error.message}</div> : null}
+    {claims.isLoading ? <div className="skeleton-block" /> : null}
+    <div className="knowledge-claim-list">{claims.data?.claims.map((claim) => <article className="knowledge-claim-row" key={claim.id}>
+      <header><div><strong>{claim.stableKey} <span>revision {claim.revision}</span></strong><p>{claim.claimType}</p></div><div><ClaimBadge status={claim.status} /><span className="status-badge status-neutral">{claim.usageScope.replaceAll("_", " ")}</span></div></header>
+      <div className="knowledge-translation-list">{claim.translations.map((translation) => <div key={translation.locale} lang={translation.locale} dir={translation.locale.toLowerCase().startsWith("ar") ? "rtl" : "ltr"}><strong>{translation.locale.toUpperCase()} · {translation.reviewStatus.replaceAll("_", " ")}</strong><p>{translation.wording}</p><div className="knowledge-review-actions">
+        {canEdit && ["DRAFT", "REJECTED"].includes(translation.reviewStatus) ? <button className="btn btn-secondary btn-compact" onClick={() => transition.mutate({ id: claim.id, locale: translation.locale, action: "submit-review" })}>Submit {translation.locale.toUpperCase()} wording</button> : null}
+        {canApprove && translation.reviewStatus === "UNDER_REVIEW" ? <button className="btn btn-primary btn-compact" onClick={() => transition.mutate({ id: claim.id, locale: translation.locale, action: "approve" })}>Approve {translation.locale.toUpperCase()} wording</button> : null}
+        {canReview && translation.reviewStatus === "UNDER_REVIEW" ? <button className="btn btn-secondary btn-compact" onClick={() => setDecision({ claimId: claim.id, locale: translation.locale, action: "reject" })}>Reject {translation.locale.toUpperCase()} wording</button> : null}
+      </div></div>)}</div>
+      <footer><span>Source: {claim.sources.map((source) => source.documentVersion.document.title + " v" + source.documentVersion.versionNumber).join(", ")}</span><div className="knowledge-review-actions">
+        {canEdit && ["DRAFT", "REJECTED"].includes(claim.status) ? <button className="btn btn-secondary btn-compact" onClick={() => transition.mutate({ id: claim.id, action: "submit-review" })}>Submit claim review</button> : null}
+        {canApprove && claim.status === "UNDER_REVIEW" ? <button className="btn btn-primary btn-compact" onClick={() => transition.mutate({ id: claim.id, action: "approve" })}>Approve claim</button> : null}
+        {canReview && claim.status === "UNDER_REVIEW" ? <button className="btn btn-secondary btn-compact" onClick={() => setDecision({ claimId: claim.id, action: "reject" })}>Reject claim</button> : null}
+      </div></footer>
+    </article>)}</div>
+    {decision ? <div className="knowledge-inline-decision"><label><span className="label">Rejection reason</span><textarea className="input" value={reason} onChange={(event) => setReason(event.target.value)} /></label><button className="btn btn-secondary btn-compact" onClick={() => setDecision(null)}>Cancel rejection</button><button className="btn btn-danger btn-compact" disabled={reason.trim().length < 2 || transition.isPending} onClick={() => transition.mutate({ id: decision.claimId, locale: decision.locale, action: "reject", body: { rejectionReason: reason } })}>Confirm rejection</button></div> : null}
+  </section>;
+}
+
+function ClaimCreateForm({ versions, references, pending, onSubmit }: {
+  versions: KnowledgeVersion[];
+  references?: { brands: Array<{ id: string; name: string }>; products: Array<{ id: string; name: string }>; packagingFormats: Array<{ id: string; label: string }> };
+  pending: boolean; onSubmit: (body: unknown) => void;
+}) {
+  return <form className="knowledge-upload-form" onSubmit={(event) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const english = String(data.get("english") || "").trim();
+    const arabic = String(data.get("arabic") || "").trim();
+    const translations = [{ locale: "en", wording: english }, ...(arabic ? [{ locale: "ar", wording: arabic }] : [])];
+    const applicability = {
+      brandIds: data.get("brandId") ? [String(data.get("brandId"))] : [],
+      productIds: data.get("productId") ? [String(data.get("productId"))] : [],
+      packagingFormatIds: data.get("packagingFormatId") ? [String(data.get("packagingFormatId"))] : [],
+      markets: data.get("market") ? [String(data.get("market"))] : [],
+      audiences: data.get("audience") ? [String(data.get("audience"))] : [],
+      objectives: data.get("objective") ? [String(data.get("objective"))] : []
+    };
+    onSubmit({
+      stableKey: data.get("stableKey"), claimType: data.get("claimType"), usageScope: data.get("usageScope"),
+      requiredLocales: translations.map((item) => item.locale), translations,
+      sources: [{ documentVersionId: data.get("documentVersionId"), pageNumber: data.get("pageNumber") ? Number(data.get("pageNumber")) : undefined, sectionHeading: data.get("sectionHeading"), sourceExcerpt: data.get("sourceExcerpt") }],
+      applicability
+    });
+  }}>
+    <div className="form-heading"><h3>Create claim from approved source</h3><p>Enter only wording verified against the selected immutable version.</p></div>
+    <RequiredInput name="stableKey" label="Stable claim key" placeholder="future-oils.product.fact" />
+    <RequiredInput name="claimType" label="Claim type" placeholder="Product specification" />
+    <label><span className="label">Usage scope</span><select className="input" name="usageScope" required><option value="INTERNAL_ONLY">Internal only</option><option value="RESTRICTED">Restricted</option><option value="PUBLIC_SAFE">Public safe</option></select></label>
+    <label><span className="label">Approved source version</span><select className="input" name="documentVersionId" required>{versions.map((version) => <option value={version.id} key={version.id}>Version {version.versionNumber} · {version.file.originalName}</option>)}</select></label>
+    <label className="form-span-2"><span className="label">English wording</span><textarea className="input" name="english" required /></label>
+    <label className="form-span-2"><span className="label">Arabic wording (optional)</span><textarea className="input" name="arabic" dir="rtl" /></label>
+    <label><span className="label">Brand</span><select className="input" name="brandId"><option value="">Not brand-specific</option>{references?.brands.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
+    <label><span className="label">Product</span><select className="input" name="productId"><option value="">Not product-specific</option>{references?.products.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
+    <label><span className="label">Packaging format</span><select className="input" name="packagingFormatId"><option value="">Not packaging-specific</option>{references?.packagingFormats.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}</select></label>
+    <label><span className="label">Market</span><input className="input" name="market" placeholder="Optional" /></label>
+    <label><span className="label">Audience</span><input className="input" name="audience" placeholder="Optional" /></label>
+    <label><span className="label">Content objective</span><input className="input" name="objective" placeholder="Optional" /></label>
+    <label><span className="label">Page number</span><input className="input" name="pageNumber" type="number" min="1" /></label>
+    <label><span className="label">Section or heading</span><input className="input" name="sectionHeading" /></label>
+    <label className="form-span-2"><span className="label">Short source excerpt</span><textarea className="input" name="sourceExcerpt" maxLength={3000} /></label>
+    <div className="form-actions form-span-2"><button className="btn btn-primary" disabled={pending}>{pending ? "Creating claim" : "Create draft claim"}</button></div>
+  </form>;
+}
+
+function ReviewBadge({ status }: { status: KnowledgeVersion["reviewStatus"] }) {
+  const tone = status === "APPROVED_SOURCE" ? "status-ok" : status === "REJECTED" ? "status-fail" : status === "UNDER_REVIEW" || status === "READY_FOR_REVIEW" ? "status-waiting" : "status-neutral";
+  return <span className={"status-badge " + tone}>{status.replaceAll("_", " ")}</span>;
+}
+function ClaimBadge({ status }: { status: KnowledgeClaim["status"] }) {
+  const tone = status === "APPROVED" ? "status-ok" : status === "REJECTED" || status === "EXPIRED" ? "status-fail" : status === "UNDER_REVIEW" ? "status-waiting" : "status-neutral";
+  return <span className={"status-badge " + tone}>{status.replaceAll("_", " ")}</span>;
 }
 
 function LifecycleBadge({ status }: { status: KnowledgeDocument["lifecycleStatus"] }) {

@@ -492,3 +492,33 @@ select:focus-visible {
 .publishing-record-row em { color: #b42318; font-style: normal; font-size: 12px; margin-top: 4px; max-width: 720px; overflow-wrap: anywhere; }
 .publishing-record-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
 .btn.danger { color: #b42318; }
+
+.knowledge-review-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; grid-column: 1 / -1; }
+.knowledge-review-actions small { width: 100%; color: var(--text-muted); line-height: 1.5; }
+.knowledge-inline-decision { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; width: 100%; padding: 12px; background: #fff7ed; border: 1px solid #fed7aa; border-radius: var(--radius-sm); }
+.knowledge-inline-decision label { flex: 1 1 320px; }
+.knowledge-inline-decision textarea { min-height: 72px; }
+.knowledge-claims { display: grid; gap: 16px; margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--border-soft); }
+.knowledge-claims .knowledge-section-heading { align-items: flex-start; }
+.knowledge-claims .knowledge-section-heading h2, .knowledge-claims .knowledge-section-heading p { margin: 0; }
+.knowledge-claims .knowledge-section-heading p { max-width: 68ch; margin-top: 5px; color: var(--text-muted); }
+.knowledge-claim-list { display: grid; gap: 12px; }
+.knowledge-claim-row { overflow: hidden; background: #fff; border: 1px solid var(--border-soft); border-radius: var(--radius-md); }
+.knowledge-claim-row > header, .knowledge-claim-row > footer { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 16px; }
+.knowledge-claim-row > header { background: #f8fafc; border-bottom: 1px solid var(--border-soft); }
+.knowledge-claim-row > header > div:last-child { display: flex; flex-wrap: wrap; gap: 7px; }
+.knowledge-claim-row header strong span { color: var(--text-muted); font-size: 12px; font-weight: 600; }
+.knowledge-claim-row header p, .knowledge-claim-row footer span { margin: 3px 0 0; color: var(--text-muted); font-size: 13px; }
+.knowledge-claim-row > footer { align-items: center; border-top: 1px solid var(--border-soft); }
+.knowledge-translation-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.knowledge-translation-list > div { padding: 16px; }
+.knowledge-translation-list > div + div { border-left: 1px solid var(--border-soft); }
+.knowledge-translation-list strong { color: var(--text-muted); font-size: 12px; }
+.knowledge-translation-list p { max-width: 70ch; white-space: pre-wrap; }
+
+@media (max-width: 700px) {
+  .knowledge-claim-row > header, .knowledge-claim-row > footer, .knowledge-claims .knowledge-section-heading { align-items: stretch; flex-direction: column; }
+  .knowledge-translation-list { grid-template-columns: 1fr; }
+  .knowledge-translation-list > div + div { border-top: 1px solid var(--border-soft); border-left: 0; }
+  .knowledge-review-actions .btn { width: 100%; }
+}

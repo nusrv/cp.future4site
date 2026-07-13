@@ -1,5 +1,18 @@
 # Plesk Deployment
 
+## Phase 1B deployment gate
+
+Before deploying migration 202607130002_human_review_approved_claims:
+
+1. Back up MariaDB and the complete private file-storage root.
+2. Verify existing KnowledgeDocument, KnowledgeDocumentVersion, FileObject, Document, and KnowledgeIndex row counts.
+3. Run Prisma migration deployment and regenerate Prisma Client before starting the application.
+4. Build and test the release, then restart the Passenger application.
+5. Confirm an existing Phase 1A document still lists, downloads, versions, archives, and restores.
+6. Verify one source review through approval, a rejected replacement that leaves the prior approved version intact, independent English/Arabic wording approval, final claim approval, and read-only role behavior.
+
+The migration is additive but has no automatic down migration. Application rollback can revert the release while leaving additive tables unused. Full database rollback requires the pre-deployment MariaDB backup. Do not drop claim or review tables after operators have created audit history.
+
 ## Owner Responsibilities
 
 - Create protected subdomain.

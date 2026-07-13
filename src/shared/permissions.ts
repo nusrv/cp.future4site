@@ -38,7 +38,13 @@ export const permissions = [
   "knowledge.read",
   "knowledge.upload",
   "knowledge.edit",
-  "knowledge.archive"
+  "knowledge.archive",
+  "knowledge.review",
+  "knowledge.approve",
+  "knowledge.claim.create",
+  "knowledge.claim.edit",
+  "knowledge.claim.review",
+  "knowledge.claim.approve"
 ] as const;
 
 export type PermissionKey = (typeof permissions)[number];
@@ -54,7 +60,9 @@ export const rolePermissions: Record<RoleKey, PermissionKey[]> = {
     "organizations.read",
     "knowledge.read",
     "knowledge.upload",
-    "knowledge.edit"
+    "knowledge.edit",
+    "knowledge.claim.create",
+    "knowledge.claim.edit"
   ],
   CONTENT_REVIEWER: [
     "dashboard.read",
@@ -62,7 +70,11 @@ export const rolePermissions: Record<RoleKey, PermissionKey[]> = {
     "content.review",
     "content.approvePublication",
     "automation.read",
-    "knowledge.read"
+    "knowledge.read",
+    "knowledge.review",
+    "knowledge.approve",
+    "knowledge.claim.review",
+    "knowledge.claim.approve"
   ],
   AUTOMATION_MAINTAINER: [
     "dashboard.read",

@@ -45,7 +45,14 @@ const documentInclude = {
   versions: {
     include: {
       fileObject: true,
-      uploadedBy: { select: { id: true, displayName: true, username: true } }
+      uploadedBy: { select: { id: true, displayName: true, username: true } },
+      reviewedBy: { select: { id: true, displayName: true, username: true } },
+      approvedBy: { select: { id: true, displayName: true, username: true } },
+      reviewEvents: {
+        include: { actor: { select: { id: true, displayName: true, username: true } } },
+        orderBy: { createdAt: "desc" as const }
+      },
+      _count: { select: { claimSources: true } }
     },
     orderBy: { versionNumber: "desc" as const }
   }
@@ -271,7 +278,13 @@ export async function knowledgeRoutes(app: FastifyInstance) {
           supersedesVersionId: previous?.id
         } });
         if (previous) {
-          await tx.knowledgeDocumentVersion.update({ where: { id: previous.id }, data: { reviewStatus: "SUPERSEDED" } });
+          await tx.knowledgeDocumentVersion.update({
+            where: { id: previous.id },
+            data: {
+              supersededAt: new Date(),
+              reviewStatus: previous.reviewStatus === "APPROVED_SOURCE" ? "APPROVED_SOURCE" : "SUPERSEDED"
+            }
+          });
         }
         await tx.knowledgeDocument.update({ where: { id: params.id }, data: { updatedAt: new Date() } });
         await tx.auditEvent.createMany({ data: [
@@ -330,6 +343,26 @@ export async function knowledgeRoutes(app: FastifyInstance) {
       .send(buffer);
   });
 
+  app.post("/api/knowledge/documents/:id/versions/:versionId/submit-review", { preHandler: requirePermission("knowledge.edit") }, async (request) => {
+    return transitionSourceReview(request, "READY_FOR_REVIEW", ["UPLOADED"], "knowledge.source_review_submitted", "Source version submitted for review");
+  });
+
+  app.post("/api/knowledge/documents/:id/versions/:versionId/begin-review", { preHandler: requirePermission("knowledge.review") }, async (request) => {
+    return transitionSourceReview(request, "UNDER_REVIEW", ["READY_FOR_REVIEW"], "knowledge.source_review_started", "Source version review started");
+  });
+
+  app.post("/api/knowledge/documents/:id/versions/:versionId/approve-source", { preHandler: requirePermission("knowledge.approve") }, async (request) => {
+    return transitionSourceReview(request, "APPROVED_SOURCE", ["UNDER_REVIEW"], "knowledge.source_approved", "Document version approved as a trusted source");
+  });
+
+  app.post("/api/knowledge/documents/:id/versions/:versionId/reject", { preHandler: requirePermission("knowledge.review") }, async (request) => {
+    return transitionSourceReview(request, "REJECTED", ["UNDER_REVIEW"], "knowledge.source_rejected", "Source version rejected", true);
+  });
+
+  app.post("/api/knowledge/documents/:id/versions/:versionId/return-uploaded", { preHandler: requirePermission("knowledge.review") }, async (request) => {
+    return transitionSourceReview(request, "UPLOADED", ["READY_FOR_REVIEW", "UNDER_REVIEW", "REJECTED"], "knowledge.source_returned", "Source version returned to uploaded state");
+  });
+
   app.post("/api/knowledge/documents/:id/archive", { preHandler: requirePermission("knowledge.archive") }, async (request) => {
     return setLifecycle(request, "ARCHIVED");
   });
@@ -359,6 +392,70 @@ async function setLifecycle(request: FastifyRequest, lifecycleStatus: "ACTIVE" |
     return tx.knowledgeDocument.findUniqueOrThrow({ where: { id: params.id }, include: documentInclude });
   });
   return { document: serializeDocument(document) };
+}
+
+async function transitionSourceReview(
+  request: FastifyRequest,
+  newStatus: "UPLOADED" | "READY_FOR_REVIEW" | "UNDER_REVIEW" | "APPROVED_SOURCE" | "REJECTED",
+  allowedFrom: string[],
+  auditAction: string,
+  summary: string,
+  requireReason = false
+) {
+  const current = request.currentUser!;
+  const params = z.object({ id: z.string(), versionId: z.string() }).parse(request.params);
+  const input = z.object({
+    notes: z.string().trim().max(5000).optional().default(""),
+    rejectionReason: requireReason ? z.string().trim().min(2).max(5000) : z.string().trim().max(5000).optional().default("")
+  }).parse(request.body ?? {});
+  if (requireReason && input.rejectionReason.trim().length < 2) {
+    throw Object.assign(new Error("A rejection reason is required"), { statusCode: 400 });
+  }
+  const existing = await prisma.knowledgeDocumentVersion.findFirstOrThrow({
+    where: { id: params.versionId, documentId: params.id },
+    include: { document: true, fileObject: true }
+  });
+  if (existing.document.lifecycleStatus !== "ACTIVE") throw httpConflict("Archived documents must be restored before review");
+  if (existing.fileObject.securityStatus === "REJECTED") throw httpConflict("A rejected file cannot enter source review");
+  if (!allowedFrom.includes(existing.reviewStatus)) throw httpConflict("Invalid source review transition");
+  const now = new Date();
+  await prisma.$transaction(async (tx) => {
+    await tx.knowledgeDocumentVersion.update({
+      where: { id: existing.id },
+      data: {
+        reviewStatus: newStatus,
+        reviewedByUserId: newStatus === "UNDER_REVIEW" || newStatus === "REJECTED" ? current.user.id : undefined,
+        reviewedAt: newStatus === "UNDER_REVIEW" || newStatus === "REJECTED" ? now : undefined,
+        approvedByUserId: newStatus === "APPROVED_SOURCE" ? current.user.id : undefined,
+        approvedAt: newStatus === "APPROVED_SOURCE" ? now : undefined,
+        rejectionReason: newStatus === "REJECTED" ? input.rejectionReason : null,
+        reviewNotes: input.notes || null
+      }
+    });
+    await tx.knowledgeDocumentVersionReview.create({ data: {
+      versionId: existing.id,
+      actorUserId: current.user.id,
+      action: auditAction,
+      previousStatus: existing.reviewStatus,
+      newStatus,
+      notes: input.notes || null,
+      rejectionReason: newStatus === "REJECTED" ? input.rejectionReason : null
+    } });
+    await tx.auditEvent.create({ data: {
+      actorUserId: current.user.id,
+      action: auditAction,
+      entityType: "knowledge_document",
+      entityId: params.id,
+      summary,
+      metadata: { versionId: existing.id, versionNumber: existing.versionNumber, from: existing.reviewStatus, to: newStatus }
+    } });
+  });
+  const document = await prisma.knowledgeDocument.findUniqueOrThrow({ where: { id: params.id }, include: documentInclude });
+  return { document: serializeDocument(document) };
+}
+
+function httpConflict(message: string) {
+  return Object.assign(new Error(message), { statusCode: 409 });
 }
 
 async function parseUpload(request: FastifyRequest): Promise<ParsedUpload> {
@@ -405,6 +502,15 @@ function serializeVersion(version: any) {
     versionNumber: version.versionNumber,
     versionLabel: version.versionLabel,
     reviewStatus: version.reviewStatus,
+    reviewedBy: version.reviewedBy,
+    reviewedAt: version.reviewedAt,
+    approvedBy: version.approvedBy,
+    approvedAt: version.approvedAt,
+    rejectionReason: version.rejectionReason,
+    reviewNotes: version.reviewNotes,
+    supersededAt: version.supersededAt,
+    linkedClaimCount: version._count?.claimSources ?? 0,
+    reviewHistory: version.reviewEvents ?? [],
     supersedesVersionId: version.supersedesVersionId,
     createdAt: version.createdAt,
     uploadedBy: version.uploadedBy,

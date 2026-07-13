@@ -97,7 +97,32 @@ enum KnowledgeDocumentLifecycle {
 enum KnowledgeDocumentReviewStatus {
   UPLOADED
   READY_FOR_REVIEW
+  UNDER_REVIEW
+  APPROVED_SOURCE
+  REJECTED
   SUPERSEDED
+}
+
+enum KnowledgeClaimStatus {
+  DRAFT
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  SUPERSEDED
+  EXPIRED
+}
+
+enum KnowledgeClaimUsageScope {
+  PUBLIC_SAFE
+  INTERNAL_ONLY
+  RESTRICTED
+}
+
+enum KnowledgeTranslationReviewStatus {
+  DRAFT
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
 }
 
 model User {
@@ -118,6 +143,15 @@ model User {
   auditEvents           AuditEvent[] @relation("AuditActor")
   knowledgeDocumentsCreated KnowledgeDocument[] @relation("KnowledgeDocumentCreator")
   knowledgeVersionsUploaded KnowledgeDocumentVersion[] @relation("KnowledgeVersionUploader")
+  knowledgeVersionsReviewed KnowledgeDocumentVersion[] @relation("KnowledgeVersionReviewer")
+  knowledgeVersionsApproved KnowledgeDocumentVersion[] @relation("KnowledgeVersionApprover")
+  knowledgeReviewEvents KnowledgeDocumentVersionReview[] @relation("KnowledgeReviewActor")
+  knowledgeClaimsCreated KnowledgeClaim[] @relation("KnowledgeClaimCreator")
+  knowledgeClaimsEdited KnowledgeClaim[] @relation("KnowledgeClaimEditor")
+  knowledgeClaimsReviewed KnowledgeClaim[] @relation("KnowledgeClaimReviewer")
+  knowledgeClaimsApproved KnowledgeClaim[] @relation("KnowledgeClaimApprover")
+  knowledgeTranslationsReviewed KnowledgeClaimTranslation[] @relation("KnowledgeTranslationReviewer")
+  knowledgeTranslationsApproved KnowledgeClaimTranslation[] @relation("KnowledgeTranslationApprover")
 }
 
 model Role {
@@ -439,6 +473,10 @@ model Product {
   publicMarketingAllowed Boolean @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  brandId     String?
+  brand       Brand?   @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  knowledgeClaimApplicability KnowledgeClaimProduct[]
+  @@index([brandId])
 }
 
 model PackagingFormat {
@@ -446,6 +484,18 @@ model PackagingFormat {
   label     String @unique
   status    String @default("approved")
   visualAssetStatus String @default("missing")
+  knowledgeClaimApplicability KnowledgeClaimPackagingFormat[]
+}
+
+model Brand {
+  id String @id @default(cuid())
+  key String @unique
+  name String @unique
+  status String @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  products Product[]
+  knowledgeClaimApplicability KnowledgeClaimBrand[]
 }
 
 model KnowledgeIndex {
@@ -494,15 +544,176 @@ model KnowledgeDocumentVersion {
   createdAt           DateTime                       @default(now())
   supersedesVersionId String?                        @unique
   reviewStatus        KnowledgeDocumentReviewStatus @default(UPLOADED)
+  reviewedByUserId String?
+  reviewedAt DateTime?
+  approvedByUserId String?
+  approvedAt DateTime?
+  rejectionReason String? @db.Text
+  reviewNotes String? @db.Text
+  supersededAt DateTime?
   document            KnowledgeDocument              @relation(fields: [documentId], references: [id], onDelete: Restrict)
   fileObject          FileObject                     @relation(fields: [fileObjectId], references: [id], onDelete: Restrict)
   uploadedBy          User                           @relation("KnowledgeVersionUploader", fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+  reviewedBy User? @relation("KnowledgeVersionReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  approvedBy User? @relation("KnowledgeVersionApprover", fields: [approvedByUserId], references: [id], onDelete: Restrict)
   supersedes          KnowledgeDocumentVersion?      @relation("KnowledgeVersionSupersession", fields: [supersedesVersionId], references: [id], onDelete: Restrict)
   supersededBy        KnowledgeDocumentVersion?      @relation("KnowledgeVersionSupersession")
+  reviewEvents KnowledgeDocumentVersionReview[]
+  claimSources KnowledgeClaimSource[]
 
   @@unique([documentId, versionNumber], map: "KnowledgeVersion_document_version_key")
   @@index([documentId, createdAt])
   @@index([reviewStatus])
+  @@index([reviewStatus, createdAt])
+  @@index([approvedAt])
+}
+
+model KnowledgeDocumentVersionReview {
+  id String @id @default(cuid())
+  versionId String
+  actorUserId String
+  action String
+  previousStatus KnowledgeDocumentReviewStatus
+  newStatus KnowledgeDocumentReviewStatus
+  notes String? @db.Text
+  rejectionReason String? @db.Text
+  createdAt DateTime @default(now())
+  version KnowledgeDocumentVersion @relation(fields: [versionId], references: [id], onDelete: Restrict)
+  actor User @relation("KnowledgeReviewActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  @@index([versionId, createdAt])
+  @@index([newStatus, createdAt])
+}
+
+model KnowledgeClaim {
+  id String @id @default(cuid())
+  stableKey String
+  revision Int @default(1)
+  claimType String
+  status KnowledgeClaimStatus @default(DRAFT)
+  usageScope KnowledgeClaimUsageScope
+  requiredLocales Json
+  effectiveAt DateTime?
+  expiresAt DateTime?
+  restrictions String? @db.Text
+  internalNotes String? @db.Text
+  rejectionReason String? @db.Text
+  reviewNotes String? @db.Text
+  createdByUserId String
+  lastEditedByUserId String
+  reviewedByUserId String?
+  reviewedAt DateTime?
+  approvedByUserId String?
+  approvedAt DateTime?
+  supersedesClaimId String? @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy User @relation("KnowledgeClaimCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  lastEditedBy User @relation("KnowledgeClaimEditor", fields: [lastEditedByUserId], references: [id], onDelete: Restrict)
+  reviewedBy User? @relation("KnowledgeClaimReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  approvedBy User? @relation("KnowledgeClaimApprover", fields: [approvedByUserId], references: [id], onDelete: Restrict)
+  supersedes KnowledgeClaim? @relation("KnowledgeClaimSupersession", fields: [supersedesClaimId], references: [id], onDelete: Restrict)
+  supersededBy KnowledgeClaim? @relation("KnowledgeClaimSupersession")
+  translations KnowledgeClaimTranslation[]
+  sources KnowledgeClaimSource[]
+  brands KnowledgeClaimBrand[]
+  products KnowledgeClaimProduct[]
+  packagingFormats KnowledgeClaimPackagingFormat[]
+  markets KnowledgeClaimMarket[]
+  audiences KnowledgeClaimAudience[]
+  objectives KnowledgeClaimObjective[]
+  @@unique([stableKey, revision], map: "KnowledgeClaim_stableKey_revision_key")
+  @@index([stableKey])
+  @@index([status, updatedAt])
+  @@index([usageScope, status])
+  @@index([effectiveAt])
+  @@index([expiresAt])
+}
+
+model KnowledgeClaimTranslation {
+  id String @id @default(cuid())
+  claimId String
+  locale String
+  wording String @db.Text
+  reviewStatus KnowledgeTranslationReviewStatus @default(DRAFT)
+  reviewedByUserId String?
+  reviewedAt DateTime?
+  approvedByUserId String?
+  approvedAt DateTime?
+  reviewNotes String? @db.Text
+  rejectionReason String? @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  claim KnowledgeClaim @relation(fields: [claimId], references: [id], onDelete: Restrict)
+  reviewedBy User? @relation("KnowledgeTranslationReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  approvedBy User? @relation("KnowledgeTranslationApprover", fields: [approvedByUserId], references: [id], onDelete: Restrict)
+  @@unique([claimId, locale])
+  @@index([locale, reviewStatus])
+  @@index([reviewStatus, updatedAt])
+}
+
+model KnowledgeClaimSource {
+  id String @id @default(cuid())
+  claimId String
+  documentVersionId String
+  pageNumber Int?
+  sectionHeading String? @db.VarChar(500)
+  tableFigureReference String? @db.VarChar(500)
+  sourceExcerpt String? @db.Text
+  sourceNotes String? @db.Text
+  createdAt DateTime @default(now())
+  claim KnowledgeClaim @relation(fields: [claimId], references: [id], onDelete: Restrict)
+  documentVersion KnowledgeDocumentVersion @relation(fields: [documentVersionId], references: [id], onDelete: Restrict)
+  @@index([claimId])
+  @@index([documentVersionId, claimId])
+}
+
+model KnowledgeClaimBrand {
+  claimId String
+  brandId String
+  claim KnowledgeClaim @relation(fields: [claimId], references: [id], onDelete: Restrict)
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  @@id([claimId, brandId])
+  @@index([brandId, claimId])
+}
+model KnowledgeClaimProduct {
+  claimId String
+  productId String
+  claim KnowledgeClaim @relation(fields: [claimId], references: [id], onDelete: Restrict)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  @@id([claimId, productId])
+  @@index([productId, claimId])
+}
+model KnowledgeClaimPackagingFormat {
+  claimId String
+  packagingFormatId String
+  claim KnowledgeClaim @relation(fields: [claimId], references: [id], onDelete: Restrict)
+  packagingFormat PackagingFormat @relation(fields: [packagingFormatId], references: [id], onDelete: Restrict)
+  @@id([claimId, packagingFormatId])
+  @@index([packagingFormatId, claimId])
+}
+model KnowledgeClaimMarket {
+  id String @id @default(cuid())
+  claimId String
+  value String
+  claim KnowledgeClaim @relation(fields: [claimId], references: [id], onDelete: Restrict)
+  @@unique([claimId, value])
+  @@index([value, claimId])
+}
+model KnowledgeClaimAudience {
+  id String @id @default(cuid())
+  claimId String
+  value String
+  claim KnowledgeClaim @relation(fields: [claimId], references: [id], onDelete: Restrict)
+  @@unique([claimId, value])
+  @@index([value, claimId])
+}
+model KnowledgeClaimObjective {
+  id String @id @default(cuid())
+  claimId String
+  value String
+  claim KnowledgeClaim @relation(fields: [claimId], references: [id], onDelete: Restrict)
+  @@unique([claimId, value])
+  @@index([value, claimId])
 }
 
 model Campaign {

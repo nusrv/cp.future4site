@@ -4,6 +4,22 @@ Canonical restart point after any interrupted or completed session. Read this fi
 
 Last verified: **2026-07-13 (Asia/Amman)**
 
+## 2026-07-13 Phase 1B implementation in progress
+
+Phase 1B human source review and manually approved claims is implemented in the current working tree but not yet committed or deployed.
+
+Implemented:
+
+- Additive Prisma models and MariaDB migration for source-review history, claim revisions, locale wording, source provenance, verified Future Oils brand, and brand/product/packaging/market/audience/objective applicability.
+- Source version submit, begin, approve, reject, and return transitions with active-file guards and audit history.
+- Replacement uploads start unapproved; an earlier approved source stays approved with a superseded timestamp.
+- Focused claim CRUD, independent translation review, final approval validation, rejection, immutable superseding revisions, and owner-only self-approval override.
+- Knowledge Library source-review controls and a manual claims section.
+- Pure future-eligibility/applicability policy tests and static Phase 1B boundary/security tests.
+- KnowledgeIndex, generation, prompts, n8n, embeddings, publishing, and existing product resolution remain unchanged.
+
+Workspace constraint: this checkout is on a Google Drive filesystem that rejects Windows sandbox ACLs. Repository changes were applied through the Codex patch executable with explicit escalation. Per owner direction, npm, Prisma generation, TypeScript, Vitest, build, and migration execution were not run in this workspace. All are deployment gates before production.
+
 ## 2026-07-13 Phase 1A private Knowledge Library foundation
 
 Implemented on `develop` from baseline `33925ab` in a clean non-Google-Drive checkout:
