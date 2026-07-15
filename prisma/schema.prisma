@@ -125,6 +125,13 @@ enum KnowledgeTranslationReviewStatus {
   REJECTED
 }
 
+enum KnowledgeExtractionStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  UNSUPPORTED
+}
+
 model User {
   id                    String       @id @default(cuid())
   username              String       @unique
@@ -143,6 +150,7 @@ model User {
   auditEvents           AuditEvent[] @relation("AuditActor")
   knowledgeDocumentsCreated KnowledgeDocument[] @relation("KnowledgeDocumentCreator")
   knowledgeVersionsUploaded KnowledgeDocumentVersion[] @relation("KnowledgeVersionUploader")
+  knowledgeExtractionsRequested KnowledgeDocumentExtraction[] @relation("KnowledgeExtractionRequester")
   knowledgeVersionsReviewed KnowledgeDocumentVersion[] @relation("KnowledgeVersionReviewer")
   knowledgeVersionsApproved KnowledgeDocumentVersion[] @relation("KnowledgeVersionApprover")
   knowledgeReviewEvents KnowledgeDocumentVersionReview[] @relation("KnowledgeReviewActor")
@@ -560,12 +568,53 @@ model KnowledgeDocumentVersion {
   supersededBy        KnowledgeDocumentVersion?      @relation("KnowledgeVersionSupersession")
   reviewEvents KnowledgeDocumentVersionReview[]
   claimSources KnowledgeClaimSource[]
+  extractions KnowledgeDocumentExtraction[]
 
   @@unique([documentId, versionNumber], map: "KnowledgeVersion_document_version_key")
   @@index([documentId, createdAt])
   @@index([reviewStatus])
   @@index([reviewStatus, createdAt])
   @@index([approvedAt])
+}
+
+model KnowledgeDocumentExtraction {
+  id String @id @default(cuid())
+  documentVersionId String
+  requestedByUserId String
+  status KnowledgeExtractionStatus @default(RUNNING)
+  extractorName String
+  extractorVersion String
+  sourceSha256 String @db.VarChar(64)
+  contentHash String? @db.VarChar(64)
+  pageCount Int?
+  fragmentCount Int @default(0)
+  characterCount Int @default(0)
+  errorCode String? @db.VarChar(120)
+  errorMessage String? @db.Text
+  startedAt DateTime @default(now())
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  documentVersion KnowledgeDocumentVersion @relation(fields: [documentVersionId], references: [id], onDelete: Restrict)
+  requestedBy User @relation("KnowledgeExtractionRequester", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  fragments KnowledgeExtractionFragment[]
+  @@index([documentVersionId, createdAt])
+  @@index([status, createdAt])
+  @@index([requestedByUserId, createdAt])
+}
+
+model KnowledgeExtractionFragment {
+  id String @id @default(cuid())
+  extractionId String
+  ordinal Int
+  pageNumber Int?
+  sectionHeading String? @db.VarChar(500)
+  content String @db.LongText
+  contentHash String @db.VarChar(64)
+  characterCount Int
+  createdAt DateTime @default(now())
+  extraction KnowledgeDocumentExtraction @relation(fields: [extractionId], references: [id], onDelete: Restrict)
+  @@unique([extractionId, ordinal])
+  @@index([extractionId, pageNumber])
 }
 
 model KnowledgeDocumentVersionReview {

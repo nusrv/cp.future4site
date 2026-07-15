@@ -75,6 +75,29 @@ select:focus-visible {
   min-width: 0;
 }
 
+.knowledge-extraction {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.knowledge-extraction > div:first-child {
+  display: grid;
+  gap: 2px;
+  margin-right: auto;
+}
+
+.knowledge-extraction small {
+  color: var(--text-muted);
+}
+
+.knowledge-extraction small[role="alert"] {
+  color: var(--color-error);
+}
+
 .cp-brand-identity {
   width: 158px;
   min-width: 0;

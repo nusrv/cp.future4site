@@ -1,5 +1,21 @@
 # Private Knowledge Library
 
+## Phase 2A: deterministic extraction
+
+Phase 2A adds operator-triggered extraction records for immutable document versions. TXT and CSV use strict built-in UTF-8 decoding. PDF uses a configured Poppler `pdftotext` executable with fixed arguments, no shell, a timeout, and an output limit. The feature is disabled by default through `KNOWLEDGE_EXTRACTION_ENABLED=false`.
+
+Each run records its source-version checksum, extractor identity, status, counts, timestamps, and page-aware text fragments. It does not alter the source file, source-review state, approved claims, `KnowledgeIndex`, prompts, content generation, n8n, or publishing. Extracted text is internal and is not eligible knowledge.
+
+Enablement on Plesk requires installing or verifying Poppler outside the application, setting the absolute `KNOWLEDGE_PDFTOTEXT_PATH`, applying migration `202607150001_deterministic_knowledge_extraction`, regenerating Prisma Client, and completing TXT, CSV, PDF, timeout, unsupported-type, archived-document, rejected-file, permission, and response-leakage smoke tests. Leave the flag false if the executable or operational monitoring is unavailable.
+
+API:
+
+- `GET /api/knowledge/documents/:id/versions/:versionId/extractions`
+- `GET /api/knowledge/extractions/:extractionId`
+- `POST /api/knowledge/documents/:id/versions/:versionId/extractions`
+
+`knowledge.extract` is assigned to OWNER_ADMIN, MARKETING, and CONTENT_REVIEWER. Read-only roles can inspect extraction status through `knowledge.read` but cannot start work.
+
 ## Phase 1B: human review and approved claims
 
 Phase 1B adds controlled source review and manual factual claims. It does not extract files, translate wording, call Gemini or n8n, resolve knowledge for prompts, or publish anything.

@@ -8,7 +8,15 @@ Last verified: **2026-07-13 (Asia/Amman)**
 
 Current source checkpoint: develop is synchronized with origin/develop through 3f6b89a (correct CP identity assets). Phase 1B implementation and its three reported Plesk test corrections are pushed. The corrected full suite has not yet been reported as rerun on Plesk, the Phase 1B migrations have not been reported as applied, and the Phase 1B application build has not been reported as deployed.
 
-Immediate next action is Phase 1B production acceptance, not Phase 2 development:
+## 2026-07-15 knowledge-platform continuation
+
+The owner reports that Phase 1B production acceptance and the Phase 1C small manual pilot are complete and working. This is owner-reported operational evidence; this workspace did not query production or rerun those checks.
+
+Phase 2A deterministic extraction is in development. It is CP-owned, disabled by default, version-bound, audited, and isolated from approved claims and content generation. TXT/CSV extraction is built in; PDF extraction uses a configured Poppler executable without a shell. No OCR, AI candidate generation, resolver, prompt, n8n, or publishing integration is part of Phase 2A.
+
+Previous Phase 1B acceptance instructions below are retained as historical deployment guidance:
+
+Immediate next action was Phase 1B production acceptance:
 
 1. Pull current develop on Plesk and take verified MariaDB plus FILE_STORAGE_PATH backups.
 2. Rerun the complete deployment validation gate, including the full test suite.

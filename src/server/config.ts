@@ -25,6 +25,10 @@ const envSchema = z.object({
   FILE_STORAGE_PATH: z.string().default("./storage"),
   PUBLIC_ASSET_BASE_URL: z.string().optional().default(""),
   MAX_UPLOAD_MB: z.coerce.number().int().positive().default(25),
+  KNOWLEDGE_EXTRACTION_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
+  KNOWLEDGE_PDFTOTEXT_PATH: z.string().trim().min(1).default("pdftotext"),
+  KNOWLEDGE_EXTRACTION_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(30000),
+  KNOWLEDGE_EXTRACTION_MAX_CHARS: z.coerce.number().int().min(1000).max(10000000).default(2000000),
   LOG_LEVEL: z.string().default("info")
 });
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 1A is operationally verified in production. Phase 1B is complete in source and pushed to develop, but production migration, deployment, and operational acceptance are still pending. This document is planning only. It does not authorize Phase 2 implementation.
+Phase 1A is operationally verified in production. The owner reports that Phase 1B production acceptance and the Phase 1C manual pilot are complete and working. Phase 2A deterministic extraction is now being implemented behind a disabled-by-default production gate. Later phases remain gated and must preserve human approval, provenance, and generation isolation.
 
 ## Non-negotiable architecture
 

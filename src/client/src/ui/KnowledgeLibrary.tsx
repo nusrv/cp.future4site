@@ -65,6 +65,19 @@ type KnowledgeMutationResponse = {
   warnings?: Array<{ code: string; message: string }>;
 };
 
+type KnowledgeExtraction = {
+  id: string;
+  status: "RUNNING" | "SUCCEEDED" | "FAILED" | "UNSUPPORTED";
+  extractorName: string;
+  extractorVersion: string;
+  pageCount?: number | null;
+  fragmentCount: number;
+  characterCount: number;
+  errorMessage?: string | null;
+  completedAt?: string | null;
+  createdAt: string;
+};
+
 type Filters = {
   search: string;
   category: string;
@@ -103,6 +116,7 @@ export function KnowledgeLibrary({ permissions }: { permissions: string[] }) {
   const canArchive = permissions.includes("knowledge.archive");
   const canReview = permissions.includes("knowledge.review");
   const canApprove = permissions.includes("knowledge.approve");
+  const canExtract = permissions.includes("knowledge.extract");
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -213,6 +227,7 @@ export function KnowledgeLibrary({ permissions }: { permissions: string[] }) {
           canArchive={canArchive}
           canReview={canReview}
           canApprove={canApprove}
+          canExtract={canExtract}
           editing={editing}
           confirmingLifecycle={confirmLifecycle}
           busy={replaceVersion.isPending || editDocument.isPending || lifecycle.isPending || reviewVersion.isPending}
@@ -283,6 +298,7 @@ function DocumentDetail(props: {
   canArchive: boolean;
   canReview: boolean;
   canApprove: boolean;
+  canExtract: boolean;
   editing: boolean;
   confirmingLifecycle: "archive" | "restore" | null;
   busy: boolean;
@@ -316,6 +332,7 @@ function DocumentDetail(props: {
       <div><strong>Version {version.versionNumber}{version.versionLabel ? " · " + version.versionLabel : ""}</strong><span>{version.file.originalName}</span><small>{formatDateTime(version.createdAt)} · {version.uploadedBy.displayName}</small></div>
       <div><ScanBadge status={version.file.securityStatus} /><ReviewBadge status={version.reviewStatus} /><a href={version.file.downloadUrl}>Download</a></div>
       <SourceReviewActions version={version} active={document.lifecycleStatus === "ACTIVE"} canEdit={props.canEdit} canReview={props.canReview} canApprove={props.canApprove} busy={props.busy} onReview={props.onReview} />
+      <VersionExtraction documentId={document.id} version={version} active={document.lifecycleStatus === "ACTIVE"} canExtract={props.canExtract} />
     </li>)}</ol></section>
 
     {props.auditEvents.length ? <section className="knowledge-section"><h3>Recent activity</h3><ol className="knowledge-audit-list">{props.auditEvents.slice(0, 10).map((event) => <li key={event.id}><strong>{event.summary}</strong><span>{formatDateTime(event.createdAt)}{event.actor ? " · " + event.actor.displayName : ""}</span></li>)}</ol></section> : null}
@@ -363,6 +380,52 @@ function ReplacementForm({ busy, onSubmit }: { busy: boolean; onSubmit: (form: F
 
 function RequiredInput({ name, label, defaultValue, placeholder }: { name: string; label: string; defaultValue?: string; placeholder?: string }) {
   return <label><span className="label">{label}</span><input className="input" name={name} required defaultValue={defaultValue} placeholder={placeholder} /></label>;
+}
+
+function VersionExtraction({ documentId, version, active, canExtract }: {
+  documentId: string;
+  version: KnowledgeVersion;
+  active: boolean;
+  canExtract: boolean;
+}) {
+  const qc = useQueryClient();
+  const supported = ["txt", "csv", "pdf"].includes(version.file.fileExtension.toLowerCase());
+  const queryKey = ["knowledge-extractions", version.id];
+  const history = useQuery<{ extractions: KnowledgeExtraction[] }>({
+    queryKey,
+    queryFn: () => api("/api/knowledge/documents/" + encodeURIComponent(documentId) + "/versions/" + encodeURIComponent(version.id) + "/extractions")
+  });
+  const extract = useMutation({
+    mutationFn: () => post<{ extraction: KnowledgeExtraction }>(
+      "/api/knowledge/documents/" + encodeURIComponent(documentId) + "/versions/" + encodeURIComponent(version.id) + "/extractions",
+      {}
+    ),
+    onSettled: () => qc.invalidateQueries({ queryKey })
+  });
+  const latest = history.data?.extractions[0];
+  const unavailableReason = !active
+    ? "Restore this document before extracting text."
+    : version.file.securityStatus === "REJECTED"
+      ? "Security-rejected files cannot be extracted."
+      : !supported
+        ? "Deterministic extraction supports TXT, CSV, and PDF files."
+        : !canExtract
+          ? "You do not have permission to extract source text."
+          : null;
+  const error = extract.error instanceof ApiError ? extract.error.message : extract.error ? "Extraction failed." : null;
+  return <div className="knowledge-extraction">
+    <div>
+      <strong>Deterministic text</strong>
+      {latest ? <small>{latest.status === "SUCCEEDED"
+        ? latest.fragmentCount + " fragment" + (latest.fragmentCount === 1 ? "" : "s") + " · " + latest.characterCount.toLocaleString() + " characters"
+        : latest.errorMessage || latest.status.toLowerCase()}</small> : <small>No extraction run for this immutable version.</small>}
+    </div>
+    {canExtract ? <button className="btn btn-secondary btn-compact" disabled={Boolean(unavailableReason) || extract.isPending} title={unavailableReason ?? undefined} onClick={() => extract.mutate()}>
+      {extract.isPending ? "Extracting text" : latest?.status === "SUCCEEDED" ? "Extract again" : "Extract text"}
+    </button> : null}
+    {unavailableReason ? <small>{unavailableReason}</small> : null}
+    {error ? <small role="alert">{error}</small> : null}
+  </div>;
 }
 
 function SourceReviewActions({ version, active, canEdit, canReview, canApprove, busy, onReview }: {
