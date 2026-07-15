@@ -1,5 +1,21 @@
 # Private Knowledge Library
 
+## Phase 2B: explicit OCR proposals
+
+Phase 2B adds separate operator-requested OCR jobs for PDF, PNG, JPEG, and WebP source versions. It is disabled by default with `KNOWLEDGE_OCR_ENABLED=false`. Tesseract performs Arabic, English, or bilingual OCR; Poppler `pdftoppm` rasterizes bounded PDF pages in an application-controlled temporary directory that is removed after each run.
+
+OCR results record the immutable source checksum, actual engine version, language setting, duration, page count, page text hash, character counts, and confidence. Pages below `KNOWLEDGE_OCR_LOW_CONFIDENCE` are flagged. CP provides a private, authenticated inline source view beside OCR text. Inline views and downloads are separately audited.
+
+OCR output is proposed source text only. It never changes source approval, creates or edits a claim, approves wording, enters the resolver, reaches content generation, or invokes n8n. Enabling OCR on Plesk requires verified Tesseract Arabic and English language packs, Poppler, absolute executable paths, resource monitoring, a representative bilingual accuracy set, and successful timeout/page/character/confidence/security/permission tests.
+
+API:
+
+- `GET /api/knowledge/documents/:id/versions/:versionId/ocr-jobs`
+- `GET /api/knowledge/ocr-jobs/:jobId`
+- `POST /api/knowledge/documents/:id/versions/:versionId/ocr-jobs`
+
+`knowledge.ocr` is assigned to OWNER_ADMIN, MARKETING, and CONTENT_REVIEWER. Read-only roles may inspect completed results but cannot start OCR.
+
 ## Phase 2A: deterministic extraction
 
 Phase 2A adds operator-triggered extraction records for immutable document versions. TXT and CSV use strict built-in UTF-8 decoding. PDF uses a configured Poppler `pdftotext` executable with fixed arguments, no shell, a timeout, and an output limit. The feature is disabled by default through `KNOWLEDGE_EXTRACTION_ENABLED=false`.

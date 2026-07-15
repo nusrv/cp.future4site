@@ -320,6 +320,7 @@ export async function knowledgeRoutes(app: FastifyInstance) {
   app.get("/api/knowledge/documents/:id/versions/:versionId/file", { preHandler: requirePermission("knowledge.read") }, async (request, reply) => {
     const current = request.currentUser!;
     const params = z.object({ id: z.string(), versionId: z.string() }).parse(request.params);
+    const { disposition } = z.object({ disposition: z.enum(["attachment", "inline"]).default("attachment") }).parse(request.query);
     const version = await prisma.knowledgeDocumentVersion.findFirstOrThrow({
       where: { id: params.versionId, documentId: params.id },
       include: { document: { select: { lifecycleStatus: true } }, fileObject: true }
@@ -328,10 +329,10 @@ export async function knowledgeRoutes(app: FastifyInstance) {
     const buffer = await readFile(version.fileObject.storageKey);
     await prisma.auditEvent.create({ data: {
       actorUserId: current.user.id,
-      action: "knowledge.file_downloaded",
+      action: disposition === "inline" ? "knowledge.file_viewed" : "knowledge.file_downloaded",
       entityType: "knowledge_document",
       entityId: params.id,
-      summary: "Private Knowledge Library file downloaded",
+      summary: disposition === "inline" ? "Private Knowledge Library file viewed" : "Private Knowledge Library file downloaded",
       metadata: { versionId: version.id, versionNumber: version.versionNumber, lifecycleStatus: version.document.lifecycleStatus }
     } });
     const downloadName = version.fileObject.originalName.replace(/["\r\n]/g, "_");
@@ -339,7 +340,7 @@ export async function knowledgeRoutes(app: FastifyInstance) {
       .type(version.fileObject.mimeType)
       .header("Cache-Control", "private, no-store")
       .header("X-Content-Type-Options", "nosniff")
-      .header("Content-Disposition", `attachment; filename="${downloadName}"`)
+      .header("Content-Disposition", `${disposition}; filename="${downloadName}"`)
       .send(buffer);
   });
 

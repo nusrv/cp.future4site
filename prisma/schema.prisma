@@ -151,6 +151,7 @@ model User {
   knowledgeDocumentsCreated KnowledgeDocument[] @relation("KnowledgeDocumentCreator")
   knowledgeVersionsUploaded KnowledgeDocumentVersion[] @relation("KnowledgeVersionUploader")
   knowledgeExtractionsRequested KnowledgeDocumentExtraction[] @relation("KnowledgeExtractionRequester")
+  knowledgeOcrJobsRequested KnowledgeOcrJob[] @relation("KnowledgeOcrRequester")
   knowledgeVersionsReviewed KnowledgeDocumentVersion[] @relation("KnowledgeVersionReviewer")
   knowledgeVersionsApproved KnowledgeDocumentVersion[] @relation("KnowledgeVersionApprover")
   knowledgeReviewEvents KnowledgeDocumentVersionReview[] @relation("KnowledgeReviewActor")
@@ -569,6 +570,7 @@ model KnowledgeDocumentVersion {
   reviewEvents KnowledgeDocumentVersionReview[]
   claimSources KnowledgeClaimSource[]
   extractions KnowledgeDocumentExtraction[]
+  ocrJobs KnowledgeOcrJob[]
 
   @@unique([documentId, versionNumber], map: "KnowledgeVersion_document_version_key")
   @@index([documentId, createdAt])
@@ -615,6 +617,48 @@ model KnowledgeExtractionFragment {
   extraction KnowledgeDocumentExtraction @relation(fields: [extractionId], references: [id], onDelete: Restrict)
   @@unique([extractionId, ordinal])
   @@index([extractionId, pageNumber])
+}
+
+model KnowledgeOcrJob {
+  id String @id @default(cuid())
+  activeKey String? @unique @db.VarChar(191)
+  documentVersionId String
+  requestedByUserId String
+  status KnowledgeExtractionStatus @default(RUNNING)
+  engineName String
+  engineVersion String
+  languages String
+  sourceSha256 String @db.VarChar(64)
+  pageCount Int @default(0)
+  characterCount Int @default(0)
+  averageConfidence Float?
+  durationMs Int?
+  errorCode String? @db.VarChar(120)
+  errorMessage String? @db.Text
+  startedAt DateTime @default(now())
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  documentVersion KnowledgeDocumentVersion @relation(fields: [documentVersionId], references: [id], onDelete: Restrict)
+  requestedBy User @relation("KnowledgeOcrRequester", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  pages KnowledgeOcrPage[]
+  @@index([documentVersionId, createdAt])
+  @@index([status, createdAt])
+  @@index([requestedByUserId, createdAt])
+}
+
+model KnowledgeOcrPage {
+  id String @id @default(cuid())
+  ocrJobId String
+  pageNumber Int
+  content String @db.LongText
+  contentHash String @db.VarChar(64)
+  characterCount Int
+  confidence Float?
+  lowConfidence Boolean @default(false)
+  createdAt DateTime @default(now())
+  ocrJob KnowledgeOcrJob @relation(fields: [ocrJobId], references: [id], onDelete: Restrict)
+  @@unique([ocrJobId, pageNumber])
+  @@index([ocrJobId, lowConfidence])
 }
 
 model KnowledgeDocumentVersionReview {

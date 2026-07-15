@@ -15,6 +15,7 @@ import { mediaRoutes } from "./routes/media.js";
 import { knowledgeRoutes } from "./routes/knowledge.js";
 import { knowledgeClaimRoutes } from "./routes/knowledgeClaims.js";
 import { knowledgeExtractionRoutes } from "./routes/knowledgeExtraction.js";
+import { knowledgeOcrRoutes } from "./routes/knowledgeOcr.js";
 import { operationsRoutes } from "./routes/operations.js";
 
 export async function buildServer() {
@@ -70,6 +71,7 @@ export async function buildServer() {
   await knowledgeRoutes(app);
   await knowledgeClaimRoutes(app);
   await knowledgeExtractionRoutes(app);
+  await knowledgeOcrRoutes(app);
   await operationsRoutes(app);
 
   const clientRoot = path.resolve("dist-client");

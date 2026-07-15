@@ -29,6 +29,14 @@ const envSchema = z.object({
   KNOWLEDGE_PDFTOTEXT_PATH: z.string().trim().min(1).default("pdftotext"),
   KNOWLEDGE_EXTRACTION_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(30000),
   KNOWLEDGE_EXTRACTION_MAX_CHARS: z.coerce.number().int().min(1000).max(10000000).default(2000000),
+  KNOWLEDGE_OCR_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
+  KNOWLEDGE_TESSERACT_PATH: z.string().default("tesseract"),
+  KNOWLEDGE_PDFTOPPM_PATH: z.string().default("pdftoppm"),
+  KNOWLEDGE_OCR_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600000).default(120000),
+  KNOWLEDGE_OCR_MAX_PAGES: z.coerce.number().int().min(1).max(200).default(30),
+  KNOWLEDGE_OCR_MAX_CHARS: z.coerce.number().int().min(1000).max(10000000).default(2000000),
+  KNOWLEDGE_OCR_MAX_RASTER_BYTES: z.coerce.number().int().min(1048576).max(1073741824).default(262144000),
+  KNOWLEDGE_OCR_LOW_CONFIDENCE: z.coerce.number().min(0).max(100).default(70),
   LOG_LEVEL: z.string().default("info")
 });
 

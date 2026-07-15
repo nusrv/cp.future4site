@@ -78,6 +78,21 @@ type KnowledgeExtraction = {
   createdAt: string;
 };
 
+type KnowledgeOcrJob = {
+  id: string;
+  status: "RUNNING" | "SUCCEEDED" | "FAILED" | "UNSUPPORTED";
+  engineName: string;
+  engineVersion: string;
+  languages: "eng" | "ara" | "eng+ara";
+  pageCount: number;
+  characterCount: number;
+  averageConfidence?: number | null;
+  durationMs?: number | null;
+  errorMessage?: string | null;
+  createdAt: string;
+  pages?: Array<{ id: string; pageNumber: number; content: string; confidence?: number | null; lowConfidence: boolean }>;
+};
+
 type Filters = {
   search: string;
   category: string;
@@ -117,6 +132,7 @@ export function KnowledgeLibrary({ permissions }: { permissions: string[] }) {
   const canReview = permissions.includes("knowledge.review");
   const canApprove = permissions.includes("knowledge.approve");
   const canExtract = permissions.includes("knowledge.extract");
+  const canOcr = permissions.includes("knowledge.ocr");
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -228,6 +244,7 @@ export function KnowledgeLibrary({ permissions }: { permissions: string[] }) {
           canReview={canReview}
           canApprove={canApprove}
           canExtract={canExtract}
+          canOcr={canOcr}
           editing={editing}
           confirmingLifecycle={confirmLifecycle}
           busy={replaceVersion.isPending || editDocument.isPending || lifecycle.isPending || reviewVersion.isPending}
@@ -299,6 +316,7 @@ function DocumentDetail(props: {
   canReview: boolean;
   canApprove: boolean;
   canExtract: boolean;
+  canOcr: boolean;
   editing: boolean;
   confirmingLifecycle: "archive" | "restore" | null;
   busy: boolean;
@@ -333,6 +351,7 @@ function DocumentDetail(props: {
       <div><ScanBadge status={version.file.securityStatus} /><ReviewBadge status={version.reviewStatus} /><a href={version.file.downloadUrl}>Download</a></div>
       <SourceReviewActions version={version} active={document.lifecycleStatus === "ACTIVE"} canEdit={props.canEdit} canReview={props.canReview} canApprove={props.canApprove} busy={props.busy} onReview={props.onReview} />
       <VersionExtraction documentId={document.id} version={version} active={document.lifecycleStatus === "ACTIVE"} canExtract={props.canExtract} />
+      <VersionOcr documentId={document.id} version={version} active={document.lifecycleStatus === "ACTIVE"} canOcr={props.canOcr} />
     </li>)}</ol></section>
 
     {props.auditEvents.length ? <section className="knowledge-section"><h3>Recent activity</h3><ol className="knowledge-audit-list">{props.auditEvents.slice(0, 10).map((event) => <li key={event.id}><strong>{event.summary}</strong><span>{formatDateTime(event.createdAt)}{event.actor ? " · " + event.actor.displayName : ""}</span></li>)}</ol></section> : null}
@@ -425,6 +444,69 @@ function VersionExtraction({ documentId, version, active, canExtract }: {
     </button> : null}
     {unavailableReason ? <small>{unavailableReason}</small> : null}
     {error ? <small role="alert">{error}</small> : null}
+  </div>;
+}
+
+function VersionOcr({ documentId, version, active, canOcr }: {
+  documentId: string;
+  version: KnowledgeVersion;
+  active: boolean;
+  canOcr: boolean;
+}) {
+  const qc = useQueryClient();
+  const [languages, setLanguages] = useState<KnowledgeOcrJob["languages"]>("eng+ara");
+  const [showReview, setShowReview] = useState(false);
+  const supported = ["pdf", "png", "jpg", "jpeg", "webp"].includes(version.file.fileExtension.toLowerCase());
+  const queryKey = ["knowledge-ocr-jobs", version.id];
+  const history = useQuery<{ jobs: KnowledgeOcrJob[] }>({
+    queryKey,
+    queryFn: () => api("/api/knowledge/documents/" + encodeURIComponent(documentId) + "/versions/" + encodeURIComponent(version.id) + "/ocr-jobs")
+  });
+  const latest = history.data?.jobs[0];
+  const detail = useQuery<{ job: KnowledgeOcrJob }>({
+    queryKey: ["knowledge-ocr-job", latest?.id],
+    queryFn: () => api("/api/knowledge/ocr-jobs/" + encodeURIComponent(latest!.id)),
+    enabled: showReview && latest?.status === "SUCCEEDED"
+  });
+  const run = useMutation({
+    mutationFn: () => post<{ job: KnowledgeOcrJob }>(
+      "/api/knowledge/documents/" + encodeURIComponent(documentId) + "/versions/" + encodeURIComponent(version.id) + "/ocr-jobs",
+      { languages }
+    ),
+    onSettled: () => qc.invalidateQueries({ queryKey })
+  });
+  const unavailableReason = !active
+    ? "Restore this document before OCR."
+    : version.file.securityStatus === "REJECTED"
+      ? "Security-rejected files cannot be processed by OCR."
+      : !supported
+        ? "OCR supports PDF, PNG, JPEG, and WebP files."
+        : !canOcr
+          ? "You do not have permission to run OCR."
+          : null;
+  const error = run.error instanceof ApiError ? run.error.message : run.error ? "OCR failed." : null;
+  return <div className="knowledge-ocr">
+    <div className="knowledge-ocr-summary">
+      <div><strong>OCR proposal</strong>{latest ? <small>{latest.status === "SUCCEEDED"
+        ? latest.pageCount + " page" + (latest.pageCount === 1 ? "" : "s") + " · " + (latest.averageConfidence === null ? "confidence unavailable" : Math.round(latest.averageConfidence ?? 0) + "% average confidence")
+        : latest.errorMessage || latest.status.toLowerCase()}</small> : <small>No OCR run for this immutable version.</small>}</div>
+      {canOcr ? <label><span className="label">OCR languages</span><select className="input" value={languages} onChange={(event) => setLanguages(event.target.value as KnowledgeOcrJob["languages"])} disabled={run.isPending}>
+        <option value="eng+ara">Arabic and English</option><option value="ara">Arabic</option><option value="eng">English</option>
+      </select></label> : null}
+      {canOcr ? <button className="btn btn-secondary btn-compact" disabled={Boolean(unavailableReason) || run.isPending} title={unavailableReason ?? undefined} onClick={() => run.mutate()}>
+        {run.isPending ? "Running OCR" : latest?.status === "SUCCEEDED" ? "Run OCR again" : "Run OCR"}
+      </button> : null}
+      {latest?.status === "SUCCEEDED" ? <button className="btn btn-secondary btn-compact" onClick={() => setShowReview((value) => !value)}>{showReview ? "Close OCR review" : "Review OCR text"}</button> : null}
+    </div>
+    {unavailableReason ? <small>{unavailableReason}</small> : null}
+    {error ? <small role="alert">{error}</small> : null}
+    {showReview && detail.data?.job.pages ? <div className="knowledge-ocr-review">
+      <iframe title={"Immutable source version " + version.versionNumber} src={version.file.downloadUrl + "?disposition=inline"} />
+      <ol>{detail.data.job.pages.map((page) => <li key={page.id}>
+        <header><strong>Page {page.pageNumber}</strong><span className={"status-badge " + (page.lowConfidence ? "status-warning" : "status-success")}>{page.confidence == null ? "Confidence unavailable" : Math.round(page.confidence) + "% confidence"}</span></header>
+        <pre dir="auto">{page.content}</pre>
+      </li>)}</ol>
+    </div> : null}
   </div>;
 }
 

@@ -42,6 +42,7 @@ export const permissions = [
   "knowledge.review",
   "knowledge.approve",
   "knowledge.extract",
+  "knowledge.ocr",
   "knowledge.claim.create",
   "knowledge.claim.edit",
   "knowledge.claim.review",
@@ -63,6 +64,7 @@ export const rolePermissions: Record<RoleKey, PermissionKey[]> = {
     "knowledge.upload",
     "knowledge.edit",
     "knowledge.extract",
+    "knowledge.ocr",
     "knowledge.claim.create",
     "knowledge.claim.edit"
   ],
@@ -76,6 +78,7 @@ export const rolePermissions: Record<RoleKey, PermissionKey[]> = {
     "knowledge.review",
     "knowledge.approve",
     "knowledge.extract",
+    "knowledge.ocr",
     "knowledge.claim.review",
     "knowledge.claim.approve"
   ],
