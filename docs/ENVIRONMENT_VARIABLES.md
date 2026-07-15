@@ -1,5 +1,24 @@
 # Environment Variables
 
+## Knowledge automation gates
+
+All new automation is off by default. Enable one stage at a time only after its migration and smoke tests pass.
+
+- `KNOWLEDGE_EXTRACTION_ENABLED=false`: enables explicit TXT, CSV, and PDF deterministic extraction.
+- `KNOWLEDGE_PDFTOTEXT_PATH=pdftotext`: absolute Poppler executable path in production.
+- `KNOWLEDGE_EXTRACTION_TIMEOUT_MS=30000`, `KNOWLEDGE_EXTRACTION_MAX_CHARS=2000000`: extraction limits.
+- `KNOWLEDGE_OCR_ENABLED=false`: enables explicit OCR jobs.
+- `KNOWLEDGE_TESSERACT_PATH=tesseract`, `KNOWLEDGE_PDFTOPPM_PATH=pdftoppm`: absolute production executable paths.
+- `KNOWLEDGE_OCR_TIMEOUT_MS=120000`, `KNOWLEDGE_OCR_MAX_PAGES=30`, `KNOWLEDGE_OCR_MAX_CHARS=2000000`, `KNOWLEDGE_OCR_MAX_RASTER_BYTES=262144000`, `KNOWLEDGE_OCR_LOW_CONFIDENCE=70`: OCR resource and review limits.
+- `KNOWLEDGE_CANDIDATES_ENABLED=false`: enables explicit provider candidate runs.
+- `KNOWLEDGE_CANDIDATE_DATA_APPROVED=false`: independent owner approval that selected source text may be sent to the configured provider.
+- `GEMINI_API_KEY`: server-only provider credential. Never expose it to the client, n8n, logs, or Git.
+- `KNOWLEDGE_GEMINI_MODEL=gemini-2.5-flash-lite`: reviewed provider model identifier.
+- `KNOWLEDGE_CANDIDATE_TIMEOUT_MS=60000`, `KNOWLEDGE_CANDIDATE_MAX_FRAGMENTS=20`, `KNOWLEDGE_CANDIDATE_MAX_COUNT=10`, `KNOWLEDGE_CANDIDATE_MAX_INPUT_CHARS=100000`: provider limits.
+- `KNOWLEDGE_GENERATION_ENABLED=false`: attaches approved-claim evidence snapshots to content generation and enforces callback claim-ID citations.
+
+Keep every flag false during the first migration/restart. Enabling a later flag does not require enabling an earlier provider, but the required source results and approved claims must already exist.
+
 Use `.env.example` as the contract. Do not commit real `.env` files.
 
 ## Required For Local Development

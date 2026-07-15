@@ -1,5 +1,34 @@
 # Plesk Deployment
 
+## Knowledge platform Phases 2A through 4
+
+Deploy these commits with every new knowledge flag set to `false`. Do not deploy provider credentials in Git or n8n.
+
+1. Record the current Git commit, Prisma migration table, application environment, active n8n content workflow, and Passenger configuration.
+2. Take coordinated, restorable backups of MariaDB and the complete private `FILE_STORAGE_PATH`. Export the active n8n content workflow separately.
+3. Pull the approved `develop` commit.
+4. Configure executable paths but leave `KNOWLEDGE_EXTRACTION_ENABLED`, `KNOWLEDGE_OCR_ENABLED`, `KNOWLEDGE_CANDIDATES_ENABLED`, `KNOWLEDGE_CANDIDATE_DATA_APPROVED`, and `KNOWLEDGE_GENERATION_ENABLED` false.
+5. Run, in order:
+
+```text
+npm run db:generate
+npx prisma validate
+npm test
+npm run typecheck
+npm run build
+npm run db:migrate
+```
+
+6. Verify migrations `202607150001_deterministic_knowledge_extraction`, `202607150002_knowledge_ocr`, `202607150003_knowledge_candidate_claims`, and `202607150004_generation_evidence_bundles` in MariaDB. Confirm legacy document, version, file, claim, content, and `KnowledgeIndex` row counts are unchanged except for the additive `ContentRequest.locale='en'` default.
+7. Restart Passenger and smoke-test Phase 1A, source review, independent locale review, claim revision/supersession, permissions, content generation with all new flags false, and publishing regression.
+8. Enable deterministic extraction first. Test TXT, CSV, text PDF, unsupported image, timeout/limit, archived document, rejected file, permissions, immutable-version history, and response leakage.
+9. Install/verify Poppler and Tesseract Arabic and English language packs before enabling OCR. Test image PDF, PNG/JPEG/WebP, bilingual selection, page/raster/character/time limits, low-confidence display, source comparison, concurrent-run conflict, and stale-run recovery.
+10. Approve provider retention, residency, source classification, and cost policy before setting both candidate flags true and adding `GEMINI_API_KEY`. Test source-fragment selection, invalid provenance, provider timeout/failure, candidate rejection, explicit draft acceptance, independent locale review, and no automatic approval.
+11. Test `POST /api/knowledge/resolve` across locale, product, packaging, brand, market, audience, objective, dates, supersession, missing coverage, conflicts, and the 1,000-claim safety cap.
+12. Import and inspect the updated generated content workflow only after CP resolver tests pass. Preserve the old workflow export. Enable `KNOWLEDGE_GENERATION_ENABLED` last, then test exact brand/product resolution, evidence snapshot display, signed payload claim IDs, mock output, live callback citations, invalid citation failure, human copy/creative/publishing approvals, and rollback by flag.
+
+Immediate rollback for any new automation is to set its feature flag false and restart Passenger. Do not reverse individual migrations against production data. For a full rollback, stop the application, restore the coordinated pre-migration MariaDB and private-storage backups, restore the previous n8n workflow export, check out the recorded application commit, regenerate Prisma Client, rebuild, and restart. Evidence-backed content requests are intentionally non-deletable; preserve their database history during investigation.
+
 ## Phase 1B deployment gate
 
 Phase 1B has been statically reviewed only. Neither migration 202607130002_human_review_approved_claims nor 202607130003_claim_supersession_guard has been executed against MariaDB, and the release has not been built or deployed from the Google Drive workspace.

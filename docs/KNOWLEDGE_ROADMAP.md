@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 1A is operationally verified in production. The owner reports that Phase 1B production acceptance and the Phase 1C manual pilot are complete and working. Phase 2A deterministic extraction is now being implemented behind a disabled-by-default production gate. Later phases remain gated and must preserve human approval, provenance, and generation isolation.
+Phase 1A is operationally verified in production. The owner reports that Phase 1B production acceptance and the Phase 1C manual pilot are complete and working. Phases 2A, 2B, 2C, 3, and 4 are implemented in source as separate controlled gates. Extraction, OCR, candidate generation, and evidence-backed content generation remain disabled by default pending Plesk migration and operational acceptance. Phase 5 semantic retrieval is deliberately deferred by the measured decision gate.
 
 ## Non-negotiable architecture
 

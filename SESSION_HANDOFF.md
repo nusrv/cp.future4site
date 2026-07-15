@@ -1,5 +1,60 @@
 # Future Foresight CP - Session Handoff
 
+## 2026-07-15 knowledge platform Phases 2A through 5 gate
+
+Owner-reported baseline: Phase 1B production acceptance and the Phase 1C manual pilot are complete and working. This workspace did not independently query production.
+
+Implemented on `develop` after `cea6a12`:
+
+- `f240506` adds disabled deterministic TXT/CSV/PDF extraction, immutable version fragments, permissioned APIs, CP controls, audit events, limits, migration, and contracts.
+- `747ae5f` adds disabled explicit bilingual OCR with Tesseract/Poppler adapters, page confidence, resource/concurrency limits, source comparison, migration, and contracts.
+- `2beae71` adds separately stored Gemini candidate runs/proposals, strict source-ID provenance, explicit reject or draft acceptance, provider/data-approval gates, migration, CP review UI, and contracts.
+- `2b2d677` adds the read-only exact approved-claim resolver, all applicability dimensions, locale/date/supersession handling, safe provenance, diagnostics, audit, and contracts.
+- `39850db` adds disabled evidence-backed generation, explicit content locale, immutable evidence snapshots, signed n8n payload evidence, callback claim-ID validation, CP evidence display, migration, and contracts.
+- `8d31b9f` records the Phase 5 decision to defer embeddings/vector search until a 100-judgment bilingual evaluation gate demonstrates material vocabulary-driven false negatives.
+
+Safety boundaries:
+
+- CP/MariaDB remain authoritative. Original files remain private and immutable. n8n has no database access.
+- Extraction and OCR text are internal source proposals, never approved claims.
+- Gemini output is an unapproved candidate. Accepting requires operator-confirmed wording, scope, dates, and applicability and creates only a normal DRAFT.
+- The resolver reads only APPROVED, PUBLIC_SAFE, effective, unexpired claim revisions with independently approved locale wording and approved immutable provenance.
+- Exact product, packaging, brand, market, audience, objective, and locale restrictions never broaden.
+- Evidence-backed generation is off by default, snapshots exact claim revisions before dispatch, requires returned claim-ID citations, and retains all existing human content/creative/publishing approvals.
+- `KnowledgeIndex` remains unchanged and unused. Semantic retrieval, embeddings, and a vector database were not added.
+
+New migrations, in order:
+
+1. `202607150001_deterministic_knowledge_extraction`
+2. `202607150002_knowledge_ocr`
+3. `202607150003_knowledge_candidate_claims`
+4. `202607150004_generation_evidence_bundles`
+
+All are additive. The fourth adds `ContentRequest.locale` with default `en`; no existing column or table is removed or renamed. None of these migrations was executed against MariaDB in this workspace.
+
+Workspace validation:
+
+- Client TypeScript `--noEmit`: passed.
+- Server TypeScript `--noEmit`: passed.
+- Secret scan: passed after every phase.
+- `git diff --check`: passed after every phase.
+- n8n workflow program syntax: passed.
+- New MariaDB index/constraint names: longest 26 characters, below the 64-character limit.
+- Focused scans found no storage/path exposure and no unauthorized cross-phase coupling.
+- The general n8n checker remains blocked by its existing secret-name heuristic on `13-facebook-publishing.json` environment-variable fields; no Facebook workflow or credential was changed.
+- Vitest, Prisma validation/generation, production build, and MariaDB execution were not run. Vitest and Prisma CLI are absent from this Google Drive workspace; these remain Plesk gates.
+
+Deployment and rollback are documented in `docs/DEPLOYMENT_PLESK.md`. Keep every new flag false for migration and baseline regression, then enable and accept one phase at a time. Provider credentials and data-handling approval can be added later.
+
+Known limitations:
+
+- Extraction, OCR, and candidate provider calls execute within authenticated HTTP requests rather than a separate durable worker queue.
+- Poppler/Tesseract availability and Arabic/English accuracy are unverified until Plesk.
+- Gemini retention, residency, cost policy, credentials, and live output quality are unapproved and disabled.
+- The content request does not yet select a packaging format, so packaging-restricted claims correctly do not match generation.
+- Production `KnowledgeIndex` contents are still not inventoried.
+- Semantic retrieval is deferred pending the documented evaluation threshold.
+
 Canonical restart point after any interrupted or completed session. Read this file first before changing the CP or its n8n workflows.
 
 Last verified: **2026-07-13 (Asia/Amman)**
