@@ -1,0 +1,66 @@
+[
+  {
+    "name": "eligible exact product and packaging claim",
+    "claim": { "status": "APPROVED", "usageScope": "PUBLIC_SAFE", "effectiveAt": "2026-01-01T00:00:00Z", "expiresAt": "2027-01-01T00:00:00Z", "superseded": false },
+    "applicability": { "brandIds": ["brand-a"], "productIds": ["product-a"], "packagingFormatIds": ["pack-5l"], "markets": ["Jordan"], "audiences": ["retail"], "objectives": ["awareness"] },
+    "context": { "brandId": "brand-a", "productId": "product-a", "packagingFormatId": "pack-5l", "market": "jordan", "audience": "Retail", "objective": "AWARENESS" },
+    "at": "2026-07-15T00:00:00Z",
+    "expected": true
+  },
+  {
+    "name": "wrong product never broadens",
+    "claim": { "status": "APPROVED", "usageScope": "PUBLIC_SAFE", "superseded": false },
+    "applicability": { "productIds": ["product-a"], "packagingFormatIds": [], "markets": [] },
+    "context": { "productId": "product-b" },
+    "at": "2026-07-15T00:00:00Z",
+    "expected": false
+  },
+  {
+    "name": "missing packaging context never broadens",
+    "claim": { "status": "APPROVED", "usageScope": "PUBLIC_SAFE", "superseded": false },
+    "applicability": { "productIds": [], "packagingFormatIds": ["pack-10l"], "markets": [] },
+    "context": {},
+    "at": "2026-07-15T00:00:00Z",
+    "expected": false
+  },
+  {
+    "name": "wrong market never broadens",
+    "claim": { "status": "APPROVED", "usageScope": "PUBLIC_SAFE", "superseded": false },
+    "applicability": { "productIds": [], "packagingFormatIds": [], "markets": ["Jordan"] },
+    "context": { "market": "UAE" },
+    "at": "2026-07-15T00:00:00Z",
+    "expected": false
+  },
+  {
+    "name": "internal claim is excluded",
+    "claim": { "status": "APPROVED", "usageScope": "INTERNAL_ONLY", "superseded": false },
+    "applicability": { "productIds": [], "packagingFormatIds": [], "markets": [] },
+    "context": {},
+    "at": "2026-07-15T00:00:00Z",
+    "expected": false
+  },
+  {
+    "name": "future claim is excluded",
+    "claim": { "status": "APPROVED", "usageScope": "PUBLIC_SAFE", "effectiveAt": "2026-08-01T00:00:00Z", "superseded": false },
+    "applicability": { "productIds": [], "packagingFormatIds": [], "markets": [] },
+    "context": {},
+    "at": "2026-07-15T00:00:00Z",
+    "expected": false
+  },
+  {
+    "name": "expired claim is excluded",
+    "claim": { "status": "APPROVED", "usageScope": "PUBLIC_SAFE", "expiresAt": "2026-07-15T00:00:00Z", "superseded": false },
+    "applicability": { "productIds": [], "packagingFormatIds": [], "markets": [] },
+    "context": {},
+    "at": "2026-07-15T00:00:00Z",
+    "expected": false
+  },
+  {
+    "name": "superseded claim is excluded",
+    "claim": { "status": "APPROVED", "usageScope": "PUBLIC_SAFE", "superseded": true },
+    "applicability": { "productIds": [], "packagingFormatIds": [], "markets": [] },
+    "context": {},
+    "at": "2026-07-15T00:00:00Z",
+    "expected": false
+  }
+]

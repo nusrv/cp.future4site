@@ -187,6 +187,8 @@ Purpose: allow content generation to use only resolver-approved evidence.
 
 ## Phase 5: optional semantic retrieval
 
+Decision on 2026-07-15: deferred behind the measured gate in `docs/KNOWLEDGE_RETRIEVAL_DECISION.md`. Exact relational resolution is implemented first; no embedding model, vector database, semantic fallback, or `KnowledgeIndex` migration has been added.
+
 Purpose: improve discovery only if exact relational resolution becomes insufficient.
 
 ### Entry criteria
