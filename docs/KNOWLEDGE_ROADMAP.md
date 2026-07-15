@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 1A is operationally verified in production. The owner reports that Phase 1B production acceptance and the Phase 1C manual pilot are complete and working. Phases 2A, 2B, 2C, 3, and 4 are implemented in source as separate controlled gates. Extraction, OCR, candidate generation, and evidence-backed content generation remain disabled by default pending Plesk migration and operational acceptance. Phase 5 semantic retrieval is deliberately deferred by the measured decision gate.
+Phase 1A, Phase 1B, and the Phase 1C manual pilot are operationally accepted by the owner. On 2026-07-15, Plesk successfully generated Prisma Client, passed 23 test files and 141 tests, passed client/server TypeScript, completed the production build, and applied all four additive knowledge-platform migrations to MariaDB. Phases 2A, 2B, 2C, 3, and 4 are implemented and migrated as separate controlled gates; activation and production evaluation remain intentionally separate. Local OCR on the shared Plesk server is no longer the preferred deployment path. Phase 5 semantic retrieval remains deliberately deferred by the measured decision gate.
 
 ## Non-negotiable architecture
 
@@ -15,7 +15,7 @@ Phase 1A is operationally verified in production. The owner reports that Phase 1
 - Every generated factual statement must remain traceable to approved claim revisions and immutable source versions.
 - No phase may silently broaden product, packaging, market, audience, or objective applicability.
 
-## Gate 0: finish Phase 1B production acceptance
+## Gate 0: Phase 1B production acceptance — complete
 
 ### Required work
 
@@ -37,6 +37,8 @@ Phase 1A is operationally verified in production. The owner reports that Phase 1
 - An approved source, approved bilingual claim, rejected revision, and successful supersession are demonstrated.
 - Existing Phase 1A files and versions remain downloadable and auditable.
 - No generation, n8n, or publishing dispatch occurs.
+
+Completion record: the owner reports Phase 1B and the Phase 1C pilot working in production. The later Plesk gate passed Prisma generation, 141 tests, TypeScript, production build, and all nine migrations, including the four 2026-07-15 knowledge migrations. Detailed evidence is recorded at the top of `SESSION_HANDOFF.md`.
 
 ## Phase 1C: governance and curated knowledge population
 
@@ -93,6 +95,8 @@ Purpose: make source text reviewable without creating or approving claims.
 ## Phase 2B: OCR for scanned documents
 
 Purpose: support image-only PDFs and approved image formats after deterministic extraction is stable.
+
+Deployment decision on 2026-07-15: keep CP's local OCR flag disabled on the shared Plesk server. Plan a remote provider adapter only after the separately isolated Future OCR API is built and independently accepted. The standalone product planning workspace is `..\future_OCR`; it is not part of this repository.
 
 ### Scope
 
@@ -216,6 +220,9 @@ Purpose: improve discovery only if exact relational resolution becomes insuffici
 - Restore drill covering MariaDB plus FILE_STORAGE_PATH as one coordinated backup unit.
 - Operator runbooks and role assignment.
 - A representative bilingual evaluation corpus with expected provenance and applicability.
+- A remote OCR provider contract and CP adapter, deferred until Future OCR is independently stable.
+- Packaging-format selection in content requests if generation must use packaging-restricted claims.
+- Durable queue/worker architecture before extraction, OCR, or provider volume grows beyond controlled synchronous pilots.
 
 ## Decisions required from the owner
 
@@ -231,8 +238,10 @@ Purpose: improve discovery only if exact relational resolution becomes insuffici
 
 ## Recommended immediate sequence
 
-1. Finish Gate 0 on Plesk.
-2. Operate Phase 1C with a small curated pilot.
-3. Review operator friction and data quality.
-4. Approve a separate Phase 2A implementation brief.
-5. Do not schedule OCR, AI candidates, resolver, prompt, n8n, embedding, or publishing changes until their preceding exit gate is met.
+1. Preserve the successful deployment checkpoint and keep all new feature flags disabled until each activation is deliberately piloted.
+2. Pilot Phase 2A with small TXT and CSV sources first; treat PDF/Poppler as a separate shared-server operational decision.
+3. Build and run the bilingual Phase 3 resolver evaluation set over manually approved claims.
+4. Keep CP local OCR disabled and develop Future OCR only in its separate project/session.
+5. Review Gemini data handling, retention, residency, and cost before enabling Phase 2C.
+6. Preserve and inspect the existing n8n workflow before enabling Phase 4 evidence-backed generation last.
+7. Keep Phase 5 deferred unless measured exact-retrieval failures satisfy its documented entry gate.

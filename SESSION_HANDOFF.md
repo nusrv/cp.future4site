@@ -1,5 +1,65 @@
 # Future Foresight CP - Session Handoff
 
+## 2026-07-15 production deployment checkpoint — canonical restart point
+
+Current CP source checkpoint:
+
+- Repository: `ff-admin-finalize`
+- Branch: `develop`
+- Production-tested implementation commit: `c493f6c`
+- `origin/develop` was synchronized and the Google Drive workspace was clean before this documentation update.
+- No application code, migration, production configuration, n8n workflow, or credential was changed while preparing this checkpoint.
+
+Owner-reported Plesk validation:
+
+- `npm run db:generate` passed with Prisma Client 5.22.0.
+- `npm test` passed: 23 test files and 141 tests.
+- `npm run typecheck` passed for client and server.
+- `npm run build` passed: Vite transformed 92 modules and the server TypeScript build completed.
+- `npm run db:migrate` connected to MariaDB database `cp_future_admin`, found nine migrations, and successfully applied:
+  - `202607150001_deterministic_knowledge_extraction`
+  - `202607150002_knowledge_ocr`
+  - `202607150003_knowledge_candidate_claims`
+  - `202607150004_generation_evidence_bundles`
+- The owner reports that the deployment and smoke tests feel successful with no observed problem. This workspace did not independently query Plesk or MariaDB.
+
+Operational status:
+
+- Phases 1A, 1B, and the Phase 1C manual pilot are accepted by the owner.
+- Phases 2A, 2B, 2C, 3, and 4 are implemented and migrated, but their controlled production activation gates are separate.
+- Keep `KNOWLEDGE_OCR_ENABLED=false` on the shared Plesk server. Do not install Tesseract/Poppler there solely for OCR.
+- A separate planning-only Future OCR workspace exists at `..\future_OCR`. It contains a handoff, roadmap, and architecture baseline for a standalone multi-tenant OCR API. It did not modify CP.
+- The later CP-to-Future-OCR adapter is not implemented and requires a separately approved CP phase after that service is stable.
+- Candidate generation remains gated by `KNOWLEDGE_CANDIDATES_ENABLED`, `KNOWLEDGE_CANDIDATE_DATA_APPROVED`, provider policy approval, and credentials.
+- Evidence-backed generation remains gated by `KNOWLEDGE_GENERATION_ENABLED` and must be enabled last, after resolver evaluation and reviewed n8n workflow deployment.
+- Phase 5 semantic retrieval remains deferred behind the measured evaluation gate.
+
+Recommended restart sequence:
+
+1. Confirm current Git status and production commit before changing code.
+2. Record or complete the all-new-flags-disabled production smoke test if evidence was not retained.
+3. Pilot Phase 2A with small TXT and CSV sources first. PDF extraction is a separate Poppler operational decision.
+4. Build a representative bilingual approved-claim resolver evaluation set covering brand, product, packaging, market, audience, objective, dates, and supersession.
+5. Evaluate Phase 3 before enabling candidate generation or evidence-backed generation.
+6. Keep local OCR disabled; continue Future OCR in its separate workspace/session.
+7. Review provider data handling before adding Gemini credentials or enabling Phase 2C.
+8. Preserve the current n8n workflow export, review the evidence-aware workflow, and enable Phase 4 last with an immediate flag rollback plan.
+9. Inspect production `KnowledgeIndex` contents read-only before proposing any migration or retirement.
+10. Review `npm audit` findings without using `npm audit fix --force`.
+
+Known outstanding enhancements:
+
+- Remote Future OCR provider adapter for CP.
+- Packaging-format selection in content requests if packaging-restricted evidence must be generated.
+- Malware/antivirus strategy for private uploads.
+- Queue/worker architecture for durable extraction and provider jobs at higher volume.
+- Monitoring for job failures, queue age, provider cost, evidence/citation failures, storage, and audit anomalies.
+- Coordinated MariaDB plus `FILE_STORAGE_PATH` restore drill.
+- Dependency vulnerability remediation plan.
+- Production `KnowledgeIndex` inventory.
+
+Safe pause state: the migrated schema and built application are operationally accepted; no additional phase needs to be started before the owner is ready.
+
 ## 2026-07-15 knowledge platform Phases 2A through 5 gate
 
 Owner-reported baseline: Phase 1B production acceptance and the Phase 1C manual pilot are complete and working. This workspace did not independently query production.
