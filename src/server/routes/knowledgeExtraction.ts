@@ -21,7 +21,7 @@ export async function knowledgeExtractionRoutes(app: FastifyInstance) {
       include: { requestedBy: { select: actorSelect }, _count: { select: { fragments: true } } },
       orderBy: { createdAt: "desc" }
     });
-    return { extractions: extractions.map(serializeExtraction) };
+    return { extractions: extractions.map((extraction) => serializeExtraction(extraction)) };
   });
 
   app.get("/api/knowledge/extractions/:extractionId", { preHandler: requirePermission("knowledge.read") }, async (request) => {
@@ -52,6 +52,9 @@ export async function knowledgeExtractionRoutes(app: FastifyInstance) {
     }
     if (version.fileObject.securityStatus === "REJECTED") {
       return reply.code(409).send({ error: "Security-rejected files cannot be extracted" });
+    }
+    if (!version.fileObject.storageKey) {
+      return reply.code(409).send({ error: "The source file is not available in private storage" });
     }
     const extractorName = version.fileObject.fileExtension === "pdf" ? "poppler-pdftotext" : "builtin-text";
     const extraction = await prisma.knowledgeDocumentExtraction.create({ data: {

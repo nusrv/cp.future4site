@@ -23,7 +23,7 @@ export async function knowledgeOcrRoutes(app: FastifyInstance) {
       include: { requestedBy: { select: actorSelect }, _count: { select: { pages: true } } },
       orderBy: { createdAt: "desc" }
     });
-    return { jobs: jobs.map(serializeOcrJob) };
+    return { jobs: jobs.map((job) => serializeOcrJob(job)) };
   });
 
   app.get("/api/knowledge/ocr-jobs/:jobId", { preHandler: requirePermission("knowledge.read") }, async (request) => {
@@ -55,6 +55,9 @@ export async function knowledgeOcrRoutes(app: FastifyInstance) {
     }
     if (version.fileObject.securityStatus === "REJECTED") {
       return reply.code(409).send({ error: "Security-rejected files cannot be processed by OCR" });
+    }
+    if (!version.fileObject.storageKey) {
+      return reply.code(409).send({ error: "The source file is not available in private storage" });
     }
     await prisma.knowledgeOcrJob.updateMany({
       where: {
