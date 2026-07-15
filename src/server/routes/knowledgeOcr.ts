@@ -56,7 +56,8 @@ export async function knowledgeOcrRoutes(app: FastifyInstance) {
     if (version.fileObject.securityStatus === "REJECTED") {
       return reply.code(409).send({ error: "Security-rejected files cannot be processed by OCR" });
     }
-    if (!version.fileObject.storageKey) {
+    const storageKey = version.fileObject.storageKey;
+    if (!storageKey) {
       return reply.code(409).send({ error: "The source file is not available in private storage" });
     }
     await prisma.knowledgeOcrJob.updateMany({
@@ -92,7 +93,7 @@ export async function knowledgeOcrRoutes(app: FastifyInstance) {
       throw error;
     }
     try {
-      const source = await readFile(version.fileObject.storageKey);
+      const source = await readFile(storageKey);
       const result = await runKnowledgeOcr(source, version.fileObject.fileExtension, body.languages);
       const completed = await prisma.$transaction(async (tx) => {
         await tx.knowledgeOcrPage.createMany({ data: result.pages.map((page) => ({

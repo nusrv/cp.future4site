@@ -53,7 +53,8 @@ export async function knowledgeExtractionRoutes(app: FastifyInstance) {
     if (version.fileObject.securityStatus === "REJECTED") {
       return reply.code(409).send({ error: "Security-rejected files cannot be extracted" });
     }
-    if (!version.fileObject.storageKey) {
+    const storageKey = version.fileObject.storageKey;
+    if (!storageKey) {
       return reply.code(409).send({ error: "The source file is not available in private storage" });
     }
     const extractorName = version.fileObject.fileExtension === "pdf" ? "poppler-pdftotext" : "builtin-text";
@@ -66,7 +67,7 @@ export async function knowledgeExtractionRoutes(app: FastifyInstance) {
       sourceSha256: version.fileObject.sha256Hash
     } });
     try {
-      const buffer = await readFile(version.fileObject.storageKey);
+      const buffer = await readFile(storageKey);
       const result = await extractKnowledgeText(buffer, version.fileObject.fileExtension);
       const completed = await prisma.$transaction(async (tx) => {
         await tx.knowledgeExtractionFragment.createMany({ data: result.fragments.map((fragment) => ({
