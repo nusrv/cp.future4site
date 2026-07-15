@@ -151,6 +151,10 @@ function buildMockOutput(jobType: string, payload: Record<string, unknown>) {
       warnings: ["Mock mode: no external platform was called."]
     };
   }
+  const knowledgeEvidence = payload.knowledge_evidence && typeof payload.knowledge_evidence === "object" && !Array.isArray(payload.knowledge_evidence)
+    ? payload.knowledge_evidence as Record<string, unknown>
+    : null;
+  const evidenceClaims = Array.isArray(knowledgeEvidence?.claims) ? knowledgeEvidence.claims : [];
   return {
     headline: "Future Oils Internal Draft",
     caption: `Synthetic generated copy for ${(payload.topic as string) || "content request"}. This is mock output for review only.`,
@@ -165,12 +169,11 @@ function buildMockOutput(jobType: string, payload: Record<string, unknown>) {
         height: 1350
       }
     ],
-    evidence_references: [
-      {
-        source_file: "knowledge-base/company.md",
-        source_section: "Brands"
-      }
-    ],
+    evidence_references: evidenceClaims.length
+      ? evidenceClaims.flatMap((claim) => claim && typeof claim === "object" && !Array.isArray(claim) && typeof (claim as any).claim_id === "string"
+        ? [{ claim_id: String((claim as any).claim_id) }]
+        : [])
+      : [{ source_file: "knowledge-base/company.md", source_section: "Brands" }],
     warnings: ["Mock generation: validate all claims before publication."],
     credit_usage: 0
   };

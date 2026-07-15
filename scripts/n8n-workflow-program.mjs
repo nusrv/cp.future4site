@@ -161,7 +161,7 @@ const topic = String(payload.topic ?? "").trim();
 const objective = String(payload.objective ?? "").trim();
 const audience = String(payload.audience ?? "").trim();
 
-const evidence = [
+const legacyEvidence = [
   {
     claim: "The operator selected " + product + " as the product for this content request.",
     source_file: "Control Panel content request",
@@ -184,6 +184,11 @@ const evidence = [
     public_use: true
   }
 ];
+const governedEvidence = payload.knowledge_evidence && Array.isArray(payload.knowledge_evidence.claims)
+  ? payload.knowledge_evidence.claims
+  : [];
+const evidence = governedEvidence.length ? governedEvidence : legacyEvidence;
+const requestedLocale = governedEvidence[0]?.locale === "ar" ? "Arabic" : "English";
 
 const prohibited = [
   "prices",
@@ -198,7 +203,7 @@ const prohibited = [
 ];
 
 const prompt = [
-  "Create English-only B2B social media copy for the selected brand, selected product, and requested topic.",
+  "Create " + requestedLocale + "-language B2B social media copy for the selected brand, selected product, and requested topic.",
   "The requested topic/angle is authoritative and must be the main subject: " + (topic || "the supplied content request") + ".",
   "The selected objective is: " + (objective || "not specified") + ". The intended audience is: " + (audience || "B2B buyers") + ".",
   "The selected product is authoritative product context. Write specifically about: " + product + ", but do not replace the requested topic with generic product copy.",
@@ -240,10 +245,9 @@ function fallbackOutput(reason) {
     ].join("\\n\\n"),
     cta: payload.cta || "Request a Quote",
     hashtags: ["#FutureForesight", "#B2BTrade"],
-    evidence_references: evidence.map((entry) => ({
-      source_file: entry.source_file,
-      source_section: entry.source_section
-    })),
+    evidence_references: evidence.map((entry) => entry.claim_id
+      ? { claim_id: entry.claim_id }
+      : { source_file: entry.source_file, source_section: entry.source_section }),
     warnings: [reason]
   };
 }
@@ -324,10 +328,9 @@ function fallbackOutput(reason) {
     ].join("\\n\\n"),
     cta: payload.cta || "Request a Quote",
     hashtags: ["#FutureForesight", "#B2BTrade"],
-    evidence_references: evidence.map((entry) => ({
-      source_file: entry.source_file,
-      source_section: entry.source_section
-    })),
+    evidence_references: evidence.map((entry) => entry.claim_id
+      ? { claim_id: entry.claim_id }
+      : { source_file: entry.source_file, source_section: entry.source_section }),
     warnings
   };
 }
@@ -354,7 +357,9 @@ if (violations.length) {
     caption: typeof output.caption === "string" ? output.caption : fallbackOutput("Missing caption; safe fallback used.").caption,
     cta: typeof output.cta === "string" ? output.cta.slice(0, 80) : "Request a Quote",
     hashtags: Array.isArray(output.hashtags) ? output.hashtags.filter((tag) => typeof tag === "string").slice(0, 8) : ["#FutureForesight", "#B2BTrade"],
-    evidence_references: Array.isArray(output.evidence_references) ? output.evidence_references : evidence.map((entry) => ({ source_file: entry.source_file, source_section: entry.source_section })),
+    evidence_references: Array.isArray(output.evidence_references) ? output.evidence_references : evidence.map((entry) => entry.claim_id
+      ? { claim_id: entry.claim_id }
+      : { source_file: entry.source_file, source_section: entry.source_section }),
     warnings
   };
 }

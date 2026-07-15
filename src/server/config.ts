@@ -45,6 +45,7 @@ const envSchema = z.object({
   KNOWLEDGE_CANDIDATE_MAX_FRAGMENTS: z.coerce.number().int().min(1).max(100).default(20),
   KNOWLEDGE_CANDIDATE_MAX_COUNT: z.coerce.number().int().min(1).max(50).default(10),
   KNOWLEDGE_CANDIDATE_MAX_INPUT_CHARS: z.coerce.number().int().min(1000).max(1000000).default(100000),
+  KNOWLEDGE_GENERATION_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   LOG_LEVEL: z.string().default("info")
 });
 

@@ -1,5 +1,15 @@
 # Private Knowledge Library
 
+## Phase 4: evidence-backed generation boundary
+
+Phase 4 is disabled by default with `KNOWLEDGE_GENERATION_ENABLED=false`; existing content generation payloads remain unchanged while disabled. New content requests record an explicit English or Arabic locale. Existing rows receive the additive safe default `en`.
+
+When enabled, CP resolves the request's verified brand, optional product, locale, market, audience, and objective through Phase 3. Packaging-restricted claims do not match because content requests do not currently select a packaging format. Unresolved identity, missing coverage, conflicts, or resolver truncation stop dispatch.
+
+Before creating the automation job, CP stores an immutable `KnowledgeEvidenceBundle` containing the exact resolution context, public-safe approved wording, claim/revision IDs, applicability, and safe provenance. The same bundle is included in the signed n8n payload. n8n does not access MariaDB. The content workflow prefers this governed evidence, requests claim-ID citations, and retains its legacy path only when the Phase 4 flag is off.
+
+Immediate mock output and signed live callbacks must cite one or more claim IDs from that exact snapshot. Missing or foreign references fail the job and prevent content-item materialization. The operator can inspect the snapshot from the content request. Evidence-backed requests cannot use the existing permanent-delete action, preserving auditability. Copy, creative, and publishing approval remain separate human decisions.
+
 ## Phase 3: deterministic approved-claim resolver
 
 Phase 3 adds a read-only CP service over `KnowledgeClaim`; it does not read or synchronize `KnowledgeIndex`. The resolver accepts an exact locale, brand, product, packaging format, market, audience, objective, and evaluation time. Product brand is derived when available, and contradictory product/brand context returns no claims.

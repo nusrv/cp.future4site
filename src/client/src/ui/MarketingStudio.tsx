@@ -162,6 +162,7 @@ function RequestDetail({ request, busy, onGenerate, onReview, onCreativeReview, 
       <StatusBadge stage={stage} />
     </header>
     <WorkflowProgress request={request} stage={stage} />
+    <EvidencePanel requestId={request.id} />
 
     <div className={`preview-grid ${needsMedia(request.format) ? "has-media" : ""}`}>
       <section className="preview-section">
@@ -216,6 +217,40 @@ function RequestDetail({ request, busy, onGenerate, onReview, onCreativeReview, 
   </>;
 }
 
+function EvidencePanel({ requestId }: { requestId: string }) {
+  const evidence = useQuery<{ bundles: Array<{
+    id: string;
+    resolutionId: string;
+    locale: string;
+    claimCount: number;
+    createdAt: string;
+    createdBy: { displayName: string };
+    claims: Array<{
+      claim_id: string;
+      stable_key: string;
+      revision: number;
+      claim_type: string;
+      locale: string;
+      approved_wording: string;
+      provenance: Array<{ document_title: string; version_number: number; page_number?: number | null }>;
+    }>;
+  }> }>({
+    queryKey: ["content-evidence", requestId],
+    queryFn: () => api("/api/content/requests/" + encodeURIComponent(requestId) + "/evidence")
+  });
+  const latest = evidence.data?.bundles[0];
+  if (!latest) return null;
+  return <details className="content-evidence">
+    <summary><span><strong>Approved knowledge evidence</strong><small>{latest.claimCount} claim{latest.claimCount === 1 ? "" : "s"} · {latest.locale.toUpperCase()} · {new Date(latest.createdAt).toLocaleString()}</small></span><span>View evidence</span></summary>
+    <div className="content-evidence-list">{latest.claims.map((claim) => <article key={claim.claim_id}>
+      <header><strong>{claim.stable_key}</strong><span>Revision {claim.revision}</span></header>
+      <p lang={claim.locale} dir={claim.locale === "ar" ? "rtl" : "ltr"}>{claim.approved_wording}</p>
+      <small>{claim.provenance.map((source) => source.document_title + " v" + source.version_number + (source.page_number ? " p." + source.page_number : "")).join(", ")}</small>
+    </article>)}</div>
+    <footer>Resolution {latest.resolutionId.slice(0, 12)} · prepared by {latest.createdBy.displayName}</footer>
+  </details>;
+}
+
 function CopyEditor({ item, busy, onCancel, onSave }: { item: ContentRequest["items"][number]; busy: boolean; onCancel: () => void; onSave: (body: CopyUpdate) => void }) {
   return <form className="copy-editor" onSubmit={(event) => {
     event.preventDefault();
@@ -259,7 +294,7 @@ function RequestForm({ backgrounds, pending, error, onSubmit }: { backgrounds: C
     const form = new FormData(event.currentTarget);
     const format = String(form.get("format"));
     onSubmit({
-      topic: String(form.get("topic")), brand: String(form.get("brand")), businessLine: String(form.get("businessLine")), product: String(form.get("product")), market: String(form.get("market")), audience: String(form.get("audience")), objective: String(form.get("objective")), channel: format === "text" ? "Facebook" : "Facebook, Instagram", format, creativeTemplateId: String(form.get("creativeTemplateId") || "future-oils-classic"), cta: String(form.get("cta")), internalNotes: String(form.get("internalNotes")), requestedPublishingChannels: format === "text" ? ["facebook"] : ["facebook", "instagram"]
+      topic: String(form.get("topic")), brand: String(form.get("brand")), businessLine: String(form.get("businessLine")), product: String(form.get("product")), locale: String(form.get("locale")), market: String(form.get("market")), audience: String(form.get("audience")), objective: String(form.get("objective")), channel: format === "text" ? "Facebook" : "Facebook, Instagram", format, creativeTemplateId: String(form.get("creativeTemplateId") || "future-oils-classic"), cta: String(form.get("cta")), internalNotes: String(form.get("internalNotes")), requestedPublishingChannels: format === "text" ? ["facebook"] : ["facebook", "instagram"]
     });
   }}>
     <div className="form-heading"><div><h2>New content request</h2><p>Start with the copy. Media is created only after copy approval.</p></div></div>
@@ -267,6 +302,7 @@ function RequestForm({ backgrounds, pending, error, onSubmit }: { backgrounds: C
     <Input name="brand" label="Brand" defaultValue="Future Oils" />
     <Input name="businessLine" label="Business line" defaultValue="Edible Oils" />
     <Input name="product" label="Product" />
+    <label><span className="label">Content language</span><select className="input" name="locale" defaultValue="en"><option value="en">English</option><option value="ar">Arabic</option></select></label>
     <Input name="market" label="Market" defaultValue="Gulf/MENA" />
     <Input name="audience" label="Audience" defaultValue="Importers and distributors" />
     <label><span className="label">Format</span><select className="input" name="format" defaultValue="text_image"><option value="text">Text only</option><option value="text_image">Text and image</option><option value="text_video">Text and video</option><option value="carousel">Carousel</option></select></label>

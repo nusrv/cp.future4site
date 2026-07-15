@@ -46,6 +46,7 @@ export const contentRequestSchema = z.object({
   brand: z.string().min(1).max(120),
   businessLine: z.string().max(120).optional().default(""),
   product: z.string().max(160).optional().default(""),
+  locale: z.enum(["en", "ar"]).default("en"),
   market: z.string().max(160).optional().default(""),
   audience: z.string().max(240).optional().default(""),
   objective: z.string().max(500).optional().default(""),

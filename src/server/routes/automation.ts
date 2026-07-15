@@ -8,6 +8,7 @@ import { signPayload, timingSafeEqual } from "../security/crypto.js";
 import { addJobEvent, dispatchJob, transitionJob } from "../services/automation.js";
 import { deleteFile, readFile, saveFile } from "../services/storage.js";
 import { automationCallbackSchema } from "../../shared/contracts.js";
+import { evidenceClaimIds, KnowledgeEvidenceError, validateEvidenceReferences } from "../services/knowledgeEvidence.js";
 
 const completedContentStatuses = new Set(["completed", "completed_with_warnings"]);
 
@@ -162,6 +163,37 @@ export async function automationRoutes(app: FastifyInstance) {
       reply.code(409);
       return { error: "Callback correlation mismatch" };
     }
+    const evidenceBundle = job.jobType === "content_generation"
+      ? await prisma.knowledgeEvidenceBundle.findUnique({ where: { automationJobId: job.id } })
+      : null;
+    if (evidenceBundle && completedContentStatuses.has(input.status)) {
+      try {
+        validateEvidenceReferences(input.outputs ?? {}, evidenceClaimIds(evidenceBundle.claims));
+      } catch (error) {
+        const evidenceError = error instanceof KnowledgeEvidenceError
+          ? error
+          : new KnowledgeEvidenceError("EVIDENCE_VALIDATION_FAILED", "Generated evidence references failed validation", 409);
+        await prisma.$transaction([
+          prisma.automationJob.update({ where: { id: job.id }, data: {
+            currentStatus: "FAILED",
+            currentStep: "Evidence validation failed",
+            errorCode: evidenceError.code,
+            errorMessage: evidenceError.message,
+            completedAt: new Date()
+          } }),
+          ...(job.contentRequestId ? [prisma.contentRequest.update({ where: { id: job.contentRequestId }, data: { status: "FAILED" } })] : []),
+          prisma.automationJobEvent.create({ data: {
+            jobId: job.id,
+            eventType: "evidence_validation_failed",
+            previousStatus: job.currentStatus,
+            newStatus: "FAILED",
+            message: evidenceError.message,
+            payloadSummary: { evidenceBundleId: evidenceBundle.id, resolutionId: evidenceBundle.resolutionId, errorCode: evidenceError.code }
+          } })
+        ]);
+        return reply.code(422).send({ error: evidenceError.message });
+      }
+    }
     const composedFiles = job.jobType === "creative_image_generation" && completedContentStatuses.has(input.status)
       ? (input.files ?? []).filter((file) => file.source === "n8n-sharp-compositor" && typeof file.data_base64 === "string")
       : [];
@@ -234,7 +266,10 @@ export async function automationRoutes(app: FastifyInstance) {
                 cta: optionalString(output.cta),
                 hashtags: formatHashtags(output.hashtags),
                 status: "AWAITING_REVIEW",
-                metadata: output as Prisma.InputJsonValue
+                metadata: {
+                  ...output,
+                  ...(evidenceBundle ? { knowledgeEvidenceBundleId: evidenceBundle.id, resolutionId: evidenceBundle.resolutionId } : {})
+                } as Prisma.InputJsonValue
               }
             });
             contentItemId = item.id;

@@ -166,6 +166,7 @@ model User {
   knowledgeOcrJobsRequested KnowledgeOcrJob[] @relation("KnowledgeOcrRequester")
   knowledgeCandidateRunsRequested KnowledgeCandidateRun[] @relation("KnowledgeCandidateRequester")
   knowledgeCandidatesDecided KnowledgeCandidateClaim[] @relation("KnowledgeCandidateDecider")
+  knowledgeEvidenceBundlesCreated KnowledgeEvidenceBundle[] @relation("KnowledgeEvidenceCreator")
   knowledgeVersionsReviewed KnowledgeDocumentVersion[] @relation("KnowledgeVersionReviewer")
   knowledgeVersionsApproved KnowledgeDocumentVersion[] @relation("KnowledgeVersionApprover")
   knowledgeReviewEvents KnowledgeDocumentVersionReview[] @relation("KnowledgeReviewActor")
@@ -279,6 +280,7 @@ model AutomationJob {
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
   events             AutomationJobEvent[]
+  knowledgeEvidenceBundle KnowledgeEvidenceBundle?
 }
 
 model AutomationJobEvent {
@@ -929,6 +931,7 @@ model ContentRequest {
   brand       String
   businessLine String
   product     String?
+  locale      String        @default("en")
   market      String?
   audience    String?
   objective   String?       @db.Text
@@ -945,6 +948,26 @@ model ContentRequest {
   updatedAt   DateTime      @updatedAt
   items       ContentItem[]
   assets      CreativeAsset[]
+  knowledgeEvidenceBundles KnowledgeEvidenceBundle[]
+}
+
+model KnowledgeEvidenceBundle {
+  id String @id @default(cuid())
+  contentRequestId String
+  automationJobId String? @unique
+  resolutionId String @db.VarChar(64)
+  locale String
+  context Json
+  claims Json
+  claimCount Int
+  createdByUserId String
+  createdAt DateTime @default(now())
+  contentRequest ContentRequest @relation(fields: [contentRequestId], references: [id], onDelete: Restrict)
+  automationJob AutomationJob? @relation(fields: [automationJobId], references: [id], onDelete: SetNull)
+  createdBy User @relation("KnowledgeEvidenceCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  @@index([contentRequestId, createdAt])
+  @@index([resolutionId])
+  @@index([createdByUserId, createdAt])
 }
 
 model ContentItem {

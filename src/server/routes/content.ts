@@ -12,6 +12,7 @@ import { getPublishingCapabilities } from "../services/publishingCapabilities.js
 import { readFile, saveFile } from "../services/storage.js";
 import { contentRequestSchema } from "../../shared/contracts.js";
 import { getUnavailablePublishingPlatform } from "../../shared/publishingCapabilities.js";
+import { buildContentEvidence, evidenceClaimIds, validateEvidenceReferences } from "../services/knowledgeEvidence.js";
 
 export async function contentRoutes(app: FastifyInstance) {
   app.get("/api/content/publishing-capabilities", { preHandler: requirePermission("publishing.request") }, async () => {
@@ -54,6 +55,7 @@ export async function contentRoutes(app: FastifyInstance) {
         brand: input.brand,
         businessLine: input.businessLine.trim() || input.brand,
         product: input.product,
+        locale: input.locale,
         market: input.market,
         audience: input.audience,
         objective: input.objective,
@@ -88,11 +90,41 @@ export async function contentRoutes(app: FastifyInstance) {
     return { request: item, jobs, approvals };
   });
 
+  app.get("/api/content/requests/:id/evidence", { preHandler: requirePermission("content.read") }, async (request) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const bundles = await prisma.knowledgeEvidenceBundle.findMany({
+      where: { contentRequestId: id },
+      select: {
+        id: true,
+        resolutionId: true,
+        locale: true,
+        context: true,
+        claims: true,
+        claimCount: true,
+        automationJobId: true,
+        createdAt: true,
+        createdBy: { select: { displayName: true, username: true } }
+      },
+      orderBy: { createdAt: "desc" },
+      take: 20
+    });
+    return { bundles };
+  });
+
   app.post("/api/content/requests/:id/generate", { preHandler: requirePermission("content.write") }, async (request) => {
     const current = request.currentUser!;
     const params = z.object({ id: z.string() }).parse(request.params);
     const content = await prisma.contentRequest.findUniqueOrThrow({ where: { id: params.id } });
-    await prisma.contentRequest.update({ where: { id: content.id }, data: { status: "SUBMITTED" } });
+    const evidence = config.KNOWLEDGE_GENERATION_ENABLED ? await buildContentEvidence(content) : null;
+    const evidenceBundle = evidence ? await prisma.knowledgeEvidenceBundle.create({ data: {
+      contentRequestId: content.id,
+      resolutionId: evidence.resolution.resolutionId,
+      locale: content.locale,
+      context: evidence.resolution.context,
+      claims: evidence.payload.claims,
+      claimCount: evidence.payload.claims.length,
+      createdByUserId: current.user.id
+    } }) : null;
     const job = await createAutomationJob({
       jobType: "content_generation",
       title: `Generate content: ${content.topic.slice(0, 80)}`,
@@ -111,13 +143,19 @@ export async function contentRoutes(app: FastifyInstance) {
         audience: content.audience,
         objective: content.objective,
         format: content.format,
-        cta: content.cta
+        cta: content.cta,
+        ...(evidence ? { knowledge_evidence: evidence.payload } : {})
       }
     });
+    if (evidenceBundle) {
+      await prisma.knowledgeEvidenceBundle.update({ where: { id: evidenceBundle.id }, data: { automationJobId: job.id } });
+    }
+    await prisma.contentRequest.update({ where: { id: content.id }, data: { status: "SUBMITTED" } });
     await dispatchJob(job.id);
     const refreshed = await prisma.automationJob.findUniqueOrThrow({ where: { id: job.id } });
     if (refreshed.currentStatus === "COMPLETED") {
       const output = refreshed.outputPayload as any;
+      if (evidenceBundle && evidence) validateEvidenceReferences(output ?? {}, evidenceClaimIds(evidence.payload.claims));
       await prisma.contentItem.create({
         data: {
           contentRequestId: content.id,
@@ -127,12 +165,19 @@ export async function contentRoutes(app: FastifyInstance) {
           cta: output?.cta,
           hashtags: Array.isArray(output?.hashtags) ? output.hashtags.join(" ") : "",
           status: "AWAITING_REVIEW",
-          metadata: output
+          metadata: evidenceBundle && evidence ? { ...output, knowledgeEvidenceBundleId: evidenceBundle.id, resolutionId: evidence.resolution.resolutionId } : output
         }
       });
       await prisma.contentRequest.update({ where: { id: content.id }, data: { status: "AWAITING_REVIEW" } });
     }
-    await audit({ actorUserId: current.user.id, action: "content.generation_requested", entityType: "content_request", entityId: content.id, summary: "Content generation requested" });
+    await audit({
+      actorUserId: current.user.id,
+      action: "content.generation_requested",
+      entityType: "content_request",
+      entityId: content.id,
+      summary: "Content generation requested",
+      metadata: evidenceBundle && evidence ? { evidenceBundleId: evidenceBundle.id, resolutionId: evidence.resolution.resolutionId, claimIds: evidenceClaimIds(evidence.payload.claims) } : undefined
+    });
     return { job: refreshed };
   });
 
@@ -221,8 +266,11 @@ export async function contentRoutes(app: FastifyInstance) {
     const params = z.object({ id: z.string() }).parse(request.params);
     const content = await prisma.contentRequest.findUniqueOrThrow({
       where: { id: params.id },
-      include: { items: { include: { publishingRecords: true } }, assets: true }
+      include: { items: { include: { publishingRecords: true } }, assets: true, _count: { select: { knowledgeEvidenceBundles: true } } }
     });
+    if (content._count.knowledgeEvidenceBundles) {
+      throw Object.assign(new Error("Evidence-backed content requests remain auditable and cannot be permanently deleted"), { statusCode: 409 });
+    }
     const itemIds = content.items.map((item) => item.id);
     const assetIds = content.assets.map((asset) => asset.id);
     const retainedGeneratedAssetIds = content.assets
