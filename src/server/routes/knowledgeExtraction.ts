@@ -57,7 +57,11 @@ export async function knowledgeExtractionRoutes(app: FastifyInstance) {
     if (!storageKey) {
       return reply.code(409).send({ error: "The source file is not available in private storage" });
     }
-    const extractorName = version.fileObject.fileExtension === "pdf" ? "poppler-pdftotext" : "builtin-text";
+    const fileExtension = version.fileObject.fileExtension;
+    if (!fileExtension) {
+      return reply.code(409).send({ error: "The source file type is unavailable" });
+    }
+    const extractorName = fileExtension === "pdf" ? "poppler-pdftotext" : "builtin-text";
     const extraction = await prisma.knowledgeDocumentExtraction.create({ data: {
       documentVersionId: version.id,
       requestedByUserId: current.user.id,
@@ -68,7 +72,7 @@ export async function knowledgeExtractionRoutes(app: FastifyInstance) {
     } });
     try {
       const buffer = await readFile(storageKey);
-      const result = await extractKnowledgeText(buffer, version.fileObject.fileExtension);
+      const result = await extractKnowledgeText(buffer, fileExtension);
       const completed = await prisma.$transaction(async (tx) => {
         await tx.knowledgeExtractionFragment.createMany({ data: result.fragments.map((fragment) => ({
           id: nanoid(24),

@@ -60,6 +60,10 @@ export async function knowledgeOcrRoutes(app: FastifyInstance) {
     if (!storageKey) {
       return reply.code(409).send({ error: "The source file is not available in private storage" });
     }
+    const fileExtension = version.fileObject.fileExtension;
+    if (!fileExtension) {
+      return reply.code(409).send({ error: "The source file type is unavailable" });
+    }
     await prisma.knowledgeOcrJob.updateMany({
       where: {
         activeKey: version.id,
@@ -94,7 +98,7 @@ export async function knowledgeOcrRoutes(app: FastifyInstance) {
     }
     try {
       const source = await readFile(storageKey);
-      const result = await runKnowledgeOcr(source, version.fileObject.fileExtension, body.languages);
+      const result = await runKnowledgeOcr(source, fileExtension, body.languages);
       const completed = await prisma.$transaction(async (tx) => {
         await tx.knowledgeOcrPage.createMany({ data: result.pages.map((page) => ({
           id: nanoid(24),
