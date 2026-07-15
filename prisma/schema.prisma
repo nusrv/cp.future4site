@@ -132,6 +132,18 @@ enum KnowledgeExtractionStatus {
   UNSUPPORTED
 }
 
+enum KnowledgeCandidateRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+enum KnowledgeCandidateStatus {
+  PROPOSED
+  ACCEPTED
+  REJECTED
+}
+
 model User {
   id                    String       @id @default(cuid())
   username              String       @unique
@@ -152,6 +164,8 @@ model User {
   knowledgeVersionsUploaded KnowledgeDocumentVersion[] @relation("KnowledgeVersionUploader")
   knowledgeExtractionsRequested KnowledgeDocumentExtraction[] @relation("KnowledgeExtractionRequester")
   knowledgeOcrJobsRequested KnowledgeOcrJob[] @relation("KnowledgeOcrRequester")
+  knowledgeCandidateRunsRequested KnowledgeCandidateRun[] @relation("KnowledgeCandidateRequester")
+  knowledgeCandidatesDecided KnowledgeCandidateClaim[] @relation("KnowledgeCandidateDecider")
   knowledgeVersionsReviewed KnowledgeDocumentVersion[] @relation("KnowledgeVersionReviewer")
   knowledgeVersionsApproved KnowledgeDocumentVersion[] @relation("KnowledgeVersionApprover")
   knowledgeReviewEvents KnowledgeDocumentVersionReview[] @relation("KnowledgeReviewActor")
@@ -599,6 +613,7 @@ model KnowledgeDocumentExtraction {
   documentVersion KnowledgeDocumentVersion @relation(fields: [documentVersionId], references: [id], onDelete: Restrict)
   requestedBy User @relation("KnowledgeExtractionRequester", fields: [requestedByUserId], references: [id], onDelete: Restrict)
   fragments KnowledgeExtractionFragment[]
+  candidateRuns KnowledgeCandidateRun[]
   @@index([documentVersionId, createdAt])
   @@index([status, createdAt])
   @@index([requestedByUserId, createdAt])
@@ -615,6 +630,7 @@ model KnowledgeExtractionFragment {
   characterCount Int
   createdAt DateTime @default(now())
   extraction KnowledgeDocumentExtraction @relation(fields: [extractionId], references: [id], onDelete: Restrict)
+  candidateSources KnowledgeCandidateSource[]
   @@unique([extractionId, ordinal])
   @@index([extractionId, pageNumber])
 }
@@ -641,6 +657,7 @@ model KnowledgeOcrJob {
   documentVersion KnowledgeDocumentVersion @relation(fields: [documentVersionId], references: [id], onDelete: Restrict)
   requestedBy User @relation("KnowledgeOcrRequester", fields: [requestedByUserId], references: [id], onDelete: Restrict)
   pages KnowledgeOcrPage[]
+  candidateRuns KnowledgeCandidateRun[]
   @@index([documentVersionId, createdAt])
   @@index([status, createdAt])
   @@index([requestedByUserId, createdAt])
@@ -657,8 +674,90 @@ model KnowledgeOcrPage {
   lowConfidence Boolean @default(false)
   createdAt DateTime @default(now())
   ocrJob KnowledgeOcrJob @relation(fields: [ocrJobId], references: [id], onDelete: Restrict)
+  candidateSources KnowledgeCandidateSource[]
   @@unique([ocrJobId, pageNumber])
   @@index([ocrJobId, lowConfidence])
+}
+
+model KnowledgeCandidateRun {
+  id String @id @default(cuid())
+  activeKey String? @unique @db.VarChar(191)
+  requestedByUserId String
+  extractionId String?
+  ocrJobId String?
+  status KnowledgeCandidateRunStatus @default(RUNNING)
+  provider String
+  model String
+  promptVersion String
+  inputHash String @db.VarChar(64)
+  candidateCount Int @default(0)
+  inputTokens Int?
+  outputTokens Int?
+  durationMs Int?
+  errorCode String? @db.VarChar(120)
+  errorMessage String? @db.Text
+  startedAt DateTime @default(now())
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  requestedBy User @relation("KnowledgeCandidateRequester", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  extraction KnowledgeDocumentExtraction? @relation(fields: [extractionId], references: [id], onDelete: Restrict)
+  ocrJob KnowledgeOcrJob? @relation(fields: [ocrJobId], references: [id], onDelete: Restrict)
+  candidates KnowledgeCandidateClaim[]
+  @@index([status, createdAt])
+  @@index([extractionId, createdAt])
+  @@index([ocrJobId, createdAt])
+  @@index([requestedByUserId, createdAt])
+}
+
+model KnowledgeCandidateClaim {
+  id String @id @default(cuid())
+  runId String
+  ordinal Int
+  status KnowledgeCandidateStatus @default(PROPOSED)
+  proposedStableKey String
+  proposedClaimType String
+  explanation String? @db.Text
+  confidence Float?
+  decidedByUserId String?
+  decidedAt DateTime?
+  decisionReason String? @db.Text
+  acceptedClaimId String? @unique
+  createdAt DateTime @default(now())
+  run KnowledgeCandidateRun @relation(fields: [runId], references: [id], onDelete: Restrict)
+  decidedBy User? @relation("KnowledgeCandidateDecider", fields: [decidedByUserId], references: [id], onDelete: Restrict)
+  acceptedClaim KnowledgeClaim? @relation(fields: [acceptedClaimId], references: [id], onDelete: Restrict)
+  translations KnowledgeCandidateTranslation[]
+  sources KnowledgeCandidateSource[]
+  @@unique([runId, ordinal])
+  @@index([status, createdAt])
+  @@index([proposedStableKey])
+}
+
+model KnowledgeCandidateTranslation {
+  id String @id @default(cuid())
+  candidateId String
+  locale String
+  wording String @db.Text
+  createdAt DateTime @default(now())
+  candidate KnowledgeCandidateClaim @relation(fields: [candidateId], references: [id], onDelete: Restrict)
+  @@unique([candidateId, locale])
+  @@index([locale])
+}
+
+model KnowledgeCandidateSource {
+  id String @id @default(cuid())
+  candidateId String
+  extractionFragmentId String?
+  ocrPageId String?
+  sourceExcerpt String? @db.Text
+  createdAt DateTime @default(now())
+  candidate KnowledgeCandidateClaim @relation(fields: [candidateId], references: [id], onDelete: Restrict)
+  extractionFragment KnowledgeExtractionFragment? @relation(fields: [extractionFragmentId], references: [id], onDelete: Restrict)
+  ocrPage KnowledgeOcrPage? @relation(fields: [ocrPageId], references: [id], onDelete: Restrict)
+  @@unique([candidateId, extractionFragmentId])
+  @@unique([candidateId, ocrPageId])
+  @@index([extractionFragmentId])
+  @@index([ocrPageId])
 }
 
 model KnowledgeDocumentVersionReview {
@@ -717,6 +816,7 @@ model KnowledgeClaim {
   markets KnowledgeClaimMarket[]
   audiences KnowledgeClaimAudience[]
   objectives KnowledgeClaimObjective[]
+  acceptedCandidate KnowledgeCandidateClaim?
   @@unique([stableKey, revision], map: "KnowledgeClaim_stableKey_revision_key")
   @@index([stableKey])
   @@index([status, updatedAt])

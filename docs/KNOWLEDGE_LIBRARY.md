@@ -1,5 +1,23 @@
 # Private Knowledge Library
 
+## Phase 2C: provider-gated candidate claims
+
+Phase 2C adds Gemini-assisted proposals behind three independent gates: `KNOWLEDGE_CANDIDATES_ENABLED=true`, `KNOWLEDGE_CANDIDATE_DATA_APPROVED=true`, and a configured `GEMINI_API_KEY`. All default to disabled or empty. Before enablement, the owner must approve provider terms, retention, residency, cost limits, and which source classes may leave CP.
+
+Operators explicitly select fragments from a successful deterministic extraction or OCR result whose immutable source version is still `APPROVED_SOURCE` and whose document is active. The adapter uses a fixed versioned prompt, zero temperature, JSON structured output, time/input/fragment/candidate quotas, strict schema parsing, and source-ID validation. Provider errors never expose response bodies or credentials.
+
+Runs, proposals, locale suggestions, fragment provenance, model, prompt version, token counts, timing, and decisions are stored separately from `KnowledgeClaim`. A proposal can be rejected or reviewed through an explicit form. Acceptance requires the operator to verify and resubmit the stable key, claim type, each locale wording, usage scope, dates, restrictions, and at least one applicability dimension. Only then is a normal editable `DRAFT` claim created transactionally. It still requires all Phase 1B locale and claim approvals.
+
+Candidate output never becomes approved, public-safe, resolver-visible, or available to content generation. n8n receives no database access and is not used by this implementation.
+
+API:
+
+- `GET /api/knowledge/candidate-runs`
+- `GET /api/knowledge/candidate-runs/:runId`
+- `POST /api/knowledge/candidate-runs`
+- `POST /api/knowledge/candidates/:candidateId/reject`
+- `POST /api/knowledge/candidates/:candidateId/accept-draft`
+
 ## Phase 2B: explicit OCR proposals
 
 Phase 2B adds separate operator-requested OCR jobs for PDF, PNG, JPEG, and WebP source versions. It is disabled by default with `KNOWLEDGE_OCR_ENABLED=false`. Tesseract performs Arabic, English, or bilingual OCR; Poppler `pdftoppm` rasterizes bounded PDF pages in an application-controlled temporary directory that is removed after each run.

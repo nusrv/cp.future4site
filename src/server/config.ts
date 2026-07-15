@@ -37,6 +37,14 @@ const envSchema = z.object({
   KNOWLEDGE_OCR_MAX_CHARS: z.coerce.number().int().min(1000).max(10000000).default(2000000),
   KNOWLEDGE_OCR_MAX_RASTER_BYTES: z.coerce.number().int().min(1048576).max(1073741824).default(262144000),
   KNOWLEDGE_OCR_LOW_CONFIDENCE: z.coerce.number().min(0).max(100).default(70),
+  KNOWLEDGE_CANDIDATES_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
+  KNOWLEDGE_CANDIDATE_DATA_APPROVED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
+  GEMINI_API_KEY: z.string().optional().default(""),
+  KNOWLEDGE_GEMINI_MODEL: z.string().default("gemini-2.5-flash-lite"),
+  KNOWLEDGE_CANDIDATE_TIMEOUT_MS: z.coerce.number().int().min(1000).max(300000).default(60000),
+  KNOWLEDGE_CANDIDATE_MAX_FRAGMENTS: z.coerce.number().int().min(1).max(100).default(20),
+  KNOWLEDGE_CANDIDATE_MAX_COUNT: z.coerce.number().int().min(1).max(50).default(10),
+  KNOWLEDGE_CANDIDATE_MAX_INPUT_CHARS: z.coerce.number().int().min(1000).max(1000000).default(100000),
   LOG_LEVEL: z.string().default("info")
 });
 

@@ -76,6 +76,32 @@ type KnowledgeExtraction = {
   errorMessage?: string | null;
   completedAt?: string | null;
   createdAt: string;
+  fragments?: Array<{ id: string; ordinal: number; pageNumber?: number | null; content: string }>;
+};
+
+type KnowledgeCandidate = {
+  id: string;
+  ordinal: number;
+  status: "PROPOSED" | "ACCEPTED" | "REJECTED";
+  proposedStableKey: string;
+  proposedClaimType: string;
+  explanation?: string | null;
+  confidence?: number | null;
+  translations: Array<{ id: string; locale: "en" | "ar"; wording: string }>;
+  sources: Array<{ id: string; pageNumber?: number | null; sourceExcerpt?: string | null }>;
+  decisionReason?: string | null;
+  acceptedClaim?: { id: string; stableKey: string; revision: number; status: string } | null;
+};
+
+type KnowledgeCandidateRun = {
+  id: string;
+  status: "RUNNING" | "SUCCEEDED" | "FAILED";
+  model: string;
+  promptVersion: string;
+  candidateCount: number;
+  errorMessage?: string | null;
+  createdAt: string;
+  candidates?: KnowledgeCandidate[];
 };
 
 type KnowledgeOcrJob = {
@@ -133,6 +159,9 @@ export function KnowledgeLibrary({ permissions }: { permissions: string[] }) {
   const canApprove = permissions.includes("knowledge.approve");
   const canExtract = permissions.includes("knowledge.extract");
   const canOcr = permissions.includes("knowledge.ocr");
+  const canGenerateCandidates = permissions.includes("knowledge.candidate.generate");
+  const canReviewCandidates = permissions.includes("knowledge.candidate.review");
+  const canCreateClaim = permissions.includes("knowledge.claim.create");
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -245,6 +274,9 @@ export function KnowledgeLibrary({ permissions }: { permissions: string[] }) {
           canApprove={canApprove}
           canExtract={canExtract}
           canOcr={canOcr}
+          canGenerateCandidates={canGenerateCandidates}
+          canReviewCandidates={canReviewCandidates}
+          canCreateClaim={canCreateClaim}
           editing={editing}
           confirmingLifecycle={confirmLifecycle}
           busy={replaceVersion.isPending || editDocument.isPending || lifecycle.isPending || reviewVersion.isPending}
@@ -317,6 +349,9 @@ function DocumentDetail(props: {
   canApprove: boolean;
   canExtract: boolean;
   canOcr: boolean;
+  canGenerateCandidates: boolean;
+  canReviewCandidates: boolean;
+  canCreateClaim: boolean;
   editing: boolean;
   confirmingLifecycle: "archive" | "restore" | null;
   busy: boolean;
@@ -352,6 +387,7 @@ function DocumentDetail(props: {
       <SourceReviewActions version={version} active={document.lifecycleStatus === "ACTIVE"} canEdit={props.canEdit} canReview={props.canReview} canApprove={props.canApprove} busy={props.busy} onReview={props.onReview} />
       <VersionExtraction documentId={document.id} version={version} active={document.lifecycleStatus === "ACTIVE"} canExtract={props.canExtract} />
       <VersionOcr documentId={document.id} version={version} active={document.lifecycleStatus === "ACTIVE"} canOcr={props.canOcr} />
+      <VersionCandidates documentId={document.id} version={version} active={document.lifecycleStatus === "ACTIVE"} canGenerate={props.canGenerateCandidates} canReview={props.canReviewCandidates} canCreateClaim={props.canCreateClaim} />
     </li>)}</ol></section>
 
     {props.auditEvents.length ? <section className="knowledge-section"><h3>Recent activity</h3><ol className="knowledge-audit-list">{props.auditEvents.slice(0, 10).map((event) => <li key={event.id}><strong>{event.summary}</strong><span>{formatDateTime(event.createdAt)}{event.actor ? " · " + event.actor.displayName : ""}</span></li>)}</ol></section> : null}
@@ -508,6 +544,185 @@ function VersionOcr({ documentId, version, active, canOcr }: {
       </li>)}</ol>
     </div> : null}
   </div>;
+}
+
+function VersionCandidates({ documentId, version, active, canGenerate, canReview, canCreateClaim }: {
+  documentId: string;
+  version: KnowledgeVersion;
+  active: boolean;
+  canGenerate: boolean;
+  canReview: boolean;
+  canCreateClaim: boolean;
+}) {
+  const qc = useQueryClient();
+  const [sourceKey, setSourceKey] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [runId, setRunId] = useState<string | null>(null);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  const extractionHistory = useQuery<{ extractions: KnowledgeExtraction[] }>({
+    queryKey: ["knowledge-extractions", version.id],
+    queryFn: () => api("/api/knowledge/documents/" + encodeURIComponent(documentId) + "/versions/" + encodeURIComponent(version.id) + "/extractions")
+  });
+  const ocrHistory = useQuery<{ jobs: KnowledgeOcrJob[] }>({
+    queryKey: ["knowledge-ocr-jobs", version.id],
+    queryFn: () => api("/api/knowledge/documents/" + encodeURIComponent(documentId) + "/versions/" + encodeURIComponent(version.id) + "/ocr-jobs")
+  });
+  const sources = [
+    ...(extractionHistory.data?.extractions.filter((item) => item.status === "SUCCEEDED").map((item) => ({ key: "extraction:" + item.id, label: "Deterministic extraction · " + item.fragmentCount + " fragments" })) ?? []),
+    ...(ocrHistory.data?.jobs.filter((item) => item.status === "SUCCEEDED").map((item) => ({ key: "ocr:" + item.id, label: "OCR · " + item.pageCount + " pages · " + item.languages })) ?? [])
+  ];
+  const [sourceType, sourceId] = sourceKey.split(":") as ["extraction" | "ocr", string];
+  const sourceDetail = useQuery<{ extraction?: KnowledgeExtraction; job?: KnowledgeOcrJob }>({
+    queryKey: ["knowledge-candidate-source", sourceKey],
+    queryFn: async () => sourceType === "extraction"
+      ? api("/api/knowledge/extractions/" + encodeURIComponent(sourceId))
+      : api("/api/knowledge/ocr-jobs/" + encodeURIComponent(sourceId)),
+    enabled: Boolean(sourceId)
+  });
+  const selectable = sourceType === "extraction"
+    ? sourceDetail.data?.extraction?.fragments?.map((fragment) => ({ id: fragment.id, pageNumber: fragment.pageNumber, content: fragment.content })) ?? []
+    : sourceDetail.data?.job?.pages?.map((page) => ({ id: page.id, pageNumber: page.pageNumber, content: page.content })) ?? [];
+  const runs = useQuery<{ runs: KnowledgeCandidateRun[] }>({
+    queryKey: ["knowledge-candidate-runs", sourceKey],
+    queryFn: () => api("/api/knowledge/candidate-runs?sourceType=" + encodeURIComponent(sourceType) + "&sourceId=" + encodeURIComponent(sourceId)),
+    enabled: Boolean(sourceId)
+  });
+  const selectedRunId = runId ?? runs.data?.runs.find((run) => run.status === "SUCCEEDED")?.id ?? null;
+  const runDetail = useQuery<{ run: KnowledgeCandidateRun }>({
+    queryKey: ["knowledge-candidate-run", selectedRunId],
+    queryFn: () => api("/api/knowledge/candidate-runs/" + encodeURIComponent(selectedRunId!)),
+    enabled: Boolean(selectedRunId)
+  });
+  const generate = useMutation({
+    mutationFn: () => post<{ run: KnowledgeCandidateRun }>("/api/knowledge/candidate-runs", { sourceType, sourceId, fragmentIds: selectedIds }),
+    onSuccess: async (result) => {
+      setRunId(result.run.id);
+      setSelectedIds([]);
+      await qc.invalidateQueries({ queryKey: ["knowledge-candidate-runs", sourceKey] });
+    }
+  });
+  const reject = useMutation({
+    mutationFn: ({ candidateId, reason }: { candidateId: string; reason: string }) => post("/api/knowledge/candidates/" + encodeURIComponent(candidateId) + "/reject", { reason }),
+    onSuccess: async () => {
+      setRejectingId(null);
+      setReason("");
+      await qc.invalidateQueries({ queryKey: ["knowledge-candidate-run", selectedRunId] });
+    }
+  });
+  const availableReason = version.reviewStatus !== "APPROVED_SOURCE"
+    ? "Approve this immutable version as a trusted source before generating candidates."
+    : !active
+      ? "Restore this document before generating candidates."
+      : !sources.length
+        ? "Complete deterministic extraction or OCR before generating candidates."
+        : null;
+  const error = generate.error ?? reject.error;
+  return <div className="knowledge-candidates">
+    <header><div><strong>Unapproved claim candidates</strong><small>Provider output is a proposal only. Accepting it creates an editable draft and never approves a claim.</small></div></header>
+    {canGenerate ? <div className="knowledge-candidate-source-controls">
+      <label><span className="label">Authorized source result</span><select className="input" value={sourceKey} onChange={(event) => { setSourceKey(event.target.value); setSelectedIds([]); setRunId(null); }} disabled={Boolean(availableReason)}>
+        <option value="">Select extraction or OCR result</option>{sources.map((source) => <option key={source.key} value={source.key}>{source.label}</option>)}
+      </select></label>
+      {sourceId ? <fieldset><legend>Select only the fragments authorized for provider processing</legend>{selectable.map((fragment) => <label key={fragment.id}>
+        <input type="checkbox" checked={selectedIds.includes(fragment.id)} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, fragment.id] : current.filter((id) => id !== fragment.id))} />
+        <span>{fragment.pageNumber ? "Page " + fragment.pageNumber + ": " : ""}{fragment.content.slice(0, 180)}{fragment.content.length > 180 ? "…" : ""}</span>
+      </label>)}</fieldset> : null}
+      <button className="btn btn-secondary btn-compact" disabled={!sourceId || !selectedIds.length || generate.isPending || Boolean(availableReason)} onClick={() => generate.mutate()}>{generate.isPending ? "Generating proposals" : "Generate candidates"}</button>
+    </div> : null}
+    {availableReason ? <small>{availableReason}</small> : null}
+    {error ? <small role="alert">{formatKnowledgeError(error)}</small> : null}
+    {runDetail.data?.run ? <div className="knowledge-candidate-results">
+      <div className="knowledge-candidate-run-meta"><span>{runDetail.data.run.model}</span><span>{runDetail.data.run.promptVersion}</span><span>{runDetail.data.run.candidateCount} proposals</span></div>
+      {runDetail.data.run.candidates?.map((candidate) => <article key={candidate.id}>
+        <header><div><strong>{candidate.proposedStableKey}</strong><small>{candidate.proposedClaimType} · {candidate.confidence == null ? "confidence unavailable" : Math.round(candidate.confidence * 100) + "% model confidence"}</small></div><span className="status-badge status-neutral">{candidate.status}</span></header>
+        <p>{candidate.explanation}</p>
+        {candidate.translations.map((translation) => <blockquote key={translation.id} lang={translation.locale} dir={translation.locale === "ar" ? "rtl" : "ltr"}><strong>{translation.locale.toUpperCase()} suggestion</strong>{translation.wording}</blockquote>)}
+        <ul>{candidate.sources.map((source) => <li key={source.id}>{source.pageNumber ? "Page " + source.pageNumber : "Source fragment"}{source.sourceExcerpt ? ": " + source.sourceExcerpt : ""}</li>)}</ul>
+        {candidate.status === "PROPOSED" ? <div className="knowledge-review-actions">
+          {canCreateClaim ? <button className="btn btn-primary btn-compact" onClick={() => setAcceptingId(candidate.id)}>Review and create draft</button> : null}
+          {canReview ? <button className="btn btn-secondary btn-compact" onClick={() => setRejectingId(candidate.id)}>Reject candidate</button> : null}
+        </div> : null}
+        {candidate.acceptedClaim ? <small>Draft created: {candidate.acceptedClaim.stableKey} revision {candidate.acceptedClaim.revision}</small> : null}
+        {candidate.decisionReason ? <small>Decision reason: {candidate.decisionReason}</small> : null}
+        {rejectingId === candidate.id ? <div className="knowledge-inline-decision"><label><span className="label">Rejection reason</span><textarea className="input" value={reason} onChange={(event) => setReason(event.target.value)} /></label><button className="btn btn-secondary btn-compact" onClick={() => setRejectingId(null)}>Cancel rejection</button><button className="btn btn-danger btn-compact" disabled={reason.trim().length < 2 || reject.isPending} onClick={() => reject.mutate({ candidateId: candidate.id, reason })}>Confirm candidate rejection</button></div> : null}
+        {acceptingId === candidate.id ? <CandidateAcceptForm candidate={candidate} pending={false} onCancel={() => setAcceptingId(null)} onAccepted={async () => {
+          setAcceptingId(null);
+          await Promise.all([
+            qc.invalidateQueries({ queryKey: ["knowledge-candidate-run", selectedRunId] }),
+            qc.invalidateQueries({ queryKey: ["knowledge-claims"] })
+          ]);
+        }} /> : null}
+      </article>)}
+    </div> : null}
+  </div>;
+}
+
+function CandidateAcceptForm({ candidate, onCancel, onAccepted }: {
+  candidate: KnowledgeCandidate;
+  pending: boolean;
+  onCancel: () => void;
+  onAccepted: () => void | Promise<void>;
+}) {
+  const references = useQuery<{ brands: Array<{ id: string; name: string }>; products: Array<{ id: string; name: string }>; packagingFormats: Array<{ id: string; label: string }> }>({
+    queryKey: ["knowledge-claim-reference-data"],
+    queryFn: () => api("/api/knowledge/claim-reference-data")
+  });
+  const accept = useMutation({
+    mutationFn: (body: unknown) => post("/api/knowledge/candidates/" + encodeURIComponent(candidate.id) + "/accept-draft", body),
+    onSuccess: onAccepted
+  });
+  const english = candidate.translations.find((translation) => translation.locale === "en")?.wording ?? "";
+  const arabic = candidate.translations.find((translation) => translation.locale === "ar")?.wording ?? "";
+  return <form className="knowledge-upload-form candidate-accept-form" onSubmit={(event) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const translations = [
+      ...(String(data.get("english") || "").trim() ? [{ locale: "en", wording: String(data.get("english")).trim() }] : []),
+      ...(String(data.get("arabic") || "").trim() ? [{ locale: "ar", wording: String(data.get("arabic")).trim() }] : [])
+    ];
+    accept.mutate({
+      confirmUnapprovedSuggestion: data.get("confirmUnapprovedSuggestion") === "yes",
+      stableKey: data.get("stableKey"),
+      claimType: data.get("claimType"),
+      usageScope: data.get("usageScope"),
+      requiredLocales: translations.map((translation) => translation.locale),
+      translations,
+      effectiveAt: data.get("effectiveAt") || undefined,
+      expiresAt: data.get("expiresAt") || undefined,
+      restrictions: data.get("restrictions"),
+      internalNotes: data.get("internalNotes"),
+      applicability: {
+        brandIds: data.get("brandId") ? [String(data.get("brandId"))] : [],
+        productIds: data.get("productId") ? [String(data.get("productId"))] : [],
+        packagingFormatIds: data.get("packagingFormatId") ? [String(data.get("packagingFormatId"))] : [],
+        markets: data.get("market") ? [String(data.get("market"))] : [],
+        audiences: data.get("audience") ? [String(data.get("audience"))] : [],
+        objectives: data.get("objective") ? [String(data.get("objective"))] : []
+      }
+    });
+  }}>
+    <div className="form-heading"><h4>Create an editable claim draft</h4><p>Verify every field. The suggestion is not approved, and the new draft must pass the normal locale and claim review workflow.</p></div>
+    <RequiredInput name="stableKey" label="Stable claim key" defaultValue={candidate.proposedStableKey} />
+    <RequiredInput name="claimType" label="Claim type" defaultValue={candidate.proposedClaimType} />
+    <label><span className="label">Usage scope</span><select className="input" name="usageScope" required defaultValue="INTERNAL_ONLY"><option value="INTERNAL_ONLY">Internal only</option><option value="RESTRICTED">Restricted</option><option value="PUBLIC_SAFE">Public safe</option></select></label>
+    <label><span className="label">Brand applicability</span><select className="input" name="brandId"><option value="">Not selected</option>{references.data?.brands.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+    <label><span className="label">Product applicability</span><select className="input" name="productId"><option value="">Not selected</option>{references.data?.products.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+    <label><span className="label">Packaging applicability</span><select className="input" name="packagingFormatId"><option value="">Not selected</option>{references.data?.packagingFormats.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+    <label className="form-span-2"><span className="label">English wording</span><textarea className="input" name="english" defaultValue={english} /></label>
+    <label className="form-span-2"><span className="label">Arabic wording</span><textarea className="input" name="arabic" dir="rtl" defaultValue={arabic} /></label>
+    <label><span className="label">Market</span><input className="input" name="market" /></label>
+    <label><span className="label">Audience</span><input className="input" name="audience" /></label>
+    <label><span className="label">Content objective</span><input className="input" name="objective" /></label>
+    <label><span className="label">Effective date</span><input className="input" name="effectiveAt" type="date" /></label>
+    <label><span className="label">Expiration date</span><input className="input" name="expiresAt" type="date" /></label>
+    <label className="form-span-2"><span className="label">Restrictions</span><textarea className="input" name="restrictions" maxLength={5000} /></label>
+    <label className="form-span-2"><span className="label">Internal notes</span><textarea className="input" name="internalNotes" maxLength={5000} /></label>
+    <label className="form-span-2"><input type="checkbox" name="confirmUnapprovedSuggestion" value="yes" required /> I verified the wording, provenance, usage scope, and applicability. Create a draft only.</label>
+    {accept.error ? <div className="notice notice-error form-span-2" role="alert">{formatKnowledgeError(accept.error)}</div> : null}
+    <div className="form-actions form-span-2"><button type="button" className="btn btn-secondary" onClick={onCancel} disabled={accept.isPending}>Cancel draft</button><button className="btn btn-primary" disabled={accept.isPending}>{accept.isPending ? "Creating draft" : "Create claim draft"}</button></div>
+  </form>;
 }
 
 function SourceReviewActions({ version, active, canEdit, canReview, canApprove, busy, onReview }: {
