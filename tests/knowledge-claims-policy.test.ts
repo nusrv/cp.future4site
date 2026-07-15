@@ -25,4 +25,20 @@ describe("approved claim future eligibility", () => {
     expect(matchesClaimApplicability(rule, { productId: "product-a", packagingFormatId: "pack-10l", market: "Jordan" })).toBe(false);
     expect(matchesClaimApplicability(rule, { productId: "product-a", packagingFormatId: "pack-5l", market: "UAE" })).toBe(false);
   });
+
+  it("never broadens brand, audience, or objective restrictions", () => {
+    const rule = {
+      brandIds: ["brand-a"],
+      productIds: [],
+      packagingFormatIds: [],
+      markets: [],
+      audiences: ["retail"],
+      objectives: ["awareness"]
+    };
+    expect(matchesClaimApplicability(rule, { brandId: "brand-a", audience: "Retail", objective: "AWARENESS" })).toBe(true);
+    expect(matchesClaimApplicability(rule, { brandId: "brand-b", audience: "Retail", objective: "awareness" })).toBe(false);
+    expect(matchesClaimApplicability(rule, { brandId: "brand-a", audience: "wholesale", objective: "awareness" })).toBe(false);
+    expect(matchesClaimApplicability(rule, { brandId: "brand-a", audience: "retail", objective: "conversion" })).toBe(false);
+    expect(matchesClaimApplicability(rule, {})).toBe(false);
+  });
 });

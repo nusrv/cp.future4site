@@ -1,5 +1,15 @@
 # Private Knowledge Library
 
+## Phase 3: deterministic approved-claim resolver
+
+Phase 3 adds a read-only CP service over `KnowledgeClaim`; it does not read or synchronize `KnowledgeIndex`. The resolver accepts an exact locale, brand, product, packaging format, market, audience, objective, and evaluation time. Product brand is derived when available, and contradictory product/brand context returns no claims.
+
+Only `APPROVED`, `PUBLIC_SAFE`, effective, unexpired claim revisions with independently `APPROVED` wording for the requested locale and at least one still-approved immutable source version are returned. A current approved predecessor remains eligible while its replacement draft is under review; the predecessor stops matching only when the transactional supersession changes its lifecycle status.
+
+Every non-empty applicability dimension is restrictive. Missing context never broadens a product, packaging, brand, market, audience, or objective claim. Results contain immutable claim/revision IDs, approved wording, applicability, and safe source references but no storage identity or source excerpts. Diagnostics report missing coverage, conflicting active revisions, and exclusion counts. There is no fuzzy, semantic, extraction, OCR, candidate, or AI fallback.
+
+API: `POST /api/knowledge/resolve`, protected by `knowledge.resolve`. Resolution audits contain context and claim IDs but no wording.
+
 ## Phase 2C: provider-gated candidate claims
 
 Phase 2C adds Gemini-assisted proposals behind three independent gates: `KNOWLEDGE_CANDIDATES_ENABLED=true`, `KNOWLEDGE_CANDIDATE_DATA_APPROVED=true`, and a configured `GEMINI_API_KEY`. All default to disabled or empty. Before enablement, the owner must approve provider terms, retention, residency, cost limits, and which source classes may leave CP.
