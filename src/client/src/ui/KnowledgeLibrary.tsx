@@ -632,7 +632,7 @@ function VersionCandidates({ documentId, version, active, canGenerate, canReview
       <button className="btn btn-secondary btn-compact" disabled={!sourceId || !selectedIds.length || generate.isPending || Boolean(availableReason)} onClick={() => generate.mutate()}>{generate.isPending ? "Generating proposals" : "Generate candidates"}</button>
     </div> : null}
     {availableReason ? <small>{availableReason}</small> : null}
-    {error ? <small role="alert">{formatKnowledgeError(error)}</small> : null}
+    {error ? <small role="alert">{formatApiError(error)}</small> : null}
     {runDetail.data?.run ? <div className="knowledge-candidate-results">
       <div className="knowledge-candidate-run-meta"><span>{runDetail.data.run.model}</span><span>{runDetail.data.run.promptVersion}</span><span>{runDetail.data.run.candidateCount} proposals</span></div>
       {runDetail.data.run.candidates?.map((candidate) => <article key={candidate.id}>
@@ -720,7 +720,7 @@ function CandidateAcceptForm({ candidate, onCancel, onAccepted }: {
     <label className="form-span-2"><span className="label">Restrictions</span><textarea className="input" name="restrictions" maxLength={5000} /></label>
     <label className="form-span-2"><span className="label">Internal notes</span><textarea className="input" name="internalNotes" maxLength={5000} /></label>
     <label className="form-span-2"><input type="checkbox" name="confirmUnapprovedSuggestion" value="yes" required /> I verified the wording, provenance, usage scope, and applicability. Create a draft only.</label>
-    {accept.error ? <div className="notice notice-error form-span-2" role="alert">{formatKnowledgeError(accept.error)}</div> : null}
+    {accept.error ? <div className="notice notice-error form-span-2" role="alert">{formatApiError(accept.error)}</div> : null}
     <div className="form-actions form-span-2"><button type="button" className="btn btn-secondary" onClick={onCancel} disabled={accept.isPending}>Cancel draft</button><button className="btn btn-primary" disabled={accept.isPending}>{accept.isPending ? "Creating draft" : "Create claim draft"}</button></div>
   </form>;
 }
